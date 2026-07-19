@@ -95,5 +95,11 @@ cius-oracles:
 	| while read -r p; do \
 		curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/ebinterface/testsuite/$$(echo "$$p"|sed -E 's#.*/test-files/##;s#/#_#g')"; \
 	done
+	@# KSeF (Polish FA structured invoice) samples — current FA(3) version — from phax/phive-rules.
+	mkdir -p testdata/ksef/testsuite
+	gh api "repos/phax/phive-rules/git/trees/master?recursive=1" --jq '.tree[].path | select(contains("phive-rules-ksef/") and contains("/test-files/fa3/") and endswith(".xml"))' \
+	| while read -r p; do \
+		curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/ksef/testsuite/$$(echo "$$p"|sed -E 's#.*/test-files/##;s#/#_#g')"; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef
