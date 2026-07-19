@@ -70,5 +70,12 @@ cius-oracles:
 		enc=$$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$$name"); \
 		curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-ublbe/src/test/resources/external/test-files/en16931/v1.31/$$enc" -o "testdata/cius-be/testsuite/$$name"; \
 	done
+	@# SRBDT (Serbian) sample instances, from phax/phive-rules.
+	mkdir -p testdata/cius-rs/testsuite
+	gh api "repos/phax/phive-rules/git/trees/master?recursive=1" --jq '.tree[].path | select(contains("phive-rules-serbia/src/test/resources/external/test-files/") and endswith(".xml"))' \
+	| while read -r p; do \
+		enc=$$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$$(basename "$$p")"); \
+		curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$(dirname "$$p")/$$enc" -o "testdata/cius-rs/testsuite/$$(basename "$$p")"; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs
