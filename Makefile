@@ -113,5 +113,13 @@ cius-oracles:
 	| while read -r p; do \
 		i=$$((i+1)); curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/zatca/testsuite/f$$i.xml"; \
 	done
+	@# Svefaktura (Swedish) and TEAPPS (Finnish) sample instances, from phax/phive-rules.
+	for m in svefaktura teapps; do \
+		mkdir -p testdata/$$m/testsuite; \
+		gh api "repos/phax/phive-rules/git/trees/master?recursive=1" --jq ".tree[].path | select(contains(\"phive-rules-$$m/\") and contains(\"/test-files/\") and endswith(\".xml\"))" \
+		| while read -r p; do \
+			curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/$$m/testsuite/$$(echo "$$p"|sed -E 's#.*/test-files/##;s#/#_#g')"; \
+		done; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps
