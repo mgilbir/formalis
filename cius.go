@@ -17,6 +17,7 @@ const (
 	CIUSPeppol    CIUS = "Peppol"    // OpenPEPPOL BIS Billing 3.0
 	CIUSNLCIUS    CIUS = "NLCIUS"    // Dutch SimplerInvoicing / SI-UBL
 	CIUSPortugal  CIUS = "CIUS-PT"   // Portuguese AT/eSPap CIUS-PT
+	CIUSRomania   CIUS = "CIUS-RO"   // Romanian ANAF RO e-Factura
 )
 
 // DetectCIUS reports the CIUS that a Specification identifier (BT-24) declares, or
@@ -31,6 +32,8 @@ func DetectCIUS(specID string) CIUS {
 		return CIUSNLCIUS
 	case strings.Contains(id, "cius-pt") || strings.Contains(id, "feap.gov.pt"):
 		return CIUSPortugal
+	case strings.Contains(id, "cius-ro") || strings.Contains(id, "mfinante.ro"):
+		return CIUSRomania
 	case strings.Contains(id, "peppol"):
 		return CIUSPeppol
 	}
@@ -52,6 +55,8 @@ func ValidateCIUS(xmlData []byte) []Violation {
 		return ValidateNLCIUS(xmlData)
 	case CIUSPortugal:
 		return ValidateCIUSPT(xmlData)
+	case CIUSRomania:
+		return ValidateCIUSRO(xmlData)
 	case CIUSPeppol:
 		return ValidatePeppol(xmlData)
 	default:

@@ -54,5 +54,14 @@ cius-oracles:
 			curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-cius-pt/src/test/resources/external/test-files/$$ver/$$enc" -o "testdata/cius-pt/testsuite/$${ver}_$$name"; \
 		done; \
 	done
+	@# CIUS-RO (Romanian ANAF RO e-Factura) sample instances, from phax/phive-rules.
+	mkdir -p testdata/cius-ro/testsuite
+	for ver in 1.0.3 1.0.4 1.0.8 1.0.9; do \
+		gh api "repos/phax/phive-rules/contents/phive-rules-cius-ro/src/test/resources/external/test-files/$$ver" --jq '.[] | select(.name|endswith(".xml")) | .name' \
+		| while read -r name; do \
+			enc=$$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$$name"); \
+			curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-cius-ro/src/test/resources/external/test-files/$$ver/$$enc" -o "testdata/cius-ro/testsuite/$${ver}_$$name"; \
+		done; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro
