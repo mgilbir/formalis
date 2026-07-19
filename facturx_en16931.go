@@ -16,7 +16,7 @@ import (
 // (best effort for UTF-8-compatible ones).
 func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
 	switch strings.ToLower(strings.TrimSpace(charset)) {
-	case "iso-8859-1", "iso8859-1", "latin1", "latin-1", "windows-1252", "cp1252":
+	case "iso-8859-1", "iso8859-1", "iso-8859-15", "iso8859-15", "latin1", "latin-1", "latin9", "windows-1252", "cp1252":
 		b, err := io.ReadAll(input)
 		if err != nil {
 			return nil, err
