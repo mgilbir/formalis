@@ -3,10 +3,33 @@ package formalis
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
 	"math"
 	"strconv"
 	"strings"
 )
+
+// xmlCharsetReader lets the XML decoder read the non-UTF-8 encodings some
+// national e-invoice formats declare (ISO-8859-1 / Windows-1252 are common in
+// Austrian ebInterface). It stays dependency-free: ISO-8859-1 maps each byte to
+// the same Unicode code point; other declared charsets are passed through as-is
+// (best effort for UTF-8-compatible ones).
+func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
+	switch strings.ToLower(strings.TrimSpace(charset)) {
+	case "iso-8859-1", "iso8859-1", "latin1", "latin-1", "windows-1252", "cp1252":
+		b, err := io.ReadAll(input)
+		if err != nil {
+			return nil, err
+		}
+		var sb strings.Builder
+		sb.Grow(len(b))
+		for _, c := range b {
+			sb.WriteRune(rune(c))
+		}
+		return strings.NewReader(sb.String()), nil
+	}
+	return input, nil
+}
 
 // This file begins the EN 16931 semantic validation of the invoice XML embedded
 // in a Factur-X document: the UN/CEFACT Cross Industry Invoice (CII). It parses
@@ -39,6 +62,7 @@ func (n *ciiNode) attr(name string) string {
 // an error if it is not well-formed.
 func parseCII(data []byte) (*ciiNode, error) {
 	dec := xml.NewDecoder(strings.NewReader(string(data)))
+	dec.CharsetReader = xmlCharsetReader
 	var stack []*ciiNode
 	var root *ciiNode
 	for {
