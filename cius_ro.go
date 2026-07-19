@@ -9,12 +9,16 @@ import "regexp"
 // currency, and requires a numeric character in the invoice number. The same
 // syntax-neutral model feeds it.
 //
-// CIUS-RO also carries a large set of Romanian county (județ) address-code rules
-// (BR-RO-L*, ~64 rules over the SIRUTA/ISO 3166-2:RO subdivision code lists) and
-// the related country-subdivision presence rules (BT-39/54/79). Those need a
-// county code table and a country-subdivision term the syntax-neutral model does
-// not carry, and are not emitted here; the mandatory-term rules below are the
-// validity-affecting core.
+// It also validates the Romanian country subdivision (BT-39/54/79): a Romanian
+// address must carry a subdivision, which for tax representatives and deliveries
+// must be one of the 42 ISO 3166-2:RO county codes, and where it is Bucharest
+// (RO-B) the city must be a sector code. The county and sector code lists are
+// taken from the CIUS-RO Schematron.
+//
+// The BR-RO-L* rules are per-field maximum-length limits; they are low value and
+// not emitted. The BR-DEC-RO decimal rules and the allowance/charge-conditional
+// VAT-identifier rules (BR-RO-065/120, which overlap the EN 16931 core) are also
+// not emitted.
 //
 // Not vendored: the CIUS-RO Schematron and sample instances (phax/phive-rules)
 // are used only as the oracle.
@@ -22,7 +26,38 @@ import "regexp"
 // roInvoiceTypeCodes is the invoice type code set CIUS-RO permits (BR-RO-020_1).
 var roInvoiceTypeCodes = map[string]bool{"380": true, "384": true, "389": true, "751": true}
 
+// roCountyCodes is the ISO 3166-2:RO country-subdivision code set CIUS-RO
+// requires for Romanian addresses (BR-RO-170/212): the 41 counties (județe) plus
+// Bucharest (RO-B). Taken verbatim from the CIUS-RO Schematron's ISO-3166-RO-CODES.
+var roCountyCodes = map[string]bool{
+	"RO-AB": true, "RO-AG": true, "RO-AR": true, "RO-B": true, "RO-BC": true, "RO-BH": true,
+	"RO-BN": true, "RO-BR": true, "RO-BT": true, "RO-BV": true, "RO-BZ": true, "RO-CJ": true,
+	"RO-CL": true, "RO-CS": true, "RO-CT": true, "RO-CV": true, "RO-DB": true, "RO-DJ": true,
+	"RO-GJ": true, "RO-GL": true, "RO-GR": true, "RO-HD": true, "RO-HR": true, "RO-IF": true,
+	"RO-IL": true, "RO-IS": true, "RO-MH": true, "RO-MM": true, "RO-MS": true, "RO-NT": true,
+	"RO-OT": true, "RO-PH": true, "RO-SB": true, "RO-SJ": true, "RO-SM": true, "RO-SV": true,
+	"RO-TL": true, "RO-TM": true, "RO-TR": true, "RO-VL": true, "RO-VN": true, "RO-VS": true,
+}
+
+// roBucharestSectors is the set of Bucharest sector codes a city must use when
+// the subdivision is RO-B (BR-RO-100/101/160/202).
+var roBucharestSectors = map[string]bool{
+	"SECTOR1": true, "SECTOR2": true, "SECTOR3": true, "SECTOR4": true, "SECTOR5": true, "SECTOR6": true,
+}
+
 var roDigit = regexp.MustCompile(`[0-9]`)
+
+// roSector matches a Bucharest sector written in the country-subdivision field.
+// Real Romanian invoices encode Bucharest as its sector here (e.g. "Sector 1")
+// rather than the Schematron's abstract RO-B/SECTOR1 pair, so the subdivision
+// validity check accepts either an ISO 3166-2:RO county code or a sector.
+var roSector = regexp.MustCompile(`(?i)^sector\s*[1-6]$`)
+
+// roValidSubdivision reports whether a country-subdivision value is an ISO
+// 3166-2:RO county code or a Bucharest sector.
+func roValidSubdivision(s string) bool {
+	return roCountyCodes[s] || roSector.MatchString(s)
+}
 
 // ValidateCIUSRO validates an invoice XML against the Romanian CIUS-RO: the
 // EN 16931 core plus the CIUS-RO mandatory-term rules. It accepts either syntax.
@@ -95,6 +130,46 @@ func validateCIUSRORules(inv *en16931Invoice) []Violation {
 		}
 		if inv.deliverToCity == "" {
 			add("BR-RO-201", "the Deliver to city (BT-77) shall be provided")
+		}
+	}
+
+	// Country-subdivision (county) rules. For a Romanian address the country
+	// subdivision (BT-39/54/79) is mandatory; a tax representative's and a
+	// delivery subdivision must additionally be a valid ISO 3166-2:RO code; and
+	// where the subdivision is Bucharest (RO-B) the city must be a sector code.
+	// BR-RO-110/111: Seller (BT-39) and Buyer (BT-54) subdivision present when in RO.
+	if inv.sellerCountry == "RO" && inv.sellerSubentity == "" {
+		add("BR-RO-110", "the Seller country subdivision (BT-39) shall be provided for a Romanian Seller")
+	}
+	if inv.buyerCountry == "RO" && inv.buyerSubentity == "" {
+		add("BR-RO-111", "the Buyer country subdivision (BT-54) shall be provided for a Romanian Buyer")
+	}
+	// BR-RO-100/101: Bucharest (RO-B) requires the city to be a sector code.
+	if inv.sellerCountry == "RO" && inv.sellerSubentity == "RO-B" && !roBucharestSectors[inv.sellerCity] {
+		add("BR-RO-100", "a Seller in Bucharest (RO-B) shall use a sector (SECTOR1-6) as the city (BT-37)")
+	}
+	if inv.buyerCountry == "RO" && inv.buyerSubentity == "RO-B" && !roBucharestSectors[inv.buyerCity] {
+		add("BR-RO-101", "a Buyer in Bucharest (RO-B) shall use a sector (SECTOR1-6) as the city (BT-52)")
+	}
+	// BR-RO-170/160: tax representative subdivision valid, and RO-B sector city.
+	if inv.taxRepAddressPresent && inv.taxRepCountry == "RO" {
+		if !roValidSubdivision(inv.taxRepSubentity) {
+			add("BR-RO-170", "the Seller tax representative country subdivision shall be a valid ISO 3166-2:RO code")
+		}
+		if inv.taxRepSubentity == "RO-B" && !roBucharestSectors[inv.taxRepCity] {
+			add("BR-RO-160", "a tax representative in Bucharest (RO-B) shall use a sector (SECTOR1-6) as the city")
+		}
+	}
+	// BR-RO-211/212/202: delivery subdivision present, valid, and RO-B sector city.
+	if inv.deliverToPresent {
+		if inv.deliverToSubentity == "" {
+			add("BR-RO-211", "the Deliver to country subdivision (BT-79) shall be provided")
+		}
+		if inv.deliverToCountry == "RO" && !roValidSubdivision(inv.deliverToSubentity) {
+			add("BR-RO-212", "the Deliver to country subdivision (BT-79) shall be a valid ISO 3166-2:RO code")
+		}
+		if inv.deliverToCountry == "RO" && inv.deliverToSubentity == "RO-B" && !roBucharestSectors[inv.deliverToCity] {
+			add("BR-RO-202", "a delivery in Bucharest (RO-B) shall use a sector (SECTOR1-6) as the city (BT-77)")
 		}
 	}
 
