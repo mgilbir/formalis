@@ -134,5 +134,12 @@ cius-oracles:
 	| while read -r p; do \
 		i=$$((i+1)); curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/turkey/testsuite/f$$i.xml"; \
 	done
+	@# OSA (Hungarian NAV Online Szamla) sample instances, from phax/phive-rules.
+	mkdir -p testdata/osa/testsuite
+	i=0; gh api "repos/phax/phive-rules/git/trees/master?recursive=1" --jq '.tree[].path | select(contains("phive-rules-osa/") and contains("/test-files/") and endswith(".xml"))' \
+	| while read -r p; do \
+		i=$$((i+1)); enc=$$(python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(x) for x in sys.argv[1].split('/')))" "$$p"); \
+		curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$enc" -o "testdata/osa/testsuite/f$$i.xml"; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl testdata/turkey
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl testdata/turkey testdata/osa
