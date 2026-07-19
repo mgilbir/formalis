@@ -553,6 +553,7 @@ func mapCII(root *ciiNode) *en16931Invoice {
 	inv.buyerPostCode = agr.str("BuyerTradeParty", "PostalTradeAddress", "PostcodeCode")
 	inv.deliverToCity = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "CityName")
 	inv.deliverToPostCode = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "PostcodeCode")
+	inv.deliverToStreet = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "LineOne")
 	return inv
 }
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
@@ -846,6 +847,7 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	inv.buyerPostCode = buyer.str("PostalAddress", "PostalZone")
 	inv.deliverToCity = root.str("Delivery", "DeliveryLocation", "Address", "CityName")
 	inv.deliverToPostCode = root.str("Delivery", "DeliveryLocation", "Address", "PostalZone")
+	inv.deliverToStreet = root.str("Delivery", "DeliveryLocation", "Address", "StreetName")
 	for _, pm := range root.all("PaymentMeans") {
 		if id := pm.str("PaymentID"); id != "" {
 			inv.paymentIDs = append(inv.paymentIDs, id)

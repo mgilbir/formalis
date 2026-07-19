@@ -45,5 +45,14 @@ cius-oracles:
 	gh api repos/phax/phive-rules/contents/phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing/SI-UBL-2.0.3.2 --jq '.[].name' \
 		| grep '\.xml$$' \
 		| while read f; do curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing/SI-UBL-2.0.3.2/$$f" -o "testdata/nlcius/testsuite/$$f"; done
+	@# CIUS-PT (Portuguese AT/eSPap) sample instances, from phax/phive-rules.
+	mkdir -p testdata/cius-pt/testsuite
+	for ver in 2.0.0 2.1.1; do \
+		gh api "repos/phax/phive-rules/contents/phive-rules-cius-pt/src/test/resources/external/test-files/$$ver" --jq '.[] | select(.name|endswith(".xml")) | .name' \
+		| while read -r name; do \
+			enc=$$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$$name"); \
+			curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-cius-pt/src/test/resources/external/test-files/$$ver/$$enc" -o "testdata/cius-pt/testsuite/$${ver}_$$name"; \
+		done; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt
