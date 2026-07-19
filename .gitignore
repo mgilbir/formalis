@@ -1,0 +1,9 @@
+/testdata/en16931-artefacts/
+/testdata/en16931-codelists/genericode/
+/testdata/en16931-codelists/*.zip
+/testdata/en16931-codelists/*.xlsx
+/testdata/en16931-ubl/*.xml
+/testdata/en16931-ubl/.ok
+/testdata/xrechnung/
+/testdata/peppol/
+/testdata/nlcius/
