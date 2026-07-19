@@ -121,5 +121,12 @@ cius-oracles:
 			curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/$$m/testsuite/$$(echo "$$p"|sed -E 's#.*/test-files/##;s#/#_#g')"; \
 		done; \
 	done
+	@# OIOUBL (Danish) invoices — content-filtered to Invoice-rooted OIOUBL files.
+	mkdir -p testdata/oioubl/testsuite
+	i=0; gh api "repos/phax/phive-rules/git/trees/master?recursive=1" --jq '.tree[].path | select(contains("phive-rules-oioubl/") and contains("/test-files/") and endswith(".xml"))' \
+	| while read -r p; do \
+		b=$$(curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p"); \
+		echo "$$b" | grep -qE "<Invoice[ >]" && echo "$$b" | grep -q "CustomizationID>OIOUBL" && { i=$$((i+1)); echo "$$b" > "testdata/oioubl/testsuite/inv$$i.xml"; }; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl
