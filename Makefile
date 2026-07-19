@@ -63,5 +63,12 @@ cius-oracles:
 			curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-cius-ro/src/test/resources/external/test-files/$$ver/$$enc" -o "testdata/cius-ro/testsuite/$${ver}_$$name"; \
 		done; \
 	done
+	@# UBL.BE (Belgian) sample instances, from phax/phive-rules.
+	mkdir -p testdata/cius-be/testsuite
+	gh api "repos/phax/phive-rules/contents/phive-rules-ublbe/src/test/resources/external/test-files/en16931/v1.31" --jq '.[] | select(.name|endswith(".xml")) | .name' \
+	| while read -r name; do \
+		enc=$$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$$name"); \
+		curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-ublbe/src/test/resources/external/test-files/en16931/v1.31/$$enc" -o "testdata/cius-be/testsuite/$$name"; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be
