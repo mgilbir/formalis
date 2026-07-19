@@ -19,6 +19,7 @@ const (
 	CIUSPortugal  CIUS = "CIUS-PT"   // Portuguese AT/eSPap CIUS-PT
 	CIUSRomania   CIUS = "CIUS-RO"   // Romanian ANAF RO e-Factura
 	CIUSBelgium   CIUS = "UBL.BE"    // Belgian UBL.BE
+	CIUSSerbia    CIUS = "SRBDT"     // Serbian SRBDT
 )
 
 // DetectCIUS reports the CIUS that a Specification identifier (BT-24) declares, or
@@ -37,6 +38,8 @@ func DetectCIUS(specID string) CIUS {
 		return CIUSRomania
 	case strings.Contains(id, "ubl.be"):
 		return CIUSBelgium
+	case strings.Contains(id, "srbdt") || strings.Contains(id, "mfin.gov.rs"):
+		return CIUSSerbia
 	case strings.Contains(id, "peppol"):
 		return CIUSPeppol
 	}
@@ -62,6 +65,8 @@ func ValidateCIUS(xmlData []byte) []Violation {
 		return ValidateCIUSRO(xmlData)
 	case CIUSBelgium:
 		return ValidateUBLBE(xmlData)
+	case CIUSSerbia:
+		return ValidateSRBDT(xmlData)
 	case CIUSPeppol:
 		return ValidatePeppol(xmlData)
 	default:
