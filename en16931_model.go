@@ -82,6 +82,7 @@ type en16931Invoice struct {
 	buyerPostCode        string // BT-53 Buyer post code
 	deliverToCity        string // BT-77 Deliver-to city
 	deliverToPostCode    string // BT-78 Deliver-to post code
+	deliverToStreet      string // BT-75 Deliver-to address line 1
 
 	taxRepPresent        bool   // BG-11 Seller tax representative party present
 	taxRepName           string // BT-62 Seller tax representative name

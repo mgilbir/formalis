@@ -14,6 +14,7 @@ func TestDetectCIUS(t *testing.T) {
 		{"urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0", CIUSXRechnung},
 		{"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0", CIUSPeppol},
 		{"urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0", CIUSNLCIUS},
+		{"urn:cen.eu:en16931:2017#compliant#urn:feap.gov.pt:CIUS-PT:2.1.1", CIUSPortugal},
 		{"", CIUSNone},
 	}
 	for _, tc := range cases {
