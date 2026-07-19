@@ -16,6 +16,7 @@ func TestDetectCIUS(t *testing.T) {
 		{"urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0", CIUSNLCIUS},
 		{"urn:cen.eu:en16931:2017#compliant#urn:feap.gov.pt:CIUS-PT:2.1.1", CIUSPortugal},
 		{"urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.0", CIUSRomania},
+		{"urn:cen.eu:en16931:2017#conformant#urn:UBL.BE:1.0.0.20180214", CIUSBelgium},
 		{"", CIUSNone},
 	}
 	for _, tc := range cases {
