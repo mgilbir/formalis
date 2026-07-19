@@ -128,5 +128,11 @@ cius-oracles:
 		b=$$(curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p"); \
 		echo "$$b" | grep -qE "<Invoice[ >]" && echo "$$b" | grep -q "CustomizationID>OIOUBL" && { i=$$((i+1)); echo "$$b" > "testdata/oioubl/testsuite/inv$$i.xml"; }; \
 	done
+	@# UBL-TR (Turkish) sample instances, from phax/phive-rules.
+	mkdir -p testdata/turkey/testsuite
+	i=0; gh api "repos/phax/phive-rules/git/trees/master?recursive=1" --jq '.tree[].path | select(contains("phive-rules-turkey/") and contains("/test-files/") and endswith(".xml"))' \
+	| while read -r p; do \
+		i=$$((i+1)); curl -sSL "https://raw.githubusercontent.com/phax/phive-rules/master/$$p" -o "testdata/turkey/testsuite/f$$i.xml"; \
+	done
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl testdata/turkey
