@@ -554,6 +554,10 @@ func mapCII(root *ciiNode) *en16931Invoice {
 	inv.deliverToCity = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "CityName")
 	inv.deliverToPostCode = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "PostcodeCode")
 	inv.deliverToStreet = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "LineOne")
+	inv.sellerSubentity = agr.str("SellerTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
+	inv.buyerSubentity = agr.str("BuyerTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
+	inv.deliverToSubentity = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
+	inv.taxRepSubentity = agr.str("SellerTaxRepresentativeTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
 	return inv
 }
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
@@ -848,6 +852,10 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	inv.deliverToCity = root.str("Delivery", "DeliveryLocation", "Address", "CityName")
 	inv.deliverToPostCode = root.str("Delivery", "DeliveryLocation", "Address", "PostalZone")
 	inv.deliverToStreet = root.str("Delivery", "DeliveryLocation", "Address", "StreetName")
+	inv.sellerSubentity = seller.str("PostalAddress", "CountrySubentity")
+	inv.buyerSubentity = buyer.str("PostalAddress", "CountrySubentity")
+	inv.deliverToSubentity = root.str("Delivery", "DeliveryLocation", "Address", "CountrySubentity")
+	inv.taxRepSubentity = root.str("TaxRepresentativeParty", "PostalAddress", "CountrySubentity")
 	for _, pm := range root.all("PaymentMeans") {
 		if id := pm.str("PaymentID"); id != "" {
 			inv.paymentIDs = append(inv.paymentIDs, id)
