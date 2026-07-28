@@ -43,7 +43,10 @@ func vatCatByRate(fam string) bool {
 	return fam == "S" || fam == "AF" || fam == "AG"
 }
 
-func validateVATCategories(inv *en16931Invoice, add func(rule, msg string)) {
+func validateVATCategories(r *run, inv *en16931Invoice, add func(rule, msg string)) {
+	if r.stopped() {
+		return
+	}
 	// Categories actually used on lines and document allowances/charges. Each is
 	// checked against the UNCL 5305 category code list (BR-CL-18; the breakdown
 	// category is BR-CL-17).
@@ -147,7 +150,7 @@ func validateVATCategories(inv *en16931Invoice, add func(rule, msg string)) {
 	// charges (which some producers carry only in the summation totals, not as
 	// itemizable BG-20/21 entries, so summing entries would understate the base).
 	if len(inv.lines) > 0 && vatCategoriesComplete(inv) && !hasSubLines(inv) && !hasDocAllowanceCharge(inv) {
-		validateVATTaxableSums(inv, add)
+		validateVATTaxableSums(r, inv, add)
 	}
 
 	// BR-B-01/02: the "Split payment" category (B), an Italian domestic mechanism.
@@ -335,7 +338,23 @@ func hasDocAllowanceCharge(inv *en16931Invoice) bool {
 // validateVATTaxableSums checks BR-{fam}-08 for every breakdown of a known
 // category. For the standard category the sum is grouped by VAT rate; the other
 // categories have a single (zero) rate.
-func validateVATTaxableSums(inv *en16931Invoice, add func(rule, msg string)) {
+func validateVATTaxableSums(r *run, inv *en16931Invoice, add func(rule, msg string)) {
+	// Each breakdown sums over the same two lists, so the operands are parsed once
+	// here rather than once per breakdown. The original parsed every line rate and
+	// amount inside the per-breakdown scan, so an invoice with B breakdowns and L
+	// lines cost B*L float parses: 7.3 MB of well-formed XML took 1.7 s and grew
+	// as the square. Parsing up front reduces the scan to a float compare.
+	sums := newVATSummands(inv)
+
+	// Two breakdowns of the same category and rate select the same operands, and
+	// so produce the same sum. Memoising on that key collapses the other half of
+	// the quadratic — many breakdowns over one rate — to a single scan.
+	type key struct {
+		cat  string
+		rate float64
+	}
+	cache := map[key]vatSum{}
+
 	for _, b := range inv.vatBreakdowns {
 		spec, ok := vatCatSpecs[b.category]
 		if !ok {
@@ -347,43 +366,108 @@ func validateVATTaxableSums(inv *en16931Invoice, add func(rule, msg string)) {
 		}
 		byRate := vatCatByRate(spec.fam)
 		bRate, _ := parseAmount(b.rate)
-		sum, complete := 0.0, true
-		match := func(cat, rate string) bool {
-			if cat != b.category {
-				return false
-			}
-			if byRate {
-				r, ok := parseAmount(rate)
-				return ok && math.Abs(r-bRate) < 0.005
-			}
-			return true
+		if !byRate {
+			// These categories have a single (zero) rate, so the rate does not
+			// select operands and must not split the cache.
+			bRate = 0
 		}
-		for _, li := range inv.lines {
-			if match(li.vatCategory, li.vatRate) {
-				v, ok := parseAmount(li.netAmount)
-				if !ok {
-					complete = false
-					break
-				}
-				sum += v
+		k := key{b.category, bRate}
+		res, hit := cache[k]
+		if !hit {
+			if r.stopped() || !r.spendVAT(len(sums.lines)+len(sums.allowCharges)) {
+				// The caller stopped us, or the budget ran out. Report nothing
+				// further: a partial sum would accuse a conforming invoice of
+				// BR-*-08. The trip is already recorded on the run.
+				return
 			}
+			res = sums.total(b.category, bRate, byRate)
+			cache[k] = res
 		}
-		for _, ac := range inv.allowCharges {
-			if complete && match(ac.category, ac.rate) {
-				v, ok := parseAmount(ac.amount)
-				if !ok {
-					complete = false
-					break
-				}
-				if ac.isCharge {
-					sum += v
-				} else {
-					sum -= v
-				}
-			}
-		}
-		if complete && math.Abs(round2(sum)-basis) > 0.005 {
-			add("BR-"+spec.fam+"-08", fmt.Sprintf("the VAT category taxable amount (BT-116=%.2f) for category %q shall equal the sum of matching line net amounts + charges - allowances (%.2f)", basis, b.category, sum))
+		if res.complete && math.Abs(round2(res.value)-basis) > 0.005 {
+			add("BR-"+spec.fam+"-08", fmt.Sprintf("the VAT category taxable amount (BT-116=%.2f) for category %q shall equal the sum of matching line net amounts + charges - allowances (%.2f)", basis, b.category, res.value))
 		}
 	}
+}
+
+// vatSummand is one pre-parsed operand of a VAT category sum: an invoice line's
+// net amount, or a document-level allowance or charge.
+type vatSummand struct {
+	category string
+	rate     float64
+	rateOK   bool
+	amount   float64
+	amountOK bool
+	isCharge bool
+}
+
+// vatSummands holds an invoice's summation operands with amounts and rates
+// already parsed.
+type vatSummands struct {
+	lines        []vatSummand
+	allowCharges []vatSummand
+}
+
+// vatSum is the outcome of one category/rate summation. complete is false when an
+// operand's amount would not parse, in which case value says nothing.
+type vatSum struct {
+	value    float64
+	complete bool
+}
+
+func newVATSummands(inv *en16931Invoice) *vatSummands {
+	s := &vatSummands{
+		lines:        make([]vatSummand, 0, len(inv.lines)),
+		allowCharges: make([]vatSummand, 0, len(inv.allowCharges)),
+	}
+	for _, li := range inv.lines {
+		o := vatSummand{category: li.vatCategory}
+		o.rate, o.rateOK = parseAmount(li.vatRate)
+		o.amount, o.amountOK = parseAmount(li.netAmount)
+		s.lines = append(s.lines, o)
+	}
+	for _, ac := range inv.allowCharges {
+		o := vatSummand{category: ac.category, isCharge: ac.isCharge}
+		o.rate, o.rateOK = parseAmount(ac.rate)
+		o.amount, o.amountOK = parseAmount(ac.amount)
+		s.allowCharges = append(s.allowCharges, o)
+	}
+	return s
+}
+
+// total sums the operands matching a category — and, for the rate-grouped
+// standard category, a rate. The matching and the abandon-on-unparseable-amount
+// behaviour reproduce the original scan exactly: an operand whose amount will not
+// parse abandons the sum rather than being skipped, so no violation is reported.
+func (s *vatSummands) total(cat string, rate float64, byRate bool) vatSum {
+	match := func(o vatSummand) bool {
+		if o.category != cat {
+			return false
+		}
+		if byRate {
+			return o.rateOK && math.Abs(o.rate-rate) < 0.005
+		}
+		return true
+	}
+	sum := 0.0
+	for _, o := range s.lines {
+		if match(o) {
+			if !o.amountOK {
+				return vatSum{}
+			}
+			sum += o.amount
+		}
+	}
+	for _, o := range s.allowCharges {
+		if match(o) {
+			if !o.amountOK {
+				return vatSum{}
+			}
+			if o.isCharge {
+				sum += o.amount
+			} else {
+				sum -= o.amount
+			}
+		}
+	}
+	return vatSum{value: sum, complete: true}
 }

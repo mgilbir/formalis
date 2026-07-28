@@ -1,5 +1,7 @@
 package formalis
 
+import "context"
+
 // This file validates the Portuguese CIUS-PT (urn:feap.gov.pt:CIUS-PT) on top of
 // the EN 16931 core. CIUS-PT is the AT/eSPap public-sector profile; it makes
 // several EN 16931-optional terms mandatory — the parties' VAT identifiers, the
@@ -17,12 +19,21 @@ package formalis
 
 // ValidateCIUSPT validates an invoice XML against the Portuguese CIUS-PT: the
 // EN 16931 core plus the CIUS-PT mandatory-term rules. It accepts either syntax.
-func ValidateCIUSPT(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateCIUSPT(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateCIUSPT(r, xmlData))
+}
+
+func validateCIUSPT(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
-	out := validateEN16931(inv, ProfileEN16931)
+	out := validateEN16931(r, inv, ProfileEN16931)
 	out = append(out, validateCIUSPTRules(inv)...)
 	return out
 }

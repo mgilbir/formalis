@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func TestFinvoiceCorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as Finvoice", filepath.Base(f))
 			continue
 		}
-		if v := ValidateFinvoice(data); len(v) != 0 {
+		if v := ValidateFinvoice(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: expected 0 Finvoice violations, got %d (first %s: %s)", filepath.Base(f), len(v), v[0].Rule, v[0].Message)
 		}
 	}
@@ -34,7 +35,7 @@ const minimalFinvoice = `<Finvoice Version="3.0">
 </Finvoice>`
 
 func TestFinvoiceMutations(t *testing.T) {
-	if v := ValidateFinvoice([]byte(minimalFinvoice)); len(v) != 0 {
+	if v := ValidateFinvoice(context.Background(), []byte(minimalFinvoice)); len(v) != 0 {
 		t.Fatalf("baseline Finvoice not clean: %v", v)
 	}
 	cases := []struct{ name, from, want string }{
@@ -51,8 +52,8 @@ func TestFinvoiceMutations(t *testing.T) {
 			if broken == minimalFinvoice {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateFinvoice([]byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateFinvoice([]byte(broken)))
+			if !hasFacturXRule(ValidateFinvoice(context.Background(), []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateFinvoice(context.Background(), []byte(broken)))
 			}
 		})
 	}

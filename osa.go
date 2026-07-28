@@ -1,6 +1,9 @@
 package formalis
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // This file validates the Hungarian NAV Online Számla (OSA) invoice-data format —
 // the real-time invoice report submitted to the Hungarian tax authority (root
@@ -22,16 +25,26 @@ func firstNonEmptyText(ns []*ciiNode) string {
 
 // IsOSA reports whether the XML is a Hungarian OSA InvoiceData document.
 func IsOSA(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "InvoiceData"
 }
 
 // ValidateOSA validates a Hungarian OSA invoice-data document against its
 // mandatory structure.
-func ValidateOSA(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateOSA(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateOSA(r, xmlData))
+}
+
+func validateOSA(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "InvoiceData" {
 		return []Violation{{Rule: "HU-root", Message: "the document root shall be InvoiceData"}}

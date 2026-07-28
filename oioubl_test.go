@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ func TestOIOUBLCorpus(t *testing.T) {
 		if !IsOIOUBL(data) {
 			continue
 		}
-		if v := ValidateOIOUBL(data); len(v) != 0 {
+		if v := ValidateOIOUBL(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: expected 0 OIOUBL violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -32,7 +33,7 @@ const minimalOIOUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:
 </Invoice>`
 
 func TestOIOUBLMutations(t *testing.T) {
-	if v := ValidateOIOUBL([]byte(minimalOIOUBL)); len(v) != 0 {
+	if v := ValidateOIOUBL(context.Background(), []byte(minimalOIOUBL)); len(v) != 0 {
 		t.Fatalf("baseline OIOUBL not clean: %v", v)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -51,8 +52,8 @@ func TestOIOUBLMutations(t *testing.T) {
 			if broken == minimalOIOUBL {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateOIOUBL([]byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOIOUBL([]byte(broken)))
+			if !hasFacturXRule(ValidateOIOUBL(context.Background(), []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOIOUBL(context.Background(), []byte(broken)))
 			}
 		})
 	}

@@ -1,6 +1,9 @@
 package formalis
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // This file validates the Austrian ebInterface format (ebinterface.at) — the
 // Austrian national e-invoice XML, across its schema versions (3.x … 6.x). Like
@@ -16,16 +19,26 @@ import "strings"
 // element is "Invoice" (as in UBL), so it is disambiguated by the ebInterface-
 // specific Biller element.
 func IsEbInterface(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "Invoice" && root.child("Biller") != nil
 }
 
 // ValidateEbInterface validates an Austrian ebInterface document against its
 // mandatory structure.
-func ValidateEbInterface(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateEbInterface(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateEbInterface(r, xmlData))
+}
+
+func validateEbInterface(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "Invoice" || root.child("Biller") == nil {
 		return []Violation{{Rule: "EB-root", Message: "the document root shall be an ebInterface Invoice with a Biller"}}

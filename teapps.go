@@ -1,5 +1,7 @@
 package formalis
 
+import "context"
+
 // This file validates the Finnish TEAPPS format (Tieto TEAPPS) — a proprietary
 // batch invoice XML (root INVOICE_CENTER, carrying a transport frame and one or
 // more INVOICE documents). It is XSD-validated rather than rule-validated and is
@@ -11,15 +13,25 @@ package formalis
 
 // IsTEAPPS reports whether the XML is a TEAPPS batch document.
 func IsTEAPPS(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "INVOICE_CENTER"
 }
 
 // ValidateTEAPPS validates a Finnish TEAPPS batch against its mandatory structure.
-func ValidateTEAPPS(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateTEAPPS(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateTEAPPS(r, xmlData))
+}
+
+func validateTEAPPS(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "INVOICE_CENTER" {
 		return []Violation{{Rule: "TP-root", Message: "the document root shall be INVOICE_CENTER"}}

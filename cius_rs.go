@@ -1,6 +1,9 @@
 package formalis
 
-import "regexp"
+import (
+	"context"
+	"regexp"
+)
 
 // This file validates the Serbian CIUS (SRBDT, urn:mfin.gov.rs:srbdt, the
 // Ministry of Finance e-invoice profile) on top of the EN 16931 core. SRBDT makes
@@ -27,12 +30,21 @@ var rsPIB = regexp.MustCompile(`^RS(\d{9}|\d{13})$`)
 
 // ValidateSRBDT validates an invoice XML against the Serbian CIUS (SRBDT): the
 // EN 16931 core plus the SRBDT mandatory-term and format rules.
-func ValidateSRBDT(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateSRBDT(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateSRBDT(r, xmlData))
+}
+
+func validateSRBDT(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
-	out := validateEN16931(inv, ProfileEN16931)
+	out := validateEN16931(r, inv, ProfileEN16931)
 	out = append(out, validateSRBDTRules(inv)...)
 	return out
 }

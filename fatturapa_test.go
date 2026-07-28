@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ func TestFatturaPACorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as a FatturaPA document", filepath.Base(f))
 			continue
 		}
-		if v := ValidateFatturaPA(data); len(v) != 0 {
+		if v := ValidateFatturaPA(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: expected 0 FatturaPA violations on a conformant sample, got %d (first %s: %s)",
 				filepath.Base(f), len(v), v[0].Rule, v[0].Message)
 		}
@@ -55,7 +56,7 @@ const minimalFatturaPA = `<p:FatturaElettronica versione="FPR12" xmlns:p="http:/
 </p:FatturaElettronica>`
 
 func TestFatturaPAMutations(t *testing.T) {
-	if v := ValidateFatturaPA([]byte(minimalFatturaPA)); len(v) != 0 {
+	if v := ValidateFatturaPA(context.Background(), []byte(minimalFatturaPA)); len(v) != 0 {
 		t.Fatalf("baseline FatturaPA not clean: %d (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -77,8 +78,8 @@ func TestFatturaPAMutations(t *testing.T) {
 			if broken == minimalFatturaPA {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateFatturaPA([]byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateFatturaPA([]byte(broken)))
+			if !hasFacturXRule(ValidateFatturaPA(context.Background(), []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateFatturaPA(context.Background(), []byte(broken)))
 			}
 		})
 	}

@@ -1,6 +1,10 @@
 package formalis
 
-import "fmt"
+import (
+	"context"
+	"errors"
+	"fmt"
+)
 
 // This file validates the embedded Cross Industry Order document of an Order-X
 // (a.k.a. ZUGFeRD Order) — the order-document sibling of Factur-X. Order-X
@@ -14,11 +18,26 @@ var orderXTypeCodes = map[string]bool{"220": true, "230": true, "231": true}
 
 // ValidateOrderXML checks an embedded Cross Industry Order's structure and
 // mandatory head business terms, returning any violations.
-func ValidateOrderXML(xmlData []byte) []Violation {
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateOrderXML(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateOrderXML(r, xmlData))
+}
+
+func validateOrderXML(r *run, xmlData []byte) []Violation {
 	var out []Violation
 	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
 
-	root, err := parseCII(xmlData)
+	root, err := parseCII(r, xmlData)
+	if errors.Is(err, errStopped) {
+		// A run that stopped says nothing about the order. Reporting "not
+		// well-formed" here would accuse a document the checker never finished
+		// reading; the trip itself is already recorded on the run.
+		return nil
+	}
 	if err != nil || root.name != "SCRDMCCBDACIOMessageStructure" {
 		add("order-xml", "the order XML is not a well-formed Cross Industry Order (SCRDMCCBDACIOMessageStructure)")
 		return out

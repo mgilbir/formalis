@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -41,16 +42,26 @@ func buildRange(prefix string, lo, hi int) map[string]bool {
 
 // IsFatturaPA reports whether the XML is a FatturaElettronica document.
 func IsFatturaPA(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "FatturaElettronica"
 }
 
 // ValidateFatturaPA validates an Italian FatturaPA / FatturaElettronica document
 // against its mandatory structure and Italian code lists.
-func ValidateFatturaPA(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateFatturaPA(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateFatturaPA(r, xmlData))
+}
+
+func validateFatturaPA(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "FatturaElettronica" {
 		return []Violation{{Rule: "FPA-root", Message: "the document root shall be FatturaElettronica"}}

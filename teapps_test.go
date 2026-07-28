@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestTEAPPSCorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as TEAPPS", filepath.Base(f))
 			continue
 		}
-		if v := ValidateTEAPPS(data); len(v) != 0 {
+		if v := ValidateTEAPPS(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: expected 0 TEAPPS violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -30,7 +31,7 @@ const minimalTEAPPS = `<INVOICE_CENTER><CONTENT_FRAME><INVOICES><INVOICE>
 </INVOICE></INVOICES></CONTENT_FRAME></INVOICE_CENTER>`
 
 func TestTEAPPSMutations(t *testing.T) {
-	if v := ValidateTEAPPS([]byte(minimalTEAPPS)); len(v) != 0 {
+	if v := ValidateTEAPPS(context.Background(), []byte(minimalTEAPPS)); len(v) != 0 {
 		t.Fatalf("baseline TEAPPS not clean: %v", v)
 	}
 	cases := []struct{ name, from, want string }{
@@ -43,8 +44,8 @@ func TestTEAPPSMutations(t *testing.T) {
 			if broken == minimalTEAPPS {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateTEAPPS([]byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateTEAPPS([]byte(broken)))
+			if !hasFacturXRule(ValidateTEAPPS(context.Background(), []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateTEAPPS(context.Background(), []byte(broken)))
 			}
 		})
 	}

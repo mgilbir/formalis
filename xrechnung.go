@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -28,16 +29,25 @@ var xrExtItemSchemes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
 // ValidateXRechnung validates an invoice XML against the XRechnung CIUS: the
 // EN 16931 core (with the XRechnung sub-profile overrides applied) plus the
 // BR-DE-* rules. It accepts either syntax.
-func ValidateXRechnung(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateXRechnung(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateXRechnung(r, xmlData))
+}
+
+func validateXRechnung(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	ext := strings.Contains(inv.specID, "extension")
 	cvd := strings.Contains(inv.specID, "cvd")
 
 	var out []Violation
-	for _, v := range validateEN16931(inv, ProfileXRechnung) {
+	for _, v := range validateEN16931(r, inv, ProfileXRechnung) {
 		switch {
 		// The EXTENSION and CVD sub-profiles extend the item identifier code lists;
 		// re-checked below against the XRechnung-extended sets.

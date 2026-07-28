@@ -1,6 +1,9 @@
 package formalis
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // This file validates the Finnish Finvoice format (finvoice.info / Finance
 // Finland) — Finland's national e-invoice XML. Like the other national formats it
@@ -12,16 +15,26 @@ import "strings"
 
 // IsFinvoice reports whether the XML is a Finvoice document.
 func IsFinvoice(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "Finvoice"
 }
 
 // ValidateFinvoice validates a Finnish Finvoice document against its mandatory
 // structure.
-func ValidateFinvoice(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateFinvoice(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateFinvoice(r, xmlData))
+}
+
+func validateFinvoice(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "Finvoice" {
 		return []Violation{{Rule: "FI-root", Message: "the document root shall be Finvoice"}}

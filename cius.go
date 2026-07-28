@@ -1,6 +1,9 @@
 package formalis
 
-import "strings"
+import (
+	"context"
+	"strings"
+)
 
 // This file dispatches an invoice to the right validator based on the CIUS it
 // declares in its Specification identifier (BT-24, the UBL CustomizationID or the
@@ -49,27 +52,40 @@ func DetectCIUS(specID string) CIUS {
 // ValidateCIUS validates an invoice against whichever CIUS its Specification
 // identifier (BT-24) declares, falling back to the EN 16931 core when none is
 // recognised. It routes both syntaxes (CII and UBL).
-func ValidateCIUS(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateCIUS(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateCIUS(r, xmlData))
+}
+
+func validateCIUS(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
+	// The dispatch is to the unexported forms so the whole dispatched call shares
+	// this run: one cancellation signal and one set of budgets across the detect
+	// and the validate, rather than a fresh (uncancellable) allowance for the
+	// second half of the work.
 	switch DetectCIUS(inv.specID) {
 	case CIUSXRechnung:
-		return ValidateXRechnung(xmlData)
+		return validateXRechnung(r, xmlData)
 	case CIUSNLCIUS:
-		return ValidateNLCIUS(xmlData)
+		return validateNLCIUS(r, xmlData)
 	case CIUSPortugal:
-		return ValidateCIUSPT(xmlData)
+		return validateCIUSPT(r, xmlData)
 	case CIUSRomania:
-		return ValidateCIUSRO(xmlData)
+		return validateCIUSRO(r, xmlData)
 	case CIUSBelgium:
-		return ValidateUBLBE(xmlData)
+		return validateUBLBE(r, xmlData)
 	case CIUSSerbia:
-		return ValidateSRBDT(xmlData)
+		return validateSRBDT(r, xmlData)
 	case CIUSPeppol:
-		return ValidatePeppol(xmlData)
+		return validatePeppol(r, xmlData)
 	default:
-		return Validate(xmlData, ProfileEN16931)
+		return validateEN16931(r, inv, ProfileEN16931)
 	}
 }
