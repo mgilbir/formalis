@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -22,16 +23,26 @@ var ksefRodzajFaktury = map[string]bool{
 
 // IsKSeF reports whether the XML is a KSeF Faktura document.
 func IsKSeF(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "Faktura" && root.child("Naglowek") != nil
 }
 
 // ValidateKSeF validates a Polish KSeF FA document against its mandatory
 // structure and Polish code lists.
-func ValidateKSeF(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateKSeF(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateKSeF(r, xmlData))
+}
+
+func validateKSeF(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "Faktura" {
 		return []Violation{{Rule: "KS-root", Message: "the document root shall be Faktura"}}

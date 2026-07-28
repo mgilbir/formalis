@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"bytes"
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -23,7 +24,7 @@ func TestValidateUBLCorpus(t *testing.T) {
 			t.Errorf("%s: %v", f, err)
 			continue
 		}
-		v := Validate(data, ProfileEN16931)
+		v := Validate(context.Background(), data, ProfileEN16931)
 		if len(v) != 0 {
 			t.Errorf("%s: expected 0 violations on a conforming UBL invoice, got %d (first: %s: %s)",
 				filepath.Base(f), len(v), v[0].Rule, v[0].Message)
@@ -34,15 +35,15 @@ func TestValidateUBLCorpus(t *testing.T) {
 // TestValidateUBLDetectsSyntax checks both UBL document types and the rejection
 // of a non-invoice root.
 func TestValidateUBLDetectsSyntax(t *testing.T) {
-	inv, err := parseEN16931([]byte(`<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>`))
+	inv, err := parseEN16931(newRun(nil), []byte(`<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"/>`))
 	if err != nil || inv == nil {
 		t.Fatalf("UBL Invoice root not recognised: %v", err)
 	}
-	cn, err := parseEN16931([]byte(`<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"/>`))
+	cn, err := parseEN16931(newRun(nil), []byte(`<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"/>`))
 	if err != nil || cn == nil {
 		t.Fatalf("UBL CreditNote root not recognised: %v", err)
 	}
-	if _, err := parseEN16931([]byte(`<PurchaseOrder/>`)); err == nil {
+	if _, err := parseEN16931(newRun(nil), []byte(`<PurchaseOrder/>`)); err == nil {
 		t.Error("a non-invoice root must be rejected")
 	}
 }
@@ -77,7 +78,7 @@ const minimalUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd
 
 func TestValidateUBLMutations(t *testing.T) {
 	// Baseline: the minimal invoice is clean.
-	if v := Validate([]byte(minimalUBL), ProfileEN16931); len(v) != 0 {
+	if v := Validate(context.Background(), []byte(minimalUBL), ProfileEN16931); len(v) != 0 {
 		t.Fatalf("baseline UBL not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 	cases := []struct {
@@ -96,7 +97,7 @@ func TestValidateUBLMutations(t *testing.T) {
 			if broken == minimalUBL {
 				t.Fatalf("mutation string %q not found", tc.remove)
 			}
-			v := Validate([]byte(broken), ProfileEN16931)
+			v := Validate(context.Background(), []byte(broken), ProfileEN16931)
 			found := false
 			for _, x := range v {
 				if x.Rule == tc.wantRule {
@@ -118,13 +119,13 @@ func TestVATAmountTolerance(t *testing.T) {
 	within := strings.Replace(minimalUBL,
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>19.00</TaxAmount>",
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>19.60</TaxAmount>", 1)
-	if hasFacturXRule(Validate([]byte(within), ProfileEN16931), "BR-CO-17") {
+	if hasFacturXRule(Validate(context.Background(), []byte(within), ProfileEN16931), "BR-CO-17") {
 		t.Error("BR-CO-17 must not fire for a 0.60 rounding drift (within the ±1 tolerance)")
 	}
 	beyond := strings.Replace(minimalUBL,
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>19.00</TaxAmount>",
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>21.00</TaxAmount>", 1)
-	if !hasFacturXRule(Validate([]byte(beyond), ProfileEN16931), "BR-CO-17") {
+	if !hasFacturXRule(Validate(context.Background(), []byte(beyond), ProfileEN16931), "BR-CO-17") {
 		t.Error("BR-CO-17 should fire for a 2.00 drift (beyond the ±1 tolerance)")
 	}
 }
@@ -138,7 +139,7 @@ func TestBindingRuleIDsPerSyntax(t *testing.T) {
 		"<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>"+
 			"<SpecifiedTradeSettlementPaymentMeans><TypeCode>30</TypeCode></SpecifiedTradeSettlementPaymentMeans>"+
 			"<SpecifiedTradeSettlementPaymentMeans><TypeCode>58</TypeCode></SpecifiedTradeSettlementPaymentMeans>", 1)
-	v := Validate([]byte(cii), ProfileEN16931)
+	v := Validate(context.Background(), []byte(cii), ProfileEN16931)
 	if !hasFacturXRule(v, "CII-SR-467") {
 		t.Errorf("CII invoice should report CII-SR-467; got %v", v)
 	}
@@ -149,7 +150,7 @@ func TestBindingRuleIDsPerSyntax(t *testing.T) {
 	ubl := strings.Replace(minimalUBL, "</Invoice>",
 		"<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>"+
 			"<PaymentMeans><PaymentMeansCode>58</PaymentMeansCode></PaymentMeans></Invoice>", 1)
-	v = Validate([]byte(ubl), ProfileEN16931)
+	v = Validate(context.Background(), []byte(ubl), ProfileEN16931)
 	if !hasFacturXRule(v, "UBL-SR-47") {
 		t.Errorf("UBL invoice should report UBL-SR-47; got %v", v)
 	}
@@ -164,7 +165,7 @@ func TestValidateUBLCalcMutation(t *testing.T) {
 	broken := bytes.Replace([]byte(minimalUBL),
 		[]byte("<TaxInclusiveAmount>119.00</TaxInclusiveAmount>"),
 		[]byte("<TaxInclusiveAmount>999.00</TaxInclusiveAmount>"), 1)
-	v := Validate(broken, ProfileEN16931)
+	v := Validate(context.Background(), broken, ProfileEN16931)
 	found := false
 	for _, x := range v {
 		if x.Rule == "BR-CO-15" {

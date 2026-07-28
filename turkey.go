@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -17,16 +18,26 @@ import (
 
 // IsTurkishInvoice reports whether the XML is a UBL-TR Invoice.
 func IsTurkishInvoice(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	return err == nil && root.name == "Invoice" && strings.HasPrefix(strings.ToUpper(strings.TrimSpace(root.str("CustomizationID"))), "TR")
 }
 
 // ValidateTurkishInvoice validates a Turkish UBL-TR Invoice against its mandatory
 // structure.
-func ValidateTurkishInvoice(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateTurkishInvoice(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateTurkishInvoice(r, xmlData))
+}
+
+func validateTurkishInvoice(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "Invoice" {
 		return []Violation{{Rule: "TR-root", Message: "the document root shall be an Invoice"}}

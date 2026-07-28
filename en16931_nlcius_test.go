@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,7 +45,7 @@ func TestNLCIUSConformanceSuite(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		nl := brNL(ValidateNLCIUS(data))
+		nl := brNL(ValidateNLCIUS(context.Background(), data))
 		switch {
 		case strings.Contains(base, "_error"):
 			if len(nl) > 0 {

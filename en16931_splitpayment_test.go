@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -24,7 +25,7 @@ func TestSplitPaymentCategoryValid(t *testing.T) {
 	// A domestic Italian split-payment invoice is clean: category B must not be
 	// reported as an invalid VAT category (BR-CL-17/BR-CL-18), and neither B rule
 	// should fire.
-	v := Validate([]byte(splitPaymentUBL()), ProfileEN16931)
+	v := Validate(context.Background(), []byte(splitPaymentUBL()), ProfileEN16931)
 	for _, bad := range []string{"BR-CL-17", "BR-CL-18", "BR-B-01", "BR-B-02"} {
 		if hasFacturXRule(v, bad) {
 			t.Errorf("a valid domestic split-payment invoice should not report %s; got %v", bad, v)
@@ -39,7 +40,7 @@ func TestSplitPaymentNotDomesticItalian(t *testing.T) {
 	// Category B with a non-IT country code (the template's DE seller/buyer) must
 	// trigger BR-B-01, but still not report B as an invalid category.
 	s := strings.ReplaceAll(minimalUBL, "<ID>S</ID>", "<ID>B</ID>")
-	v := Validate([]byte(s), ProfileEN16931)
+	v := Validate(context.Background(), []byte(s), ProfileEN16931)
 	if !hasFacturXRule(v, "BR-B-01") {
 		t.Errorf("a non-Italian split-payment invoice should trigger BR-B-01; got %v", v)
 	}
@@ -53,7 +54,7 @@ func TestSplitPaymentExclusiveWithStandard(t *testing.T) {
 	// breakdown is "Standard rated" (S) violates BR-B-02.
 	s := strings.ReplaceAll(minimalUBL, "<IdentificationCode>DE</IdentificationCode>", "<IdentificationCode>IT</IdentificationCode>")
 	s = strings.Replace(s, "<ClassifiedTaxCategory><ID>S</ID>", "<ClassifiedTaxCategory><ID>B</ID>", 1)
-	v := Validate([]byte(s), ProfileEN16931)
+	v := Validate(context.Background(), []byte(s), ProfileEN16931)
 	if !hasFacturXRule(v, "BR-B-02") {
 		t.Errorf("mixing Split payment (B) and Standard rated (S) should trigger BR-B-02; got %v", v)
 	}

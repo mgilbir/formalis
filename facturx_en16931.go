@@ -1,7 +1,10 @@
 package formalis
 
 import (
+	"bytes"
+	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -44,10 +47,29 @@ func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
 
 // ciiNode is a parsed CII XML element addressed by its local name.
 type ciiNode struct {
-	name     string
-	text     string
+	name string
+	text string
+	// textBuf accumulates character data while the element is open. An element's
+	// text arrives as one xml.CharData token per run between markup, so a node
+	// with many children — or one whose text is split by comments, CDATA
+	// sections or processing instructions — receives many tokens. Appending each
+	// to a []byte and materialising text once, on EndElement, keeps parsing
+	// linear; `text += string(t)` reallocated and recopied the whole run per
+	// token, which is quadratic and let a few megabytes of well-formed XML
+	// (`x<!---->` repeated) occupy the parser for minutes.
+	textBuf  []byte
 	attrs    map[string]string // keyed by local attribute name
 	children []*ciiNode
+}
+
+// closeNode materialises the accumulated character data and releases the
+// accumulator. It is called when an element ends, and for any element left open
+// at end of input.
+func (n *ciiNode) closeNode() {
+	if n.textBuf != nil {
+		n.text = string(n.textBuf)
+		n.textBuf = nil
+	}
 }
 
 // attr returns the value of the named attribute (by local name), or "".
@@ -58,14 +80,33 @@ func (n *ciiNode) attr(name string) string {
 	return n.attrs[name]
 }
 
+// errStopped reports that the run ended before the document was fully parsed —
+// the caller's context was cancelled, or the nesting cap tripped. It is distinct
+// from a parse error because it says nothing about the document: a caller must
+// report it as a RuleLimit finding, never as RuleSyntax. The trip itself is
+// already recorded on the run.
+var errStopped = errors.New("the run stopped before the invoice was fully parsed")
+
+// cancelParseTokens is how many XML tokens the parser covers between
+// cancellation polls. The poll is a non-blocking channel receive, so it is cheap,
+// but the token loop is the hot path for a large document and one poll per token
+// is measurable. A thousand tokens is well under a millisecond of parsing, which
+// keeps the parser's contribution to cancellation latency below the ~10 ms
+// granularity pdf0 works to.
+const cancelParseTokens = 1024
+
 // parseCII parses invoice XML into a local-name element tree, or returns nil and
-// an error if it is not well-formed.
-func parseCII(data []byte) (*ciiNode, error) {
-	dec := xml.NewDecoder(strings.NewReader(string(data)))
+// an error if it is not well-formed. It returns errStopped if r's context ended
+// or the document nested deeper than maxDepth.
+func parseCII(r *run, data []byte) (*ciiNode, error) {
+	dec := xml.NewDecoder(bytes.NewReader(data))
 	dec.CharsetReader = xmlCharsetReader
 	var stack []*ciiNode
 	var root *ciiNode
-	for {
+	for n := 0; ; n++ {
+		if n%cancelParseTokens == 0 && r.stopped() {
+			return nil, errStopped
+		}
 		tok, err := dec.Token()
 		if err != nil {
 			if err.Error() == "EOF" {
@@ -75,6 +116,16 @@ func parseCII(data []byte) (*ciiNode, error) {
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
+			// Every tree walk in this package recurses once per level, and a
+			// goroutine stack overflow is fatal rather than recoverable, so the
+			// depth is capped here — once — instead of in each walk. The parse
+			// stops rather than truncating the tree: a truncated tree would be
+			// handed to the rule engine as if it were whole, which is how a guard
+			// turns into a false accusation.
+			if len(stack) >= maxDepth {
+				r.note("xml-depth", fmt.Sprintf("the invoice XML nests deeper than %d elements", maxDepth))
+				return nil, errStopped
+			}
 			n := &ciiNode{name: t.Name.Local}
 			if len(t.Attr) > 0 {
 				n.attrs = make(map[string]string, len(t.Attr))
@@ -91,13 +142,19 @@ func parseCII(data []byte) (*ciiNode, error) {
 			stack = append(stack, n)
 		case xml.EndElement:
 			if len(stack) > 0 {
+				stack[len(stack)-1].closeNode()
 				stack = stack[:len(stack)-1]
 			}
 		case xml.CharData:
 			if len(stack) > 0 {
-				stack[len(stack)-1].text += string(t)
+				n := stack[len(stack)-1]
+				n.textBuf = append(n.textBuf, t...)
 			}
 		}
+	}
+	// Elements still open at end of input never saw their EndElement.
+	for _, n := range stack {
+		n.closeNode()
 	}
 	if root == nil {
 		return nil, fmt.Errorf("no root element")
@@ -159,18 +216,30 @@ func (n *ciiNode) str(path ...string) string {
 // Invoice (Factur-X/ZUGFeRD) or an OASIS UBL Invoice/CreditNote (Peppol BIS,
 // XRechnung UBL) — detecting which from the root element and mapping it onto the
 // shared semantic model before running the one rule engine (validateEN16931).
-func Validate(xmlData []byte, profile Profile) []Violation {
-	inv, err := parseEN16931(xmlData)
+func Validate(ctx context.Context, xmlData []byte, profile Profile) []Violation {
+	r := newRun(ctx)
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return r.finish(syntaxViolation(err))
 	}
-	return validateEN16931(inv, profile)
+	return r.finish(validateEN16931(r, inv, profile))
+}
+
+// syntaxViolation reports a parse failure as a finding about the document —
+// unless the parse was stopped by the run, in which case it says nothing about
+// the document and the RuleLimit trip already recorded on the run is the whole
+// answer.
+func syntaxViolation(err error) []Violation {
+	if errors.Is(err, errStopped) {
+		return nil
+	}
+	return []Violation{{Rule: RuleSyntax, Message: err.Error()}}
 }
 
 // parseEN16931 parses the invoice XML and maps it onto the semantic model,
 // dispatching on the root element to the CII or UBL mapper.
-func parseEN16931(xmlData []byte) (*en16931Invoice, error) {
-	root, err := parseCII(xmlData)
+func parseEN16931(r *run, xmlData []byte) (*en16931Invoice, error) {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
 		return nil, fmt.Errorf("the invoice XML is not well-formed: %w", err)
 	}

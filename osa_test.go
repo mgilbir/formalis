@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +19,7 @@ func TestOSACorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as OSA", filepath.Base(f))
 			continue
 		}
-		if v := ValidateOSA(data); len(v) != 0 {
+		if v := ValidateOSA(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: expected 0 OSA violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -33,7 +34,7 @@ const minimalOSA = `<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data">
 </InvoiceData>`
 
 func TestOSAMutations(t *testing.T) {
-	if v := ValidateOSA([]byte(minimalOSA)); len(v) != 0 {
+	if v := ValidateOSA(context.Background(), []byte(minimalOSA)); len(v) != 0 {
 		t.Fatalf("baseline OSA not clean: %v", v)
 	}
 	cases := []struct{ name, from, want string }{
@@ -49,8 +50,8 @@ func TestOSAMutations(t *testing.T) {
 			if broken == minimalOSA {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateOSA([]byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOSA([]byte(broken)))
+			if !hasFacturXRule(ValidateOSA(context.Background(), []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOSA(context.Background(), []byte(broken)))
 			}
 		})
 	}

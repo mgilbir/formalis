@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -30,7 +31,8 @@ func zatcaDocRef(root *ciiNode, id string) bool {
 // IsZATCA reports whether the XML is a ZATCA (Fatoora) UBL invoice, identified by
 // its reporting/clearance ProfileID.
 func IsZATCA(xmlData []byte) bool {
-	root, err := parseCII(xmlData)
+	r := newRun(nil)
+	root, err := parseCII(r, xmlData)
 	if err != nil || (root.name != "Invoice" && root.name != "CreditNote") {
 		return false
 	}
@@ -39,10 +41,19 @@ func IsZATCA(xmlData []byte) bool {
 
 // ValidateZATCA validates a Saudi ZATCA UBL invoice against its KSA-mandatory
 // structure.
-func ValidateZATCA(xmlData []byte) []Violation {
-	root, err := parseCII(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateZATCA(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateZATCA(r, xmlData))
+}
+
+func validateZATCA(r *run, xmlData []byte) []Violation {
+	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
 	if root.name != "Invoice" && root.name != "CreditNote" {
 		return []Violation{{Rule: "ZA-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}

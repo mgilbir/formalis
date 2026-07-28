@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"fmt"
 	"regexp"
 	"strings"
@@ -38,12 +39,21 @@ var peppolVATEX = map[string]struct {
 
 // ValidatePeppol validates an invoice XML against the OpenPEPPOL BIS Billing 3.0
 // CIUS: the EN 16931 core plus the Peppol-specific rules. It accepts either syntax.
-func ValidatePeppol(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidatePeppol(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validatePeppol(r, xmlData))
+}
+
+func validatePeppol(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
-	out := validateEN16931(inv, ProfileEN16931)
+	out := validateEN16931(r, inv, ProfileEN16931)
 	out = append(out, validatePeppolRules(inv)...)
 	return out
 }

@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"strconv"
 	"strings"
 	"time"
@@ -45,13 +46,22 @@ var beExemptionReasonCodes = map[string]bool{
 // ValidateUBLBE validates an invoice XML against the Belgian UBL.BE CIUS: the
 // EN 16931 core plus the UBL.BE-specific rules. UBL.BE is a UBL profile; the
 // ubl-BE rules are evaluated against the raw XML tree.
-func ValidateUBLBE(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateUBLBE(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateUBLBE(r, xmlData))
+}
+
+func validateUBLBE(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
-	out := validateEN16931(inv, ProfileEN16931)
-	if root, err := parseCII(xmlData); err == nil {
+	out := validateEN16931(r, inv, ProfileEN16931)
+	if root, err := parseCII(r, xmlData); err == nil {
 		out = append(out, validateUBLBERules(root)...)
 	}
 	return out

@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +22,7 @@ func TestSvefakturaCorpus(t *testing.T) {
 			continue
 		}
 		recognised++
-		if v := ValidateSvefaktura(data); len(v) != 0 {
+		if v := ValidateSvefaktura(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: expected 0 Svefaktura violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -37,7 +38,7 @@ const minimalSvefaktura = `<Invoice xmlns="urn:sfti:documents:BasicInvoice:1:0">
 </Invoice>`
 
 func TestSvefakturaMutations(t *testing.T) {
-	if v := ValidateSvefaktura([]byte(minimalSvefaktura)); len(v) != 0 {
+	if v := ValidateSvefaktura(context.Background(), []byte(minimalSvefaktura)); len(v) != 0 {
 		t.Fatalf("baseline Svefaktura not clean: %v", v)
 	}
 	cases := []struct{ name, from, want string }{
@@ -52,8 +53,8 @@ func TestSvefakturaMutations(t *testing.T) {
 			if broken == minimalSvefaktura {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateSvefaktura([]byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateSvefaktura([]byte(broken)))
+			if !hasFacturXRule(ValidateSvefaktura(context.Background(), []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateSvefaktura(context.Background(), []byte(broken)))
 			}
 		})
 	}

@@ -215,7 +215,7 @@ const vatAmountTolerance = 1.0
 // validateEN16931 applies the EN 16931 core business rules to a mapped invoice.
 // The rule identifiers, messages and tolerances match the values validators and
 // the EN 16931 Schematron report, so the same output holds for either syntax.
-func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
+func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 	var out []Violation
 	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
 	req := func(rule, msg, val string) {
@@ -294,6 +294,13 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// Item detail: gross price (BR-28), item attributes (BR-54), and the item
 	// standard/classification identifiers and their scheme code lists (BR-64/65,
 	// BR-CL-21/13). Each identifier check is conditional on the element's presence.
+	// Between rule groups: one pass over the invoice's lines or breakdowns is
+	// the coarsest unit of work here, so this is the granularity of
+	// cancellation. The findings already gathered are returned — they are
+	// true, just incomplete — and r.finish adds the RuleLimit trip.
+	if r.stopped() {
+		return out
+	}
 	for _, li := range inv.lines {
 		if gp := li.grossPrice; gp != "" {
 			if p, ok := parseAmount(gp); ok && p < 0 {
@@ -389,6 +396,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// BR-IC-11/12: an intra-community supply (category K) breakdown requires a
 	// delivery date or invoicing period, and a Deliver-to country.
 	hasIC := false
+	if r.stopped() {
+		return out
+	}
 	for _, b := range inv.vatBreakdowns {
 		if b.category == "K" {
 			hasIC = true
@@ -485,6 +495,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 			add("BR-CL-14", fmt.Sprintf("%s=%q shall be a valid ISO 3166-1 code", c.term, c.val))
 		}
 	}
+	if r.stopped() {
+		return out
+	}
 	for _, li := range inv.lines {
 		if oc := li.originCountry; oc != "" && !en16931Countries[oc] {
 			add("BR-CL-15", fmt.Sprintf("Item country of origin (BT-159=%q) shall be a valid ISO 3166-1 code", oc))
@@ -505,6 +518,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 		add("BR-CL-25", fmt.Sprintf("Buyer electronic address scheme (BT-49=%q) is not a valid EAS value", s))
 	}
 	// BR-CL-22: the VAT exemption reason code (BT-121) against the CEF VATEX list.
+	if r.stopped() {
+		return out
+	}
 	for _, tt := range inv.vatBreakdowns {
 		if rc := tt.reasonCode; rc != "" && !en16931VATEX[rc] {
 			add("BR-CL-22", fmt.Sprintf("VAT exemption reason code (BT-121=%q) is not a valid VATEX value", rc))
@@ -528,12 +544,21 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 		dec("BR-DEC-17", "Rounding amount (BT-114)", inv.totals.payableRounding)
 		dec("BR-DEC-18", "Amount due for payment (BT-115)", inv.totals.duePayable)
 	}
+	if r.stopped() {
+		return out
+	}
 	for _, tt := range inv.vatBreakdowns {
 		dec("BR-DEC-19", "VAT category taxable amount (BT-116)", tt.basis)
 		dec("BR-DEC-20", "VAT category tax amount (BT-117)", tt.calc)
 	}
+	if r.stopped() {
+		return out
+	}
 	for _, li := range inv.lines {
 		dec("BR-DEC-23", "Invoice line net amount (BT-131)", li.netAmount)
+	}
+	if r.stopped() {
+		return out
 	}
 	for _, ac := range inv.allowCharges {
 		if ac.isCharge {
@@ -560,6 +585,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// VAT breakdown (BG-23) rules, applied to each entry present, so profiles
 	// without a breakdown (MINIMUM) are naturally skipped.
 	var vatTotal float64
+	if r.stopped() {
+		return out
+	}
 	for _, tt := range inv.vatBreakdowns {
 		if tt.basis == "" {
 			add("BR-45", "Each VAT breakdown (BG-23) shall have a VAT category taxable amount (BT-116)")
@@ -592,7 +620,7 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// VAT category rules (BR-S/Z/E/AE/IC/G/O-*): breakdown existence, per-line and
 	// per-allowance/charge rate constraints, taxable-amount sums, tax-zero, and
 	// exemption-reason presence.
-	validateVATCategories(inv, add)
+	validateVATCategories(r, inv, add)
 	// BR-CO-14: Invoice total VAT amount (BT-110) = sum of VAT category tax
 	// amounts (BT-117), when a breakdown is present.
 	if len(inv.vatBreakdowns) > 0 {
@@ -602,6 +630,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	}
 
 	// Document-level allowance (BG-20) and charge (BG-21) rules.
+	if r.stopped() {
+		return out
+	}
 	for _, ac := range inv.allowCharges {
 		if ac.isCharge {
 			if ac.amount == "" {
@@ -639,10 +670,16 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// as another line's parent — aggregates its sub-lines and need not carry an
 	// invoiced quantity or item price, so those two are checked only on leaves.
 	grouping := map[string]bool{}
+	if r.stopped() {
+		return out
+	}
 	for _, li := range inv.lines {
 		if li.parentLineID != "" {
 			grouping[li.parentLineID] = true
 		}
+	}
+	if r.stopped() {
+		return out
 	}
 	for i, li := range inv.lines {
 		if li.lineID == "" {
@@ -703,6 +740,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// so only top-level lines are summed.
 	if len(inv.lines) > 0 && inv.hasTotals {
 		var lineSum float64
+		if r.stopped() {
+			return out
+		}
 		for _, li := range inv.lines {
 			if li.parentLineID != "" {
 				continue
@@ -736,6 +776,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 	// outside the EXTENDED profile.
 	if inv.hasTotals && profile != ProfileExtended {
 		var allowSum, chargeSum float64
+		if r.stopped() {
+			return out
+		}
 		for _, ac := range inv.allowCharges {
 			if v, ok := parseAmount(ac.amount); ok {
 				if ac.isCharge {
@@ -770,6 +813,9 @@ func validateEN16931(inv *en16931Invoice, profile Profile) []Violation {
 		}
 	}
 	checkPeriod("BR-CO-19", "BR-29", inv.period)
+	if r.stopped() {
+		return out
+	}
 	for _, li := range inv.lines {
 		checkPeriod("BR-CO-20", "BR-30", li.period)
 	}

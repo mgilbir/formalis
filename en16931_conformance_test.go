@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"encoding/xml"
 	"os"
 	"path/filepath"
@@ -112,7 +113,7 @@ func TestEN16931ConformanceSuite(t *testing.T) {
 				harnessErr++
 				continue
 			}
-			vs := Validate([]byte(doc), ProfileEN16931)
+			vs := Validate(context.Background(), []byte(doc), ProfileEN16931)
 			reports := hasFacturXRule(vs, rule)
 			if isError {
 				errorSeen[rule] = true

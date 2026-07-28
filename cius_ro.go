@@ -1,6 +1,9 @@
 package formalis
 
-import "regexp"
+import (
+	"context"
+	"regexp"
+)
 
 // This file validates the Romanian CIUS-RO (RO_CIUS / RO e-Factura, the ANAF
 // national profile) on top of the EN 16931 core. CIUS-RO makes several EN 16931-
@@ -61,12 +64,21 @@ func roValidSubdivision(s string) bool {
 
 // ValidateCIUSRO validates an invoice XML against the Romanian CIUS-RO: the
 // EN 16931 core plus the CIUS-RO mandatory-term rules. It accepts either syntax.
-func ValidateCIUSRO(xmlData []byte) []Violation {
-	inv, err := parseEN16931(xmlData)
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
+func ValidateCIUSRO(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	return r.finish(validateCIUSRO(r, xmlData))
+}
+
+func validateCIUSRO(r *run, xmlData []byte) []Violation {
+	inv, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return []Violation{{Rule: "syntax", Message: err.Error()}}
+		return syntaxViolation(err)
 	}
-	out := validateEN16931(inv, ProfileEN16931)
+	out := validateEN16931(r, inv, ProfileEN16931)
 	out = append(out, validateCIUSRORules(inv)...)
 	return out
 }

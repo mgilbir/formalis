@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -45,7 +46,7 @@ func withAllowanceCharge(ac string) string {
 }
 
 func TestValidateFacturXInvoiceValid(t *testing.T) {
-	if v := Validate([]byte(validCII), ProfileEN16931); len(v) != 0 {
+	if v := Validate(context.Background(), []byte(validCII), ProfileEN16931); len(v) != 0 {
 		t.Fatalf("valid CII reported %d violation(s): %v", len(v), v)
 	}
 }
@@ -94,7 +95,7 @@ func TestValidateFacturXInvoiceViolations(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Validate([]byte(tc.xml), ProfileEN16931)
+			v := Validate(context.Background(), []byte(tc.xml), ProfileEN16931)
 			found := false
 			for _, e := range v {
 				if e.Rule == tc.rule {
@@ -154,13 +155,13 @@ const subLineCII = `<CrossIndustryInvoice>
 </CrossIndustryInvoice>`
 
 func TestValidateFacturXSubLines(t *testing.T) {
-	if v := Validate([]byte(subLineCII), ProfileExtended); len(v) != 0 {
+	if v := Validate(context.Background(), []byte(subLineCII), ProfileExtended); len(v) != 0 {
 		t.Fatalf("valid sub-invoice-line document reported %d violation(s): %v", len(v), v)
 	}
 	// Breaking a child amount so the top-level rollup no longer matches must fire.
 	bad := strings.Replace(subLineCII, "<LineTotalAmount>100.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", "<LineTotalAmount>90.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", 1)
 	found := false
-	for _, e := range Validate([]byte(bad), ProfileExtended) {
+	for _, e := range Validate(context.Background(), []byte(bad), ProfileExtended) {
 		if e.Rule == "BR-CO-10" {
 			found = true
 		}

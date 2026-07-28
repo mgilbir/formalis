@@ -1,6 +1,7 @@
 package formalis
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -45,7 +46,7 @@ const minimalPeppolUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 </Invoice>`
 
 func TestValidatePeppolBaseline(t *testing.T) {
-	if v := ValidatePeppol([]byte(minimalPeppolUBL)); len(v) != 0 {
+	if v := ValidatePeppol(context.Background(), []byte(minimalPeppolUBL)); len(v) != 0 {
 		t.Fatalf("baseline Peppol not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 }
@@ -64,7 +65,7 @@ func TestValidatePeppolRules(t *testing.T) {
 			if broken == minimalPeppolUBL {
 				t.Fatalf("mutation %q not found", tc.from)
 			}
-			v := ValidatePeppol([]byte(broken))
+			v := ValidatePeppol(context.Background(), []byte(broken))
 			found := false
 			for _, x := range v {
 				if x.Rule == tc.rule {
@@ -97,7 +98,7 @@ func TestValidatePeppolCorpus(t *testing.T) {
 			return nil
 		}
 		files++
-		if v := ValidatePeppol(data); len(v) != 0 {
+		if v := ValidatePeppol(context.Background(), data); len(v) != 0 {
 			t.Errorf("%s: conforming Peppol reported %d violations (first: %s: %s)",
 				filepath.Base(p), len(v), v[0].Rule, v[0].Message)
 		} else {
