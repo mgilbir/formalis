@@ -597,11 +597,6 @@ func mapCII(root *ciiNode) *en16931Invoice {
 			inv.cardPANs = append(inv.cardPANs, card.str("ID"))
 		}
 	}
-	for _, pr := range settle.orNil().all("PaymentReference") {
-		if t := strings.TrimSpace(pr.text); t != "" {
-			inv.paymentIDs = append(inv.paymentIDs, t)
-		}
-	}
 	inv.taxCurrency = settle.orNil().str("TaxCurrencyCode")
 	if inv.taxCurrency != "" {
 		for _, ta := range sum.orNil().all("TaxTotalAmount") {
@@ -771,27 +766,6 @@ func mapCII(root *ciiNode) *en16931Invoice {
 	return inv
 }
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
-
-// distinct returns the number of distinct non-empty values in s.
-func distinct(s []string) int {
-	seen := map[string]bool{}
-	for _, v := range s {
-		if v != "" {
-			seen[v] = true
-		}
-	}
-	return len(seen)
-}
-
-// allEqual reports whether every value in s is equal (vacuously true for 0 or 1).
-func allEqual(s []string) bool {
-	for _, v := range s {
-		if v != s[0] {
-			return false
-		}
-	}
-	return true
-}
 
 // normDate reduces a date to a fixed-width comparable calendar date (YYYYMMDD)
 // and reports whether it could read one, so the CII and UBL forms compare
@@ -1248,11 +1222,6 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	inv.buyerSubentity = buyer.str("PostalAddress", "CountrySubentity")
 	inv.deliverToSubentity = root.str("Delivery", "DeliveryLocation", "Address", "CountrySubentity")
 	inv.taxRepSubentity = root.str("TaxRepresentativeParty", "PostalAddress", "CountrySubentity")
-	for _, pm := range root.all("PaymentMeans") {
-		if id := pm.str("PaymentID"); id != "" {
-			inv.paymentIDs = append(inv.paymentIDs, id)
-		}
-	}
 	// BT-21, the Invoice note subject code (BR-CL-08). UBL has no element for it:
 	// the binding prefixes the note text with "#CODE#", and the CEN rule reads the
 	// code back out of cbc:Note on the document element only — a note on an

@@ -125,8 +125,7 @@ type en16931Invoice struct {
 	creditorID         string // BT-90 Bank assigned creditor identifier
 	debitedAccount     string // BT-91 Debited account identifier
 
-	paymentIDs        []string // BT-83 payment identifiers
-	amountDecimalsBad bool     // an amount (any @currencyID element) exceeds two decimals
+	amountDecimalsBad bool // an amount (any @currencyID element) exceeds two decimals
 
 	hasTotals bool           // whether a document monetary summation (BG-22) is present
 	totals    monetaryTotals // BG-22 Document totals
@@ -230,9 +229,10 @@ const vatAmountTolerance = 1.0
 // It takes the parsed document rather than the model alone because EN 16931 is
 // two kinds of statement, not one. The BR-* rules are about business terms and
 // are evaluated on the syntax-neutral model, which is the whole point of the
-// model. CEN also publishes a syntax binding per syntax — UBL-SR-*, CII-SR-* —
-// whose rules are about the shape of the XML, and those are evaluated on the
-// tree, in en16931_ubl_rules.go, which says why at greater length.
+// model. CEN also publishes a syntax binding per syntax — UBL-SR-* for UBL,
+// CII-SR-* and CII-DT-* for CII — whose rules are about the shape of the XML,
+// and those are evaluated on the tree, in en16931_ubl_rules.go and
+// en16931_cii_rules.go, which say why at greater length.
 func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 	inv := p.inv
 	var out []Violation
@@ -490,8 +490,8 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 	// Datatype rules from the UBL binding that the model can answer. These are
 	// UBL-only: the reported identifier is a UBL one, and a CII invoice does not
 	// report them, because CII bounds decimals through the shared BR-DEC rules
-	// and states its attribute requirements as CII-DT-* rules this package does
-	// not yet evaluate. Coverage(SourceEN16931) says so.
+	// and states its attribute requirements as CII-DT-* rules, which are
+	// evaluated against the tree in en16931_cii_rules.go.
 	//
 	// The rest of the UBL binding — the 54 fatal UBL-SR-* cardinality rules — is
 	// not here. Those are statements about the UBL document tree rather than
@@ -513,20 +513,6 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 			ublOnly("UBL-DT-07", "A binary object (attachment) shall carry a file name attribute")
 		}
 	}
-	// The two CII syntax-binding rules this package evaluates. Their UBL
-	// counterparts — UBL-SR-44 and UBL-SR-47 — say the same thing about the same
-	// business terms, but they are counted over the UBL tree rather than over the
-	// model, so they live with the rest of the UBL binding and only the CII half
-	// is stated here.
-	if inv.syntax == "CII" {
-		if distinct(inv.paymentIDs) > 1 {
-			add("CII-SR-469", "The Payment reference (BT-83) shall occur at most once")
-		}
-		if !allEqual(inv.paymentMeans) {
-			add("CII-SR-467", "All Payment means type codes (BT-81) shall have the same value")
-		}
-	}
-
 	// Full-invoice profiles carry lines and a line-net total; the head-only
 	// Factur-X CIUS (MINIMUM, BASIC WL) legitimately omit both, so gate the
 	// line-presence rules to profiles that carry lines.
@@ -925,10 +911,14 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 		}
 	}
 
-	// The UBL syntax binding. It reads the tree, is a no-op on a CII document,
-	// and is stamped with this same Source because CEN publishes the binding as
-	// a normative part of EN 16931.
+	// The two syntax bindings. Each reads the tree, each is a no-op on a document
+	// in the other syntax, and both are stamped with this same Source because CEN
+	// publishes the bindings as normative parts of EN 16931.
 	out = append(out, validateUBLSyntaxRules(r, p.root)...)
+	if r.stopped() {
+		return out
+	}
+	out = append(out, validateCIISyntaxRules(r, p.root)...)
 
 	return out
 }

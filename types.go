@@ -195,7 +195,8 @@ func CIUSFor(level string) (CIUS, bool) {
 //
 // Three judgement calls are recorded here because they are not obvious:
 //
-//   - The UBL and CII syntax-binding rules (UBL-DT-*, UBL-SR-*, CII-SR-*) carry
+//   - The UBL and CII syntax-binding rules (UBL-DT-*, UBL-SR-*, CII-SR-*,
+//     CII-DT-*) carry
 //     SourceEN16931, not a Source of their own. Source names the *authority*, and
 //     CEN publishes the bindings (EN 16931-3-2, EN 16931-3-3) as normative parts
 //     of the same standard as the semantic model (EN 16931-1); they arrive in the
@@ -235,7 +236,8 @@ const (
 	SourceNone Source = ""
 	// SourceEN16931 is CEN's EN 16931 — the semantic model's core business rules
 	// (BR-*, BR-CO-*, BR-CL-*, BR-DEC-*, BR-IC-*, and the VAT category families)
-	// together with the UBL and CII syntax bindings (UBL-DT-*, UBL-SR-*, CII-SR-*).
+	// together with the UBL and CII syntax bindings (UBL-DT-*, UBL-SR-*, CII-SR-*,
+	// CII-DT-*).
 	SourceEN16931 Source = "EN 16931"
 	// SourceXRechnung is the German KoSIT XRechnung CIUS (BR-DE-*).
 	SourceXRechnung Source = "XRechnung"
