@@ -1,6 +1,9 @@
 package formalis
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 // This file evaluates the fatal half of CEN's UBL syntax binding — the
 // UBL-SR-* rules of EN16931-UBL-syntax.sch — against the parsed element tree.
@@ -68,6 +71,10 @@ func validateUBLSyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ublSyntaxPaymentRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ublSyntaxLineRules(g, add)
 	return out
 }
 
@@ -584,4 +591,40 @@ func ublChargeIndicator(ac *ciiNode) int {
 		return ublIndicatorAllowance
 	}
 	return ublIndicatorNeither
+}
+
+// ublSyntaxLineRules are the rules whose context is an invoice or credit note
+// line.
+func ublSyntaxLineRules(g *ublSyntaxNodes, add func(rule, msg string)) {
+	for _, ln := range g.lines {
+		for _, c := range []struct {
+			rule string
+			term string
+			path []string
+		}{
+			// count(cbc:Note) <= 1
+			{"UBL-SR-34", "The Invoice line note (BT-127)", []string{"Note"}},
+			// count(cac:OrderLineReference/cbc:LineID) <= 1
+			{"UBL-SR-35", "The Referenced purchase order line reference (BT-132)", []string{"OrderLineReference", "LineID"}},
+			// count(cac:InvoicePeriod) <= 1
+			{"UBL-SR-36", "The Invoice line period (BG-26)", []string{"InvoicePeriod"}},
+			// count(cac:Price/cac:AllowanceCharge/cbc:Amount) <= 1
+			{"UBL-SR-37", "The Item price discount (BT-147)", []string{"Price", "AllowanceCharge", "Amount"}},
+			// count(cac:Item/cbc:Description) <= 1
+			{"UBL-SR-50", "The Item description (BT-154)", []string{"Item", "Description"}},
+			// count(cac:DocumentReference) <= 1
+			{"UBL-SR-52", "The Invoice line object identifier (BT-128)", []string{"DocumentReference"}},
+		} {
+			if atMostOnce(ln, c.path...) {
+				add(c.rule, c.term+" shall occur at most once per invoice line")
+			}
+		}
+		// UBL-SR-48: count(cac:Item/cac:ClassifiedTaxCategory) = 1. The only
+		// UBL-SR-* rule that bounds a term from below as well as from above: a
+		// line's VAT category (BT-151) and rate (BT-152) are mandatory, and a
+		// second classified tax category would make the line's VAT ambiguous.
+		if n := countAt(ln, "Item", "ClassifiedTaxCategory"); n != 1 {
+			add("UBL-SR-48", fmt.Sprintf("An invoice line shall have exactly one classified tax category (BT-151), not %d", n))
+		}
+	}
 }

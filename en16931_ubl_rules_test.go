@@ -323,6 +323,43 @@ func TestUBLSyntaxRules(t *testing.T) {
 			`<TaxExemptionReason>Reverse charge</TaxExemptionReason>`), "UBL-SR-32", false},
 		{"UBL-SR-32 two VAT exemption reasons", ublWith(t, ublAtCategory,
 			`<TaxExemptionReason>Reverse charge</TaxExemptionReason><TaxExemptionReason>Export</TaxExemptionReason>`), "UBL-SR-32", true},
+
+		// --- Invoice and credit note lines --------------------------------
+		{"UBL-SR-34 one line note", ublWith(t, ublAtLine, `<Note>Backordered</Note>`), "UBL-SR-34", false},
+		{"UBL-SR-34 two line notes", ublWith(t, ublAtLine, `<Note>Backordered</Note><Note>Partial</Note>`), "UBL-SR-34", true},
+
+		{"UBL-SR-35 one order line reference", ublWith(t, ublAtLine,
+			`<OrderLineReference><LineID>10</LineID></OrderLineReference>`), "UBL-SR-35", false},
+		{"UBL-SR-35 two order line references", ublWith(t, ublAtLine,
+			`<OrderLineReference><LineID>10</LineID></OrderLineReference><OrderLineReference><LineID>20</LineID></OrderLineReference>`), "UBL-SR-35", true},
+
+		{"UBL-SR-36 one line period", ublWith(t, ublAtLine,
+			`<InvoicePeriod><StartDate>2024-01-01</StartDate><EndDate>2024-01-31</EndDate></InvoicePeriod>`), "UBL-SR-36", false},
+		{"UBL-SR-36 two line periods", ublWith(t, ublAtLine,
+			`<InvoicePeriod><StartDate>2024-01-01</StartDate><EndDate>2024-01-31</EndDate></InvoicePeriod>`+
+				`<InvoicePeriod><StartDate>2024-02-01</StartDate><EndDate>2024-02-29</EndDate></InvoicePeriod>`), "UBL-SR-36", true},
+
+		{"UBL-SR-37 one item price discount", ublWith(t, ublAtPrice,
+			`<AllowanceCharge><ChargeIndicator>false</ChargeIndicator><Amount>5.00</Amount><BaseAmount>105.00</BaseAmount></AllowanceCharge>`), "UBL-SR-37", false},
+		{"UBL-SR-37 two item price discounts", ublWith(t, ublAtPrice,
+			`<AllowanceCharge><ChargeIndicator>false</ChargeIndicator><Amount>5.00</Amount><BaseAmount>105.00</BaseAmount></AllowanceCharge>`+
+				`<AllowanceCharge><ChargeIndicator>false</ChargeIndicator><Amount>2.00</Amount><BaseAmount>107.00</BaseAmount></AllowanceCharge>`), "UBL-SR-37", true},
+
+		{"UBL-SR-48 exactly one classified tax category", minimalUBL, "UBL-SR-48", false},
+		{"UBL-SR-48 two classified tax categories", ublWith(t, ublAtItem,
+			`<ClassifiedTaxCategory><ID>Z</ID><Percent>0</Percent></ClassifiedTaxCategory>`), "UBL-SR-48", true},
+		{"UBL-SR-48 no classified tax category", mutate(t, minimalUBL,
+			`<ClassifiedTaxCategory><ID>S</ID><Percent>19</Percent></ClassifiedTaxCategory>`, ``), "UBL-SR-48", true},
+
+		{"UBL-SR-50 one item description", ublWith(t, ublAtItem, `<Description>A widget</Description>`), "UBL-SR-50", false},
+		{"UBL-SR-50 two item descriptions", ublWith(t, ublAtItem,
+			`<Description>A widget</Description><Description>Ein Widget</Description>`), "UBL-SR-50", true},
+
+		{"UBL-SR-52 one line document reference", ublWith(t, ublAtLine,
+			`<DocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></DocumentReference>`), "UBL-SR-52", false},
+		{"UBL-SR-52 two line document references", ublWith(t, ublAtLine,
+			`<DocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></DocumentReference>`+
+				`<DocumentReference><ID schemeID="AAB">OBJ-2</ID><DocumentTypeCode>130</DocumentTypeCode></DocumentReference>`), "UBL-SR-52", true},
 	}
 	runRuleCases(t, cases)
 }
