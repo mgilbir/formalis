@@ -3,6 +3,7 @@ package formalis
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // This file holds the syntax-neutral EN 16931 semantic model and the business-
@@ -106,11 +107,13 @@ type en16931Invoice struct {
 	deliverToPresent     bool   // BG-15 Deliver-to address present
 	deliverToCountry     string // BT-80 Deliver-to country code
 
-	paymentInstrPresent  bool   // BG-16 Payment instructions present
-	creditAccountPresent bool   // BG-17 Credit transfer (payee financial account) present
-	creditAccountID      string // BT-84 Payment account identifier
-	taxCurrency          string // BT-6 VAT accounting currency code
-	vatInTaxCurrency     bool   // BT-111 VAT total in accounting currency present
+	paymentInstrPresent  bool     // BG-16 Payment instructions present
+	creditAccountPresent bool     // BG-17 Credit transfer (payee financial account) present
+	creditAccountID      string   // BT-84 Payment account identifier
+	cardPANs             []string // BT-87 Payment card primary account numbers
+	taxCurrency          string   // BT-6 VAT accounting currency code
+	vatInTaxCurrency     bool     // BT-111 VAT total in accounting currency present
+	vatInTaxCurrencyAmt  string   // BT-111 VAT total in accounting currency, as written
 
 	period invoicePeriod // BG-14 Invoicing period
 
@@ -287,6 +290,28 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 		if (pm == "30" || pm == "58") && inv.creditAccountID == "" {
 			add("BR-61", "A credit-transfer payment means (BT-81) requires a Payment account identifier (BT-84)")
 			break
+		}
+	}
+	// BR-51: an invoice shall not carry a full payment card number (BT-87). The
+	// PCI Security Standards Council permits the first six and last four digits,
+	// so the CEN test is a length one: at most ten characters after
+	// normalisation.
+	//
+	// This is reported for CII only, and that asymmetry is CEN's rather than this
+	// package's. The rule is one assertion in the abstract model, but the two
+	// bindings give it two different severities: EN16931-CII-model.sch flags it
+	// fatal, EN16931-UBL-model.sch flags it warning, and the CEN unit-test suite
+	// tags the failing UBL fragment <warning>, not <error>. This package reports
+	// what an authority makes fatal and names its advisory rules in Coverage
+	// instead (NLCIUS's BR-NL-19..35 are the precedent), so the UBL half stays in
+	// the table and the CII half is checked. Reporting a UBL invoice for a rule
+	// KoSIT and the CEN validators merely warn on would be an over-report on a
+	// document those validators pass.
+	if inv.syntax == "CII" {
+		for _, pan := range inv.cardPANs {
+			if len(strings.Join(strings.Fields(pan), " ")) > 10 {
+				add("BR-51", "An Invoice shall not contain a full payment card primary account number (BT-87); at most the first 6 and last 4 digits may be shown")
+			}
 		}
 	}
 	// BR-53: a VAT accounting currency (BT-6) requires the VAT total in that

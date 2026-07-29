@@ -68,9 +68,60 @@ func runRuleCases(t *testing.T, cases []ruleCase) {
 	}
 }
 
+// withCIISettlement injects XML immediately after the CII invoice currency code,
+// i.e. into ApplicableHeaderTradeSettlement.
+func withCIISettlement(x string) string {
+	return strings.Replace(validCII, "<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>",
+		"<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>"+x, 1)
+}
+
 // withUBLBody injects XML immediately before the UBL cac:TaxTotal.
 func withUBLBody(x string) string {
 	return strings.Replace(minimalUBL, "<TaxTotal>", x+"<TaxTotal>", 1)
+}
+
+// ciiCard wraps a payment card primary account number (BT-87) in the CII payment
+// means group. Type code 48 is "bank card", so the group does not additionally
+// trip BR-49 or BR-61.
+func ciiCard(pan string) string {
+	return withCIISettlement(`<SpecifiedTradeSettlementPaymentMeans><TypeCode>48</TypeCode>` +
+		`<ApplicableTradeSettlementFinancialCard><ID>` + pan + `</ID></ApplicableTradeSettlementFinancialCard>` +
+		`</SpecifiedTradeSettlementPaymentMeans>`)
+}
+
+// ublCard is the UBL spelling of the same thing.
+func ublCard(pan string) string {
+	return withUBLBody(`<PaymentMeans><PaymentMeansCode>48</PaymentMeansCode>` +
+		`<CardAccount><PrimaryAccountNumberID>` + pan + `</PrimaryAccountNumberID></CardAccount></PaymentMeans>`)
+}
+
+// TestBR51CardNumber covers the card-number length rule, including the part of
+// it this package deliberately does not report.
+//
+// BR-51 is one assertion in the abstract EN 16931 model with two severities in
+// the two bindings: EN16931-CII-model.sch flags it fatal and EN16931-UBL-model.sch
+// flags it warning, which is why the CEN suite's failing fragment for it is
+// tagged <warning> rather than <error>. This package reports what an authority
+// makes fatal, so the CII half is checked and the UBL half is named in
+// Coverage(SourceEN16931).
+//
+// The last case is why that distinction is not pedantry. A PAN masked the way
+// PCI DSS asks for it — twelve X's and the last four digits — is sixteen
+// characters long, so CEN's length test reports it. On a UBL invoice that is a
+// warning about a document that did the right thing; reporting it as a violation
+// would be an accusation the reference validator does not make.
+func TestBR51CardNumber(t *testing.T) {
+	runRuleCases(t, []ruleCase{
+		{"CII truncated PAN", ciiCard("123456"), "BR-51", false},
+		{"CII ten characters is the limit", ciiCard("1234567890"), "BR-51", false},
+		{"CII eleven characters is a full PAN", ciiCard("12345678901"), "BR-51", true},
+		// The CEN test normalises whitespace before measuring, so a grouped PAN
+		// is measured on its collapsed form (13 characters here, not 15).
+		{"CII grouped digits are normalised, not stripped", ciiCard(" 1234 5678 901 "), "BR-51", true},
+		{"CII padded short PAN normalises to six", ciiCard("   123456   "), "BR-51", false},
+		{"UBL full PAN is advisory there, so not reported", ublCard("12345678901"), "BR-51", false},
+		{"UBL PCI-masked PAN is not reported", ublCard("XXXXXXXXXXXX1234"), "BR-51", false},
+	})
 }
 
 // TestBRCL08NoteSubjectCode covers the Invoice note subject code (BT-21) against

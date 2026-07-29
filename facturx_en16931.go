@@ -601,6 +601,11 @@ func mapCII(root *ciiNode) *en16931Invoice {
 				inv.creditAccountID = id
 			}
 		}
+		// BT-87, the payment card primary account number (BR-51). The CII binding
+		// carries it as the card's ram:ID.
+		for _, card := range pm.all("ApplicableTradeSettlementFinancialCard") {
+			inv.cardPANs = append(inv.cardPANs, card.str("ID"))
+		}
 	}
 	for _, pr := range settle.orNil().all("PaymentReference") {
 		if t := strings.TrimSpace(pr.text); t != "" {
@@ -1083,6 +1088,11 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 			if id := acc.str("ID"); id != "" {
 				inv.creditAccountID = id
 			}
+		}
+		// BT-87, the payment card primary account number (BR-51). The UBL binding
+		// carries it as cac:CardAccount/cbc:PrimaryAccountNumberID.
+		for _, card := range pm.all("CardAccount") {
+			inv.cardPANs = append(inv.cardPANs, card.str("PrimaryAccountNumberID"))
 		}
 	}
 	inv.taxCurrency = root.str("TaxCurrencyCode")
