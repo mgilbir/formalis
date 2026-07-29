@@ -146,10 +146,9 @@ func validateVATCategories(r *run, inv *en16931Invoice, add func(rule, msg strin
 	// line net amounts + charges - allowances of the same category (and, for the
 	// standard category, the same rate). Checked only when it can be computed
 	// reliably: at least one line, every line/allowance/charge carrying a
-	// category, no EXTENDED sub-line roll-up, and no document-level allowances or
-	// charges (which some producers carry only in the summation totals, not as
-	// itemizable BG-20/21 entries, so summing entries would understate the base).
-	if len(inv.lines) > 0 && vatCategoriesComplete(inv) && !hasSubLines(inv) && !hasDocAllowanceCharge(inv) {
+	// category, no EXTENDED sub-line roll-up, and every document-level allowance
+	// and charge itemized as a BG-20/21 entry.
+	if len(inv.lines) > 0 && vatCategoriesComplete(inv) && !hasSubLines(inv) && docAllowanceChargesItemized(inv) {
 		validateVATTaxableSums(r, inv, add)
 	}
 
@@ -319,20 +318,47 @@ func hasSubLines(inv *en16931Invoice) bool {
 	return false
 }
 
-// hasDocAllowanceCharge reports whether the invoice carries any document-level
-// allowance or charge, whether as a BG-20/21 entry or only via a non-zero
-// allowance/charge summation total (BT-107/BT-108).
-func hasDocAllowanceCharge(inv *en16931Invoice) bool {
-	if len(inv.allowCharges) > 0 {
-		return true
+// docAllowanceChargesItemized reports whether every document-level allowance and
+// charge the invoice claims is present as an itemizable BG-20/21 entry — the
+// precondition for the BR-{fam}-08 sums, which add charges and subtract
+// allowances per VAT category.
+//
+// The operands of that sum are the BG-20/21 entries. Some producers — EXTENDED
+// in particular — carry allowance and charge amounts only in the summation
+// totals BT-107/BT-108, with no entry to attribute to a category, and summing
+// the entries then understates the taxable base and accuses a conforming invoice
+// of BR-{fam}-08. So the question the gate has to answer is not "are there any
+// allowances or charges" but "do the entries account for the totals", which is
+// the same arithmetic BR-CO-11/BR-CO-12 perform in the rule engine.
+//
+// Both totals absent and no entries is the common case and passes, as before.
+// A total with no entries fails, as before. An invoice whose entries sum to its
+// totals now passes, where the previous gate — len(inv.allowCharges) > 0 —
+// rejected it, taking the whole allowance/charge arm of the sum with it: that
+// arm was unreachable, so the rule's own message promised arithmetic it could
+// not perform.
+//
+// An entry whose amount will not parse is not accounted for by anything, so the
+// gate closes rather than guessing; BR-31/BR-36 report the missing amount.
+func docAllowanceChargesItemized(inv *en16931Invoice) bool {
+	var allowSum, chargeSum float64
+	for _, ac := range inv.allowCharges {
+		v, ok := parseAmount(ac.amount)
+		if !ok {
+			return false
+		}
+		if ac.isCharge {
+			chargeSum += v
+		} else {
+			allowSum += v
+		}
 	}
-	if v, ok := parseAmount(inv.totals.allowanceTotal); ok && math.Abs(v) > 0.005 {
-		return true
-	}
-	if v, ok := parseAmount(inv.totals.chargeTotal); ok && math.Abs(v) > 0.005 {
-		return true
-	}
-	return false
+	// An absent total is zero: BR-CO-13 already reads it that way, and an invoice
+	// with no allowances and no BT-107 is the shape this gate must let through.
+	allowTotal, _ := parseAmount(inv.totals.allowanceTotal)
+	chargeTotal, _ := parseAmount(inv.totals.chargeTotal)
+	return math.Abs(round2(allowSum)-allowTotal) <= 0.005 &&
+		math.Abs(round2(chargeSum)-chargeTotal) <= 0.005
 }
 
 // validateVATTaxableSums checks BR-{fam}-08 for every breakdown of a known
