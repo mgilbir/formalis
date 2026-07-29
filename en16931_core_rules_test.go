@@ -186,3 +186,180 @@ func TestBRCL26DeliverToLocationScheme(t *testing.T) {
 			`<Delivery><DeliveryLocation><ID>7300010000001</ID></DeliveryLocation></Delivery>`), "BR-CL-26", false},
 	})
 }
+
+// ciiDocAllowanceCharge builds a document-level allowance or charge carrying a
+// base amount (BT-93 / BT-100). The actual amount is zero so the invoice totals
+// stay consistent.
+func ciiDocAllowanceCharge(charge bool, base string) string {
+	ind := "false"
+	if charge {
+		ind = "true"
+	}
+	return withCIISettlement(`<SpecifiedTradeAllowanceCharge><ChargeIndicator><Indicator>` + ind +
+		`</Indicator></ChargeIndicator><ActualAmount>0.00</ActualAmount><BasisAmount>` + base +
+		`</BasisAmount><Reason>r</Reason><CategoryTradeTax><CategoryCode>S</CategoryCode>` +
+		`<RateApplicablePercent>20.00</RateApplicablePercent></CategoryTradeTax></SpecifiedTradeAllowanceCharge>`)
+}
+
+// ublDocAllowanceCharge is the UBL spelling of the same thing.
+func ublDocAllowanceCharge(charge bool, base string) string {
+	ind := "false"
+	if charge {
+		ind = "true"
+	}
+	return withUBLBody(`<AllowanceCharge><ChargeIndicator>` + ind +
+		`</ChargeIndicator><AllowanceChargeReason>r</AllowanceChargeReason><Amount>0.00</Amount><BaseAmount>` +
+		base + `</BaseAmount><TaxCategory><ID>S</ID><Percent>19</Percent></TaxCategory></AllowanceCharge>`)
+}
+
+// TestBRDEC02And06DocumentAllowanceChargeBase covers the two-decimal limits on
+// the document level allowance base amount (BT-93) and charge base amount
+// (BT-100). The base amount is the figure a percentage allowance is computed
+// from, so it is a separate term from the allowance amount itself (BT-92/99,
+// BR-DEC-01/05) and has its own limit.
+func TestBRDEC02And06DocumentAllowanceChargeBase(t *testing.T) {
+	runRuleCases(t, []ruleCase{
+		{"CII allowance base with two decimals", ciiDocAllowanceCharge(false, "1000.00"), "BR-DEC-02", false},
+		{"CII allowance base with three decimals", ciiDocAllowanceCharge(false, "999.375"), "BR-DEC-02", true},
+		{"UBL allowance base with two decimals", ublDocAllowanceCharge(false, "1000.00"), "BR-DEC-02", false},
+		{"UBL allowance base with three decimals", ublDocAllowanceCharge(false, "999.375"), "BR-DEC-02", true},
+		// The allowance rule and the charge rule are distinct identifiers over the
+		// same element, told apart only by the charge indicator.
+		{"CII allowance base does not report the charge rule", ciiDocAllowanceCharge(false, "999.375"), "BR-DEC-06", false},
+		{"CII charge base with two decimals", ciiDocAllowanceCharge(true, "1000.00"), "BR-DEC-06", false},
+		{"CII charge base with three decimals", ciiDocAllowanceCharge(true, "999.375"), "BR-DEC-06", true},
+		{"UBL charge base with three decimals", ublDocAllowanceCharge(true, "999.375"), "BR-DEC-06", true},
+		{"UBL charge base does not report the allowance rule", ublDocAllowanceCharge(true, "999.375"), "BR-DEC-02", false},
+	})
+}
+
+// ciiLineAllowanceCharge puts an allowance or charge with a base amount
+// (BT-137 / BT-142) on the CII invoice line.
+func ciiLineAllowanceCharge(charge bool, base string) string {
+	ind := "false"
+	if charge {
+		ind = "true"
+	}
+	return strings.Replace(validCII, "<SpecifiedTradeSettlementLineMonetarySummation>",
+		`<SpecifiedTradeAllowanceCharge><ChargeIndicator><Indicator>`+ind+
+			`</Indicator></ChargeIndicator><ActualAmount>0.00</ActualAmount><BasisAmount>`+base+
+			`</BasisAmount><Reason>r</Reason></SpecifiedTradeAllowanceCharge>`+
+			"<SpecifiedTradeSettlementLineMonetarySummation>", 1)
+}
+
+// ublLineAllowanceCharge is the UBL spelling of the same thing.
+func ublLineAllowanceCharge(charge bool, base string) string {
+	ind := "false"
+	if charge {
+		ind = "true"
+	}
+	return strings.Replace(minimalUBL, "<Item><Name>Widget</Name>",
+		`<AllowanceCharge><ChargeIndicator>`+ind+
+			`</ChargeIndicator><AllowanceChargeReason>r</AllowanceChargeReason><Amount>0.00</Amount><BaseAmount>`+
+			base+`</BaseAmount></AllowanceCharge>`+"<Item><Name>Widget</Name>", 1)
+}
+
+// TestBRDEC25And28LineAllowanceChargeBase covers the two-decimal limits on the
+// invoice line allowance base amount (BT-137) and charge base amount (BT-142).
+func TestBRDEC25And28LineAllowanceChargeBase(t *testing.T) {
+	runRuleCases(t, []ruleCase{
+		{"CII line allowance base with two decimals", ciiLineAllowanceCharge(false, "9800.00"), "BR-DEC-25", false},
+		{"CII line allowance base with three decimals", ciiLineAllowanceCharge(false, "9800.000"), "BR-DEC-25", true},
+		{"UBL line allowance base with two decimals", ublLineAllowanceCharge(false, "9800.00"), "BR-DEC-25", false},
+		{"UBL line allowance base with three decimals", ublLineAllowanceCharge(false, "9800.000"), "BR-DEC-25", true},
+		{"CII line charge base with two decimals", ciiLineAllowanceCharge(true, "9800.00"), "BR-DEC-28", false},
+		{"CII line charge base with three decimals", ciiLineAllowanceCharge(true, "9800.000"), "BR-DEC-28", true},
+		{"UBL line charge base with three decimals", ublLineAllowanceCharge(true, "9800.000"), "BR-DEC-28", true},
+		{"UBL line charge base does not report the allowance rule", ublLineAllowanceCharge(true, "9800.000"), "BR-DEC-25", false},
+	})
+}
+
+// TestBRDEC15VATTotalInAccountingCurrency covers the two-decimal limit on the
+// Invoice total VAT amount in accounting currency (BT-111) — the one BR-DEC-*
+// term that is not simply "an amount somewhere in the document" but "the amount
+// tagged with the VAT accounting currency (BT-6)". An invoice carrying two VAT
+// totals in two currencies must have this rule read the right one, so the
+// document-currency total is deliberately given three decimals in the last case
+// and must not be reported here (BR-DEC-13 is that rule).
+func TestBRDEC15VATTotalInAccountingCurrency(t *testing.T) {
+	cii := func(inTaxCurrency string) string {
+		return mutate(t, validCII, "<TaxTotalAmount>20.00</TaxTotalAmount>",
+			`<TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>`+
+				`<TaxTotalAmount currencyID="SEK">`+inTaxCurrency+`</TaxTotalAmount>`)
+	}
+	ciiWithTaxCurrency := func(inTaxCurrency string) string {
+		return mutate(t, cii(inTaxCurrency), "<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>",
+			"<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode><TaxCurrencyCode>SEK</TaxCurrencyCode>")
+	}
+	ubl := func(inTaxCurrency string) string {
+		return mutate(t, minimalUBL, "<DocumentCurrencyCode>EUR</DocumentCurrencyCode>",
+			"<DocumentCurrencyCode>EUR</DocumentCurrencyCode><TaxCurrencyCode>SEK</TaxCurrencyCode>"+
+				`<TaxTotal><TaxAmount currencyID="SEK">`+inTaxCurrency+`</TaxAmount></TaxTotal>`)
+	}
+	runRuleCases(t, []ruleCase{
+		{"CII BT-111 with two decimals", ciiWithTaxCurrency("210.00"), "BR-DEC-15", false},
+		{"CII BT-111 with three decimals", ciiWithTaxCurrency("210.001"), "BR-DEC-15", true},
+		{"UBL BT-111 with two decimals", ubl("210.00"), "BR-DEC-15", false},
+		{"UBL BT-111 with three decimals", ubl("210.001"), "BR-DEC-15", true},
+		// No VAT accounting currency: there is no BT-111 to bound, whatever the
+		// second amount is tagged with.
+		{"CII no accounting currency declared", cii("210.001"), "BR-DEC-15", false},
+		// The document-currency VAT total is BT-110, and BR-DEC-13 bounds it.
+		{"UBL document-currency total is not BT-111", mutate(t, ubl("210.00"),
+			"<TaxTotal><TaxAmount>19.00</TaxAmount>", "<TaxTotal><TaxAmount>19.001</TaxAmount>"), "BR-DEC-15", false},
+		{"UBL document-currency total is BR-DEC-13", mutate(t, ubl("210.00"),
+			"<TaxTotal><TaxAmount>19.00</TaxAmount>", "<TaxTotal><TaxAmount>19.001</TaxAmount>"), "BR-DEC-13", true},
+	})
+}
+
+// TestBRCO05To08AreNotReported states the one decision in this group that is a
+// deliberate absence rather than an implementation.
+//
+// BR-CO-05..08 ask whether an allowance or charge reason *code* and its
+// free-text *reason* "indicate the same type". CEN binds all four to the XPath
+// expression true() in both the UBL and the CII Schematron, so no reference
+// validator reports them and the unit-test suite ships no fragment for them.
+// This test pins that this package does not invent an answer: a document whose
+// reason text plainly contradicts its reason code is not reported, and the
+// Coverage table says why.
+func TestBRCO05To08AreNotReported(t *testing.T) {
+	contradictory := withCIISettlement(
+		`<SpecifiedTradeAllowanceCharge><ChargeIndicator><Indicator>false</Indicator></ChargeIndicator>` +
+			`<ActualAmount>0.00</ActualAmount><ReasonCode>95</ReasonCode>` + // 95 = Discount
+			`<Reason>Insurance</Reason>` + // plainly not a discount
+			`<CategoryTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></CategoryTradeTax>` +
+			`</SpecifiedTradeAllowanceCharge>`)
+	vs := Validate(context.Background(), []byte(contradictory), ProfileEN16931).Violations
+	for _, rule := range []string{"BR-CO-05", "BR-CO-06", "BR-CO-07", "BR-CO-08"} {
+		if reports(vs, rule) {
+			t.Errorf("%s was reported; CEN binds it to true() in both syntaxes, so reporting it "+
+				"is an accusation no reference validator makes", rule)
+		}
+	}
+}
+
+// TestCoverageDropsTheRulesThisPRImplements is the other half of implementing a
+// rule: an implemented rule that still appears in NotEvaluated is a lie in the
+// direction the Coverage table was built to prevent, just pointing the other
+// way. It sends a caller to re-implement work already done.
+//
+// The over-claim sweep in report_test.go catches this only for rules that some
+// corpus document happens to trip; four of these fire on nothing in the corpus,
+// which is exactly the case that needs stating here instead.
+func TestCoverageDropsTheRulesThisPRImplements(t *testing.T) {
+	gaps := strings.Join(Coverage(SourceEN16931), "\n")
+	for _, rule := range []string{
+		"BR-CL-08", "BR-CL-26", "BR-DEC-02", "BR-DEC-06", "BR-DEC-15", "BR-DEC-25", "BR-DEC-28",
+	} {
+		if strings.Contains(gaps, rule) {
+			t.Errorf("Coverage(SourceEN16931) still names %s, which this package evaluates", rule)
+		}
+	}
+	// BR-51 stays, because half of it does: the entry has to say which half.
+	if !strings.Contains(gaps, "BR-51 other than in the CII binding") {
+		t.Error("Coverage(SourceEN16931) no longer names the advisory UBL half of BR-51, which is not evaluated")
+	}
+	if !strings.Contains(gaps, "BR-CO-05..08") {
+		t.Error("Coverage(SourceEN16931) no longer names BR-CO-05..08, which CEN binds to true()")
+	}
+}

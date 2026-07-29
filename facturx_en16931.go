@@ -617,6 +617,7 @@ func mapCII(root *ciiNode) *en16931Invoice {
 		for _, ta := range sum.orNil().all("TaxTotalAmount") {
 			if strings.EqualFold(ta.attr("currencyID"), inv.taxCurrency) {
 				inv.vatInTaxCurrency = true
+				inv.vatInTaxCurrencyAmt = strings.TrimSpace(ta.text)
 			}
 		}
 	}
@@ -647,6 +648,7 @@ func mapCII(root *ciiNode) *en16931Invoice {
 	for _, ac := range settle.orNil().all("SpecifiedTradeAllowanceCharge") {
 		inv.allowCharges = append(inv.allowCharges, docAllowanceCharge{
 			amount:     ac.str("ActualAmount"),
+			baseAmount: ac.str("BasisAmount"),
 			category:   ac.str("CategoryTradeTax", "CategoryCode"),
 			rate:       ac.str("CategoryTradeTax", "RateApplicablePercent"),
 			hasReason:  ac.str("Reason") != "" || ac.str("ReasonCode") != "",
@@ -687,9 +689,10 @@ func mapCII(root *ciiNode) *en16931Invoice {
 		}
 		for _, ac := range li.orNil().child("SpecifiedLineTradeSettlement").orNil().all("SpecifiedTradeAllowanceCharge") {
 			line.allowCharges = append(line.allowCharges, lineAllowanceCharge{
-				amount:    ac.str("ActualAmount"),
-				hasReason: ac.str("Reason") != "" || ac.str("ReasonCode") != "",
-				isCharge:  strings.EqualFold(ac.str("ChargeIndicator", "Indicator"), "true"),
+				amount:     ac.str("ActualAmount"),
+				baseAmount: ac.str("BasisAmount"),
+				hasReason:  ac.str("Reason") != "" || ac.str("ReasonCode") != "",
+				isCharge:   strings.EqualFold(ac.str("ChargeIndicator", "Indicator"), "true"),
 			})
 		}
 		if li.str("SpecifiedLineTradeAgreement", "BuyerOrderReferencedDocument", "LineID") != "" {
@@ -1106,6 +1109,7 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 		for _, tt := range root.all("TaxTotal") {
 			if strings.EqualFold(tt.child("TaxAmount").attr("currencyID"), inv.taxCurrency) {
 				inv.vatInTaxCurrency = true
+				inv.vatInTaxCurrencyAmt = tt.str("TaxAmount")
 				break
 			}
 		}
@@ -1142,6 +1146,7 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	for _, ac := range root.all("AllowanceCharge") {
 		inv.allowCharges = append(inv.allowCharges, docAllowanceCharge{
 			amount:     ac.str("Amount"),
+			baseAmount: ac.str("BaseAmount"),
 			category:   ac.str("TaxCategory", "ID"),
 			rate:       ac.str("TaxCategory", "Percent"),
 			hasReason:  ac.str("AllowanceChargeReason") != "" || ac.str("AllowanceChargeReasonCode") != "",
@@ -1181,9 +1186,10 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 		}
 		for _, ac := range li.all("AllowanceCharge") {
 			line.allowCharges = append(line.allowCharges, lineAllowanceCharge{
-				amount:    ac.str("Amount"),
-				hasReason: ac.str("AllowanceChargeReason") != "" || ac.str("AllowanceChargeReasonCode") != "",
-				isCharge:  strings.EqualFold(ac.str("ChargeIndicator"), "true"),
+				amount:     ac.str("Amount"),
+				baseAmount: ac.str("BaseAmount"),
+				hasReason:  ac.str("AllowanceChargeReason") != "" || ac.str("AllowanceChargeReasonCode") != "",
+				isCharge:   strings.EqualFold(ac.str("ChargeIndicator"), "true"),
 			})
 		}
 		if li.str("OrderLineReference", "LineID") != "" {
