@@ -48,7 +48,12 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	cvd := strings.Contains(inv.specID, "cvd")
 
 	var out []Violation
-	for _, v := range validateEN16931(r, inv, ProfileXRechnung) {
+	// XRechnung documents carry the full EN 16931 data set — BR-DE-* makes more
+	// terms mandatory, never fewer — so the core runs at the EN 16931 profile,
+	// which is what the removed ProfileXRechnung constant did anyway: it matched
+	// none of the three profile predicates in validateEN16931, and produced an
+	// identical finding set on every EN 16931 document in testdata.
+	for _, v := range validateEN16931(r, inv, ProfileEN16931) {
 		switch {
 		// The EXTENSION and CVD sub-profiles extend the item identifier code lists;
 		// re-checked below against the XRechnung-extended sets.
