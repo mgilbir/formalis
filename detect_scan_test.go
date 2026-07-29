@@ -62,9 +62,56 @@ var exportedDetectors = map[string]func([]byte) (bool, error){
 	"IsTurkishInvoice": IsTurkishInvoice,
 }
 
+// treeShapeFacts is the tree reference for every string scanShape retains, as
+// opposed to every predicate that reads one.
+//
+// The distinction started to matter when the scan grew a capture the twelve
+// predicates do not use: the CII Specification identifier, which sits three
+// elements below the root rather than directly under it, and which Detect needs
+// so a caller can ask which CIUS a document declares. A field no predicate reads
+// is a field the predicate parity check cannot see, so it gets a reference of
+// its own here and the check below holds the scan to it over the whole corpus.
+var treeShapeFacts = map[string]func(*ciiNode) string{
+	"root":            func(r *ciiNode) string { return r.name },
+	"CustomizationID": func(r *ciiNode) string { return r.str("CustomizationID") },
+	"ProfileID":       func(r *ciiNode) string { return r.str("ProfileID") },
+	"CII specification identifier": func(r *ciiNode) string {
+		return r.str("ExchangedDocumentContext", "GuidelineSpecifiedDocumentContextParameter", "ID")
+	},
+	"BT-24": treeSpecID,
+}
+
+// scanShapeFacts is the same list read off the streaming scan.
+var scanShapeFacts = map[string]func(*docShape) string{
+	"root":                         func(d *docShape) string { return d.root },
+	"CustomizationID":              func(d *docShape) string { return d.str("CustomizationID") },
+	"ProfileID":                    func(d *docShape) string { return d.str("ProfileID") },
+	"CII specification identifier": func(d *docShape) string { return strings.TrimSpace(d.ciiSpecID) },
+	"BT-24":                        (*docShape).specID,
+}
+
+// treeSpecID is the Specification identifier the semantic mappers themselves
+// produce from the tree — en16931Invoice.specID, the exact string ValidateCIUS
+// dispatches on.
+//
+// It is deliberately not a re-implementation of the path: pinning
+// docShape.specID to what mapCII and mapUBL actually read is what makes
+// Detection.SpecID the answer the dispatcher would have got, rather than a
+// second reading of the document that could drift from it.
+func treeSpecID(root *ciiNode) string {
+	switch root.name {
+	case "CrossIndustryInvoice":
+		return mapCII(root).specID
+	case "Invoice", "CreditNote":
+		return mapUBL(root).specID
+	}
+	return ""
+}
+
 // checkParity runs every predicate against the tree reference for one document
 // and reports any disagreement, including on whether the document is readable
-// at all.
+// at all. It then does the same for every string the scan retains, and for
+// Detect's readability answer.
 func checkParity(t *testing.T, label string, data []byte) {
 	t.Helper()
 	root, treeErr := parseCII(newRun(nil), data)
@@ -79,6 +126,23 @@ func checkParity(t *testing.T, label string, data []byte) {
 		}
 		if want := treeDetectors[name](root); got != want {
 			t.Errorf("%s: %s = %v, tree says %v", label, name, got, want)
+		}
+	}
+
+	d, scanErr := scanShape(data)
+	if (treeErr != nil) != (scanErr != nil) {
+		t.Errorf("%s: scanShape readability differs: tree err=%v, scan err=%v", label, treeErr, scanErr)
+		return
+	}
+	if _, detErr := Detect(data); (treeErr != nil) != (detErr != nil) {
+		t.Errorf("%s: Detect readability differs: tree err=%v, Detect err=%v", label, treeErr, detErr)
+	}
+	if treeErr != nil {
+		return
+	}
+	for name, fromTree := range treeShapeFacts {
+		if got, want := scanShapeFacts[name](d), fromTree(root); got != want {
+			t.Errorf("%s: %s = %q, tree says %q", label, name, got, want)
 		}
 	}
 }
@@ -152,6 +216,44 @@ func TestScanMatchesTreeOnAwkwardInput(t *testing.T) {
 		"second doc ref matches": `<Invoice><AdditionalDocumentReference><ID>QR</ID></AdditionalDocumentReference>` +
 			`<AdditionalDocumentReference><ID>ICV</ID></AdditionalDocumentReference></Invoice>`,
 
+		// The CII Specification identifier: three elements down, and reached by
+		// child() at every step, so a first match that leads nowhere is not
+		// backtracked out of.
+		"cii spec id": ciiContext(`<GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017</ID>` +
+			`</GuidelineSpecifiedDocumentContextParameter>`),
+		"cii spec id after the process parameter": ciiContext(
+			`<BusinessProcessSpecifiedDocumentContextParameter><ID>A1</ID></BusinessProcessSpecifiedDocumentContextParameter>` +
+				`<GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017</ID>` +
+				`</GuidelineSpecifiedDocumentContextParameter>`),
+		"cii two guideline parameters, first empty": ciiContext(
+			`<GuidelineSpecifiedDocumentContextParameter/>` +
+				`<GuidelineSpecifiedDocumentContextParameter><ID>urn:x</ID></GuidelineSpecifiedDocumentContextParameter>`),
+		"cii two ids under the parameter": ciiContext(
+			`<GuidelineSpecifiedDocumentContextParameter><ID>first</ID><ID>second</ID>` +
+				`</GuidelineSpecifiedDocumentContextParameter>`),
+		"cii id nested deeper": ciiContext(
+			`<GuidelineSpecifiedDocumentContextParameter><Wrap><ID>urn:x</ID></Wrap>` +
+				`</GuidelineSpecifiedDocumentContextParameter>`),
+		"cii two contexts, first empty": `<CrossIndustryInvoice><ExchangedDocumentContext/>` +
+			`<ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:x</ID>` +
+			`</GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext></CrossIndustryInvoice>`,
+		"cii parameter directly under the root": `<CrossIndustryInvoice>` +
+			`<GuidelineSpecifiedDocumentContextParameter><ID>urn:x</ID>` +
+			`</GuidelineSpecifiedDocumentContextParameter></CrossIndustryInvoice>`,
+		"cii context nested deeper": `<CrossIndustryInvoice><Wrap>` + ciiContextBody(
+			`<GuidelineSpecifiedDocumentContextParameter><ID>urn:x</ID></GuidelineSpecifiedDocumentContextParameter>`) +
+			`</Wrap></CrossIndustryInvoice>`,
+		"cii spec id unclosed": `<CrossIndustryInvoice><ExchangedDocumentContext>` +
+			`<GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017`,
+		// The same path under a UBL root: the scan captures it, but BT-24 for an
+		// Invoice root is the CustomizationID, and mapUBL never looks here.
+		"cii path under a ubl root": `<Invoice><ExchangedDocumentContext>` +
+			`<GuidelineSpecifiedDocumentContextParameter><ID>urn:x</ID>` +
+			`</GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext></Invoice>`,
+		// A CII root carrying a CustomizationID: mapCII does not read one.
+		"cii root with a customization id": `<CrossIndustryInvoice>` +
+			`<CustomizationID>urn:OIOUBL:2.02</CustomizationID></CrossIndustryInvoice>`,
+
 		// Text split by markup, and text belonging to a descendant rather than
 		// to the element itself.
 		"split by comment":  `<Invoice><CustomizationID>urn:OIO<!--x-->UBL:2.02</CustomizationID></Invoice>`,
@@ -189,6 +291,16 @@ func TestScanMatchesTreeOnAwkwardInput(t *testing.T) {
 	}
 }
 
+// ciiContextBody wraps body in an ExchangedDocumentContext; ciiContext wraps
+// that in a CrossIndustryInvoice root. They keep the cases above readable.
+func ciiContextBody(body string) string {
+	return `<ExchangedDocumentContext>` + body + `</ExchangedDocumentContext>`
+}
+
+func ciiContext(body string) string {
+	return `<CrossIndustryInvoice>` + ciiContextBody(body) + `</CrossIndustryInvoice>`
+}
+
 // flatDoc builds a well-formed document of n sibling elements under an Invoice
 // root — the shape that costs about 170 bytes per four input bytes once it is
 // turned into a tree.
@@ -214,21 +326,23 @@ func flatDoc(n int) []byte {
 // Reverting scanShape to `parseCII` fails this: the tree for the larger
 // document is eight times the smaller one and both stay reachable through the
 // returned root.
+//
+// Detect is measured on the same terms. It is the entry point a router reaches
+// for first, on bytes nothing has vetted yet, so it is the one that must not be
+// the cheapest way to allocate a gigabyte; a Detect that parsed a tree to answer
+// would give back everything scanShape was written to save.
 func TestDetectionMemoryDoesNotScaleWithInput(t *testing.T) {
-	retained := func(n int) uint64 {
+	retained := func(n int, read func([]byte) any) uint64 {
 		data := flatDoc(n)
 		var before, after runtime.MemStats
 		runtime.GC()
 		runtime.ReadMemStats(&before)
-		d, err := scanShape(data)
-		if err != nil {
-			t.Fatalf("scanShape: %v", err)
-		}
+		got := read(data)
 		runtime.GC()
 		runtime.ReadMemStats(&after)
 		// Keep the result reachable across the measurement, exactly as the
 		// tree-returning version kept its root reachable.
-		runtime.KeepAlive(d)
+		runtime.KeepAlive(got)
 		runtime.KeepAlive(data)
 		if after.HeapAlloc < before.HeapAlloc {
 			return 0
@@ -236,24 +350,43 @@ func TestDetectionMemoryDoesNotScaleWithInput(t *testing.T) {
 		return after.HeapAlloc - before.HeapAlloc
 	}
 
-	const small, large = 50_000, 400_000
-	// The input itself is reachable in both measurements and is 4 bytes per
-	// element, so subtract nothing and simply require that the retained total
-	// does not grow with the element count beyond the input's own contribution.
-	smallRetained := retained(small)
-	largeRetained := retained(large)
-
-	// A tree costs ~170 B/element; the scan costs none. Allow a generous
-	// absolute slack for the input buffer and measurement noise, then require
-	// the large case to stay within it too.
-	const slack = 8 << 20 // 8 MiB, far below the ~68 MiB a 400k-element tree needs
-	t.Logf("retained: %d elements -> %d B, %d elements -> %d B", small, smallRetained, large, largeRetained)
-	if largeRetained > slack {
-		t.Errorf("detecting a %d-element document retained %d B; a streaming scan should retain almost nothing",
-			large, largeRetained)
+	readers := map[string]func([]byte) any{
+		"scanShape": func(b []byte) any {
+			d, err := scanShape(b)
+			if err != nil {
+				t.Fatalf("scanShape: %v", err)
+			}
+			return d
+		},
+		"Detect": func(b []byte) any {
+			d, err := Detect(b)
+			if err != nil {
+				t.Fatalf("Detect: %v", err)
+			}
+			return d
+		},
 	}
-	if smallRetained > slack {
-		t.Errorf("detecting a %d-element document retained %d B", small, smallRetained)
+
+	const small, large = 50_000, 400_000
+	for name, read := range readers {
+		// The input itself is reachable in both measurements and is 4 bytes per
+		// element, so subtract nothing and simply require that the retained total
+		// does not grow with the element count beyond the input's own contribution.
+		smallRetained := retained(small, read)
+		largeRetained := retained(large, read)
+
+		// A tree costs ~170 B/element; the scan costs none. Allow a generous
+		// absolute slack for the input buffer and measurement noise, then require
+		// the large case to stay within it too.
+		const slack = 8 << 20 // 8 MiB, far below the ~68 MiB a 400k-element tree needs
+		t.Logf("%s retained: %d elements -> %d B, %d elements -> %d B", name, small, smallRetained, large, largeRetained)
+		if largeRetained > slack {
+			t.Errorf("%s on a %d-element document retained %d B; a streaming scan should retain almost nothing",
+				name, large, largeRetained)
+		}
+		if smallRetained > slack {
+			t.Errorf("%s on a %d-element document retained %d B", name, small, smallRetained)
+		}
 	}
 }
 
@@ -348,7 +481,12 @@ func TestNodeBudgetLeavesRealInvoicesAlone(t *testing.T) {
 
 // TestDetectionHasNoBudgetToTrip records why the scan needs no node budget: it
 // builds no tree, so the document that exhausts the parser's budget is answered
-// by every predicate without difficulty.
+// by every predicate — and by Detect — without difficulty.
+//
+// Detect is the case with consequences. Routing exists so a caller can decide
+// what to do with a document *before* paying to validate it, and a router that
+// could not name a document too large to parse would have nothing to say about
+// exactly the input the decision matters most for.
 func TestDetectionHasNoBudgetToTrip(t *testing.T) {
 	data := flatDoc(maxNodes + 1)
 	for name, fn := range exportedDetectors {
@@ -363,4 +501,139 @@ func TestDetectionHasNoBudgetToTrip(t *testing.T) {
 			t.Errorf("%s = true on a document of empty siblings", name)
 		}
 	}
+
+	det, err := Detect(data)
+	if err != nil {
+		t.Fatalf("Detect on a %d-element document: %v; detection builds no tree and has nothing to trip",
+			maxNodes+1, err)
+	}
+	// A UBL root declaring no national profile: step 5 of the order.
+	if det.Source != SourceEN16931 {
+		t.Errorf("Detect on a %d-element Invoice = %q, want %q", maxNodes+1, det.Source, SourceEN16931)
+	}
+	if det.Validator() == nil {
+		t.Error("a document too large for the parser routed to no validator at all")
+	}
+
+	// The same document through the validator the routing chose does trip the
+	// budget, which is the asymmetry worth having: the router answers, and the
+	// checker refuses to guess.
+	v := det.Validator()(context.Background(), data)
+	if v.Conformant() {
+		t.Error("a document over the element budget came back conformant")
+	}
+	stopped := false
+	for _, x := range v.Violations {
+		if IsCheckerViolation(x) {
+			stopped = true
+		}
+	}
+	if !stopped {
+		t.Errorf("validating a %d-element document reported no checker violation: %v", maxNodes+1, v.Violations)
+	}
+}
+
+// corpusFormat maps a testdata corpus to the Source every document in it that
+// Detect recognises must come back as.
+//
+// Four corpora are deliberately absent because they are mixed by construction
+// and a single expected answer would be wrong for them: en16931-artefacts and
+// en16931-ubl carry both plain EN 16931 and Peppol instances (and, in the CEN
+// artefacts, several hundred Schematron and build files that are not invoices);
+// nlcius ships two error samples whose whole defect is a missing or
+// whitespace-only BT-24, which is exactly the document that has no CIUS to
+// declare; and the pint corpus includes the pre-release Japanese samples, whose
+// identifier reads "urn:fdc:peppol:jp:billing:3.0" and never says "pint" — a
+// document IsPINT also reports false for, so Detect agreeing with the predicate
+// is the property worth keeping there.
+var corpusFormat = map[string]Source{
+	"cius-be":     SourceUBLBE,
+	"cius-pt":     SourceCIUSPT,
+	"cius-ro":     SourceCIUSRO,
+	"cius-rs":     SourceSRBDT,
+	"ebinterface": SourceEbInterface,
+	"facturae":    SourceFacturae,
+	"fatturapa":   SourceFatturaPA,
+	"finvoice":    SourceFinvoice,
+	"ksef":        SourceKSeF,
+	"oioubl":      SourceOIOUBL,
+	"osa":         SourceOSA,
+	"svefaktura":  SourceSvefaktura,
+	"teapps":      SourceTEAPPS,
+	"turkey":      SourceUBLTR,
+	"xrechnung":   SourceXRechnung,
+	"zatca":       SourceZATCA,
+}
+
+// minRoutedDocuments is the ratchet on the sweep below, in the same spirit as
+// en16931_conformance_test.go's caughtBaseline: the corpora are fetched by a
+// Makefile target whose downloads are not individually checked, so a test that
+// only asserted "every document I saw routed correctly" would pass loudly on
+// three files. The number is what the corpora contained when this was written;
+// it may grow.
+const minRoutedDocuments = 754
+
+// TestDetectRoutesTheCorpus is the evidence that the precedence is right about
+// documents rather than only about the constructed overlaps.
+//
+// The overlapping documents in detect_test.go are contrived, which is the honest
+// thing to say about them: no producer emits an invoice carrying both a Biller
+// and a SellerParty. What makes the order load-bearing is that it has to leave
+// every real document where it was — a Turkish invoice must not become OIOUBL
+// because its identifier starts "TR", an XRechnung CII document must not fall
+// through to the EN 16931 core because its identifier is three elements down,
+// and a ZATCA invoice must not become Peppol. This sweeps every conformance
+// corpus whose documents share one format and asserts exactly that.
+func TestDetectRoutesTheCorpus(t *testing.T) {
+	routed, unrecognised := 0, 0
+	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
+			return nil
+		}
+		parts := strings.Split(p, string(filepath.Separator))
+		if len(parts) < 2 {
+			return nil
+		}
+		want, listed := corpusFormat[parts[1]]
+		if !listed {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Errorf("%s: %v", p, err)
+			return nil
+		}
+		det, derr := Detect(data)
+		if derr != nil {
+			// A corpus of deliberately broken instances still contains no
+			// unreadable XML; if that changes, say so rather than skipping it.
+			t.Errorf("%s: Detect could not read a corpus document: %v", p, derr)
+			return nil
+		}
+		if !det.Recognised() {
+			// Several corpora ship Schematron, build files and other document
+			// types alongside the invoices. Those are not this test's business.
+			unrecognised++
+			return nil
+		}
+		if det.Source != want {
+			t.Errorf("%s: Detect = %q, want %q (root %q, BT-24 %q)", p, det.Source, want, det.Root, det.SpecID)
+			return nil
+		}
+		routed++
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Not vendored, so the sweep can only run where the corpus is.
+	if routed == 0 && unrecognised == 0 {
+		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
+	}
+	if routed < minRoutedDocuments {
+		t.Errorf("routed %d documents, want at least %d; a partial corpus fetch makes this test agree with anything",
+			routed, minRoutedDocuments)
+	}
+	t.Logf("routed %d corpus documents to the format their corpus publishes (%d other document types skipped)",
+		routed, unrecognised)
 }

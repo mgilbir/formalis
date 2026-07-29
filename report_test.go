@@ -20,7 +20,8 @@ import (
 // not be conformant, then the properties of the coverage table that make the
 // third case machine-readable rather than a file comment.
 
-// allSources is every Source constant. A new authority belongs here, and
+// allSources is every Source constant that names an authority — all of them but
+// SourceNone, which names the absence of one. A new authority belongs here, and
 // TestEverySourceIsAccountedForInTheCoverageTable then forces a decision about
 // whether its rule set is implemented in full.
 var allSources = []Source{

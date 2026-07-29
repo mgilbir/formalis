@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"bytes"
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -40,8 +41,21 @@ import (
 // is fine but whose remainder is truncated or malformed is exactly such a case.
 // Stopping early would report it as readable, which is the collapse the error
 // return exists to prevent.
+//
+// One capture is not a direct child of the root: the CII Specification
+// identifier (BT-24) sits three elements down, under
+// ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter, and Detect
+// needs it to answer "which CIUS is this" for the CII syntax the way the
+// CustomizationID answers it for UBL. The scan follows that path with two flags
+// on frames it was going to open anyway and keeps the one string at the end of
+// it, so the property above is unchanged: what is retained is set by the nesting
+// and by a fixed list of short strings, never by the element count.
+//
+// Everything below the scan reads that one shape. The twelve Is* predicates ask
+// it one question each; Detect asks it all of them in a documented order and
+// returns a single routing answer.
 
-// docShape is the part of a document the Is* predicates examine.
+// docShape is the part of a document the Is* predicates and Detect examine.
 type docShape struct {
 	// root is the local name of the root element.
 	root string
@@ -58,6 +72,18 @@ type docShape struct {
 	// icvDocRef records an AdditionalDocumentReference, at any depth, whose
 	// first direct ID child reads "ICV" — what zatcaDocRef looked for.
 	icvDocRef bool
+	// ciiSpecID is the text of the CII Specification identifier (BT-24):
+	// ExchangedDocumentContext / GuidelineSpecifiedDocumentContextParameter /
+	// ID, which mapCII reads with exactly that path from the root.
+	//
+	// It is the one thing the scan captures that is not a direct child of the
+	// root, and it is why the scan follows a path rather than only watching
+	// depth 1. It is still one string: the frames it walks through are frames
+	// the scan was going to open anyway, and nothing below the ID is retained.
+	ciiSpecID string
+	// gotContext marks the root's first ExchangedDocumentContext, so a second
+	// one is ignored the way child() ignored it.
+	gotContext bool
 }
 
 // The elements whose text the scan keeps. Anything else is discarded as it is
@@ -67,6 +93,16 @@ const (
 	captureCustomizationID
 	captureProfileID
 	captureDocRefID
+	captureCIISpecID
+)
+
+// The steps of the CII specification-identifier path, as a frame's position
+// along root / ExchangedDocumentContext / GuidelineSpecifiedDocumentContextParameter
+// / ID. specStepNone is every other element.
+const (
+	specStepNone = iota
+	specStepContext
+	specStepParameter
 )
 
 // scanFrame is one open element. It holds the name, because a child's meaning
@@ -78,9 +114,15 @@ type scanFrame struct {
 	// captureNone.
 	capture int
 	buf     []byte
-	// gotID marks an AdditionalDocumentReference whose first ID child has
-	// already been read, so a second one is ignored the way child() ignored it.
-	gotID bool
+	// specStep says where this element sits on the CII specification-identifier
+	// path, or specStepNone.
+	specStep int
+	// gotChild marks a frame whose first interesting child has already been
+	// taken, so a second one is ignored the way child() ignored it. Two frames
+	// watch for one: an AdditionalDocumentReference for its first ID, and a step
+	// of the specification-identifier path for its first step down. No element
+	// is both, because each is decided by the frame's own name.
+	gotChild bool
 }
 
 // scanShape reads xmlData once and reports what the Is* predicates need to know
@@ -143,14 +185,31 @@ func scanShape(xmlData []byte) (*docShape, error) {
 					if !d.gotProfileID {
 						f.capture = captureProfileID
 					}
+				case "ExchangedDocumentContext":
+					if !d.gotContext {
+						d.gotContext = true
+						f.specStep = specStepContext
+					}
 				}
 			}
-			// zatcaDocRef searched the whole tree, so this is not restricted to
-			// a particular depth.
-			if name == "ID" && len(stack) > 0 {
-				if p := &stack[len(stack)-1]; p.name == "AdditionalDocumentReference" && !p.gotID {
-					p.gotID = true
+			if len(stack) > 0 {
+				p := &stack[len(stack)-1]
+				switch {
+				// zatcaDocRef searched the whole tree, so this is not restricted
+				// to a particular depth.
+				case name == "ID" && p.name == "AdditionalDocumentReference" && !p.gotChild:
+					p.gotChild = true
 					f.capture = captureDocRefID
+				// The next two steps of the CII specification-identifier path.
+				// child() takes the first match at every step and gives up if it
+				// is missing, so a second parameter group — or an ID under a
+				// later one — is not consulted even when the first carried none.
+				case name == "GuidelineSpecifiedDocumentContextParameter" && p.specStep == specStepContext && !p.gotChild:
+					p.gotChild = true
+					f.specStep = specStepParameter
+				case name == "ID" && p.specStep == specStepParameter && !p.gotChild:
+					p.gotChild = true
+					f.capture = captureCIISpecID
 				}
 			}
 			stack = append(stack, f)
@@ -198,6 +257,8 @@ func (d *docShape) close(f *scanFrame) {
 		if strings.TrimSpace(text) == "ICV" {
 			d.icvDocRef = true
 		}
+	case captureCIISpecID:
+		d.ciiSpecID = text
 	}
 	f.capture = captureNone
 }
@@ -210,6 +271,30 @@ func (d *docShape) str(name string) string {
 		return strings.TrimSpace(d.customizationID)
 	case "ProfileID":
 		return strings.TrimSpace(d.profileID)
+	}
+	return ""
+}
+
+// specID reports the document's Specification identifier (BT-24), read from
+// whichever place the syntax it is written in puts it.
+//
+// The two syntaxes are the two parseEN16931 dispatches on, and the accessor is
+// the mapper's: mapUBL reads root.str("CustomizationID") for an Invoice or
+// CreditNote root, mapCII reads the ExchangedDocumentContext path for a
+// CrossIndustryInvoice root. Any other root carries no BT-24 that this package
+// could quote — parseEN16931 refuses it before a mapper runs — so this reports
+// "" rather than guessing from an element that happens to share a name.
+//
+// The result is therefore the same string ValidateCIUS routes on, which is what
+// makes it usable for the question that motivated it: a caller can now ask which
+// CIUS a document declares without validating it, and get the answer the
+// dispatcher would have got.
+func (d *docShape) specID() string {
+	switch d.root {
+	case "Invoice", "CreditNote":
+		return d.str("CustomizationID")
+	case "CrossIndustryInvoice":
+		return strings.TrimSpace(d.ciiSpecID)
 	}
 	return ""
 }
@@ -229,4 +314,367 @@ func detectShape(xmlData []byte) (*docShape, error) {
 		return nil, fmt.Errorf("the XML could not be read: %w", err)
 	}
 	return d, nil
+}
+
+// Ordered detection lives below, next to the scan it reads. The precedence it
+// applies is documented on Detect itself, because it is part of that function's
+// contract: a caller routing on the answer has to know why one format won.
+
+// Detection is what Detect concluded about one document.
+//
+// The zero Detection is a "recognised nothing" answer — Source is SourceNone,
+// Recognised is false and Validator is nil — so a Detection that was never
+// filled in cannot pass for a format.
+type Detection struct {
+	// Source is the arbitrated answer: the authority whose format this document
+	// is in, and therefore whose rules apply to it. It is SourceNone when the
+	// document was read and matched no format this package validates.
+	//
+	// It is Source and not a Format type of its own because the two would name
+	// the same twenty-one things. Source already means "the authority that
+	// defines a rule", and for every value Detect can return that authority and
+	// the format are one — FatturaPA is a format and a rule set, XRechnung is a
+	// CIUS and a rule set, and a UBL invoice declaring no national profile is
+	// judged by CEN. Reusing it buys two things a parallel taxonomy would not:
+	// Coverage(det.Source) answers "what would that validator not check?"
+	// *before* the call is made, and the Source on every Violation the call
+	// returns is comparable with the Source the routing was done on. The values
+	// Detect never returns are SourceChecker, which is this package speaking
+	// about its own run rather than a format, and SourceNone.
+	Source Source
+
+	// CIUS is the Core Invoice Usage Specification the Specification identifier
+	// declares — DetectCIUS(SpecID), and therefore exactly the branch
+	// ValidateCIUS takes for this document. It is CIUSNone when the identifier
+	// names none, and for every root that carries no BT-24 at all.
+	//
+	// It is not always the same answer as Source, and where the two differ
+	// Source is the more specific one: a PINT invoice declares
+	// "urn:peppol:pint:billing-1@my-1", so CIUS reads CIUSPeppol while Source
+	// reads SourcePINT. Route on Source; read CIUS to know what ValidateCIUS
+	// would do.
+	CIUS CIUS
+
+	// SpecID is the Specification identifier (BT-24) as the document wrote it,
+	// with nothing removed but the surrounding whitespace: the
+	// cbc:CustomizationID of a UBL Invoice or CreditNote, or the
+	// ExchangedDocumentContext/GuidelineSpecifiedDocumentContextParameter/ID of
+	// a CrossIndustryInvoice. It is "" for any other root, and for a document
+	// that omits the term.
+	//
+	// This is the string DetectCIUS was always documented to take and that
+	// nothing exported could produce. It is kept verbatim so a caller can log
+	// it, meter it, or match it against a profile this package does not know
+	// about.
+	SpecID string
+
+	// Root is the local name of the document's root element, namespace
+	// discarded — the fact most of the detection rests on, kept so a caller can
+	// tell an Invoice from a CreditNote and see why the answer came out as it
+	// did.
+	Root string
+}
+
+// Recognised reports whether Detect matched a format at all. It is false for
+// the third of Detect's three answers — the document was read, and is no format
+// this package validates.
+func (d Detection) Recognised() bool { return d.Source != SourceNone }
+
+// Validator returns the exported entry point that validates a document of this
+// format, or nil when Detect recognised nothing.
+//
+// It exists so that routing on a Detection needs no table of the caller's own,
+// which is the other half of owning the precedence: an order nobody can act on
+// without re-deriving the format-to-validator map has only moved the problem.
+//
+//	det, err := formalis.Detect(data)
+//	if err != nil { ... }          // could not read it
+//	v := det.Validator()
+//	if v == nil { ... }            // read it, recognised nothing
+//	report := v(ctx, data)
+//
+// Two of the mappings are worth stating. SourceEN16931 maps to ValidateCIUS
+// rather than to Validate: Detect has already established that the document
+// declares no CIUS, which is the branch on which ValidateCIUS runs the EN 16931
+// core, and it avoids inventing a Profile. A caller who knows the Factur-X
+// data-richness profile from a PDF container's XMP should call Validate with it
+// instead, since a leaner profile is excused rules the core applies — Detect
+// reads the invoice, and the invoice does not carry that metadata. Each of the
+// seven CIUS maps to its own validator rather than to ValidateCIUS, so that the
+// arbitration above is what takes effect: for the documents where Detect and a
+// bare BT-24 dispatch disagree, Detect's answer is the one the caller asked for.
+//
+// The returned function re-reads xmlData. Detection is a separate pass by
+// design — it builds no tree and spends no budget, which is what lets it run on
+// input the validator may go on to refuse.
+func (d Detection) Validator() func(context.Context, []byte) Report {
+	switch d.Source {
+	case SourceEN16931:
+		return ValidateCIUS
+	case SourceXRechnung:
+		return ValidateXRechnung
+	case SourcePeppol:
+		return ValidatePeppol
+	case SourceNLCIUS:
+		return ValidateNLCIUS
+	case SourceCIUSPT:
+		return ValidateCIUSPT
+	case SourceCIUSRO:
+		return ValidateCIUSRO
+	case SourceUBLBE:
+		return ValidateUBLBE
+	case SourceSRBDT:
+		return ValidateSRBDT
+	case SourceFatturaPA:
+		return ValidateFatturaPA
+	case SourceFacturae:
+		return ValidateFacturae
+	case SourceEbInterface:
+		return ValidateEbInterface
+	case SourceKSeF:
+		return ValidateKSeF
+	case SourceFinvoice:
+		return ValidateFinvoice
+	case SourceTEAPPS:
+		return ValidateTEAPPS
+	case SourceOIOUBL:
+		return ValidateOIOUBL
+	case SourceSvefaktura:
+		return ValidateSvefaktura
+	case SourceZATCA:
+		return ValidateZATCA
+	case SourceOSA:
+		return ValidateOSA
+	case SourceUBLTR:
+		return ValidateTurkishInvoice
+	case SourcePINT:
+		return ValidatePINT
+	case SourceOrderX:
+		return ValidateOrderXML
+	}
+	return nil
+}
+
+// Detect reports which of the formats this package validates a document is in,
+// and which CIUS it declares, in one streaming pass that builds no tree.
+//
+// It is the routing entry point, and the order it applies is part of its
+// contract rather than an implementation detail: a caller that routes on the
+// answer needs to know why one format won.
+//
+// # The three answers
+//
+// None of them is folded into another:
+//
+//   - a non-nil error means the document could not be read — malformed XML, an
+//     encoding this package does not implement, or nesting past the cap — and
+//     the Detection is the zero value and means nothing;
+//   - a Detection whose Recognised is false means the document was read and is
+//     no format this package validates;
+//   - otherwise Source names the format, Validator returns the entry point that
+//     checks it, and Coverage(Source) says in advance what that entry point
+//     will not look at.
+//
+// Detect also answers the CIUS question on its own account: Detection.SpecID is
+// the Specification identifier (BT-24) that DetectCIUS takes and that nothing
+// exported could otherwise extract from XML, and Detection.CIUS is DetectCIUS
+// applied to it.
+//
+// # Why an ordered answer is needed
+//
+// The twelve Is* predicates are independent tests, not a partition. Six of them
+// key on a root element named Invoice or CreditNote — a name four national
+// formats and every EN 16931 UBL document share — and disambiguate on a child
+// that no other format forbids, so more than one of them says true about the
+// same bytes:
+//
+//	<Invoice><Biller/><SellerParty/></Invoice>                     IsEbInterface, IsSvefaktura
+//	<Invoice><CustomizationID>TR-OIOUBL-2.02</CustomizationID>…     IsOIOUBL, IsTurkishInvoice
+//	<Invoice><CustomizationID>urn:peppol:pint:x</CustomizationID>
+//	        <ProfileID>reporting:1.0</ProfileID></Invoice>          IsZATCA, IsPINT
+//
+// Each of those answers is individually correct — IsOIOUBL means "the
+// specification identifier says OIOUBL", not "this is OIOUBL and nothing else"
+// — and each is worth being able to ask on its own. What was missing is the
+// arbitration. A caller routing a mailbox has to pick an order, the package
+// documented none, and so every caller picked a different one and got a
+// different answer to the same question. Detect is that order, written down
+// once, tested, and shipped as part of the API rather than left in a README
+// example that reads like a partition.
+//
+// # The order
+//
+// Evidence is ranked by how much of the document it consumes and how narrowly
+// the thing it matches identifies a format.
+//
+//  1. A root element that belongs to exactly one format — Facturae,
+//     FatturaElettronica, InvoiceData, Finvoice, INVOICE_CENTER,
+//     SCRDMCCBDACIOMessageStructure, Faktura with a Naglowek, and
+//     CrossIndustryInvoice. These cannot compete with one another: a document
+//     has one root and no two of these formats claim the same name. Nothing
+//     later can overturn them, because a root name that only one vocabulary
+//     uses is the strongest evidence a document offers.
+//
+//  2. Within the shared UBL root (Invoice, CreditNote), the Specification
+//     identifier — BT-24, the cbc:CustomizationID. This is the one business
+//     term whose entire purpose is to name the rule set the document follows,
+//     so it outranks every structural hint. Among the tests that read it, the
+//     one that consumes more of the string runs first:
+//
+//     a. "peppol:pint" (PINT) before DetectCIUS's bare "peppol" (Peppol BIS
+//     Billing 3.0). "urn:peppol:pint:billing-1@my-1" is a Malaysian PINT
+//     invoice and contains the substring "peppol"; PINT and BIS Billing are
+//     different rule sets, and the identifier names PINT.
+//
+//     b. "OIOUBL" before the "TR" prefix. Denmark's identifier carries a brand
+//     name that appears in no other profile; the Turkish test is a
+//     two-character prefix over a namespace everyone shares, which is the
+//     weakest of the identifier tests and therefore the last of them. That is
+//     what decides the audit's "TR-OIOUBL-2.02": OIOUBL.
+//
+//     c. DetectCIUS between them, keeping its own documented order (XRechnung
+//     before Peppol, because an XRechnung identifier also references the
+//     Peppol base).
+//
+//  3. ZATCA, which reads a ProfileID value and an AdditionalDocumentReference
+//     rather than BT-24, so it runs after everything that reads BT-24. Real
+//     ZATCA invoices carry no CustomizationID at all, so this costs nothing in
+//     practice; the contrived document that carries "urn:peppol:pint:x" and
+//     "reporting:1.0" together is PINT, because the specification identifier
+//     is a claim about the rule set and a profile identifier is not.
+//
+//  4. The presence of a distinguishing child — Biller (ebInterface), then
+//     SellerParty (Svefaktura). This is the weakest evidence in the table and
+//     the pair is the weakest arbitration in it: a document carrying both is
+//     not a real document of either format, and the order exists so the answer
+//     is at least fixed and stated. ebInterface goes first because Biller
+//     belongs to ebInterface's own vocabulary and appears in no UBL schema,
+//     while SellerParty is an ordinary UBL 1.0 party role that a UBL 1.0
+//     document other than a Svefaktura could also carry.
+//
+//  5. Anything still rooted Invoice or CreditNote is reported as EN 16931. The
+//     root name is exactly what parseEN16931 dispatches the UBL mapper on, so
+//     it is real evidence rather than a shrug, and the alternative — refusing
+//     to answer — would leave the caller with nothing for the single most
+//     common document this package sees.
+//
+// Everything else is SourceNone: a document that was read and recognised as no
+// format this package validates. That is a third answer, distinct from the
+// error, and the distinction is the same one the Is* predicates draw between
+// (false, nil) and a non-nil error. Collapsing "I read this and it is not a
+// format I know" into "I could not read this" would say something false about
+// the file, and collapsing it the other way would route a truncated invoice to
+// a validator that then reports another format's rules against it.
+//
+// # What it costs
+//
+// One streaming pass, the same one the Is* predicates make, over the same
+// docShape. Detect builds no tree and spends no element budget, so the document
+// that exhausts the parser's budget is still routable — which is the point of
+// routing before validating.
+func Detect(xmlData []byte) (Detection, error) {
+	d, err := detectShape(xmlData)
+	if err != nil {
+		return Detection{}, err
+	}
+	return d.detect(), nil
+}
+
+// detect applies the precedence to a scanned shape.
+func (d *docShape) detect() Detection {
+	det := Detection{Root: d.root, SpecID: d.specID()}
+	det.CIUS = DetectCIUS(det.SpecID)
+	det.Source = d.detectSource(det.SpecID, det.CIUS)
+	return det
+}
+
+// detectSource is step 1 of the order: the roots that belong to exactly one
+// format, and the two shared roots that delegate.
+func (d *docShape) detectSource(specID string, c CIUS) Source {
+	switch d.root {
+	case "Facturae":
+		return SourceFacturae
+	case "FatturaElettronica":
+		return SourceFatturaPA
+	case "InvoiceData":
+		return SourceOSA
+	case "Finvoice":
+		return SourceFinvoice
+	case "INVOICE_CENTER":
+		return SourceTEAPPS
+	case "SCRDMCCBDACIOMessageStructure":
+		// Order-X has no Is* predicate — it is an order, not an invoice, so no
+		// caller asked "is this an invoice of format X" about it. It has a root
+		// no other format uses and a validator of its own, so leaving it out of
+		// the routing would have been an omission rather than a decision.
+		return SourceOrderX
+	case "Faktura":
+		// The Polish root without its Naglowek head is not a KSeF FA document,
+		// and nothing else claims the name.
+		if d.hasNaglowek {
+			return SourceKSeF
+		}
+		return SourceNone
+	case "CrossIndustryInvoice":
+		// The CII syntax is used by Factur-X/ZUGFeRD and by the CIUS that
+		// publish a CII binding, and by no national format in this package, so
+		// the specification identifier is the only question left to ask.
+		if src := ciusSource(c); src != SourceNone {
+			return src
+		}
+		return SourceEN16931
+	case "Invoice", "CreditNote":
+		return d.detectUBL(specID, c)
+	}
+	return SourceNone
+}
+
+// detectUBL is steps 2 to 5: arbitration inside the root name that four
+// national formats, seven CIUS and the EN 16931 UBL binding all share.
+func (d *docShape) detectUBL(specID string, c CIUS) Source {
+	switch {
+	// Step 2 — the Specification identifier, most specific match first.
+	case strings.Contains(specID, "peppol:pint"):
+		return SourcePINT
+	case strings.Contains(specID, "OIOUBL"):
+		return SourceOIOUBL
+	case c != CIUSNone:
+		return ciusSource(c)
+	case strings.HasPrefix(strings.ToUpper(specID), "TR"):
+		return SourceUBLTR
+	// Step 3 — ZATCA, which reads a profile identifier and a document
+	// reference rather than BT-24.
+	case strings.Contains(strings.ToLower(d.str("ProfileID")), "reporting") || d.icvDocRef:
+		return SourceZATCA
+	// Step 4 — a distinguishing child, the weakest evidence here.
+	case d.hasBiller:
+		return SourceEbInterface
+	case d.hasSellerParty:
+		return SourceSvefaktura
+	}
+	// Step 5 — a UBL invoice declaring no national profile.
+	return SourceEN16931
+}
+
+// ciusSource maps a CIUS onto the authority that publishes it, so the seven
+// CIUS reach Detection.Source without a second taxonomy. It reports SourceNone
+// for CIUSNone.
+func ciusSource(c CIUS) Source {
+	switch c {
+	case CIUSXRechnung:
+		return SourceXRechnung
+	case CIUSPeppol:
+		return SourcePeppol
+	case CIUSNLCIUS:
+		return SourceNLCIUS
+	case CIUSPortugal:
+		return SourceCIUSPT
+	case CIUSRomania:
+		return SourceCIUSRO
+	case CIUSBelgium:
+		return SourceUBLBE
+	case CIUSSerbia:
+		return SourceSRBDT
+	}
+	return SourceNone
 }

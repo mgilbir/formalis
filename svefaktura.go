@@ -21,6 +21,14 @@ import (
 // unsupported character encoding, or a guard that tripped — and the bool is
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
+//
+// The Is* predicates are independent tests, not a partition. This one keys on a
+// distinguishing child of a root four national formats, seven CIUS and the
+// EN 16931 UBL binding all share — the weakest evidence of the twelve, since no
+// other format forbids that child — so more than one can report true about the
+// same document: <Invoice><Biller/><SellerParty/></Invoice> satisfies this
+// predicate and IsEbInterface both. Detect applies a documented precedence —
+// IsEbInterface wins that pair — and returns a single answer; route with it.
 func IsSvefaktura(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {

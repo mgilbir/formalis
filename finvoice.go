@@ -19,6 +19,13 @@ import (
 // unsupported character encoding, or a guard that tripped — and the bool is
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
+//
+// The Is* predicates are independent tests, not a partition: several of them key
+// on a root element name that four national formats, seven CIUS and the EN 16931
+// UBL binding all share, and more than one can report true about one document.
+// This one keys on a root no other format claims, so nothing overlaps it today.
+// Detect owns the precedence for the whole set and returns a single answer; route
+// with it.
 func IsFinvoice(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {

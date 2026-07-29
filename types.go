@@ -160,6 +160,13 @@ func CIUSFor(level string) (CIUS, bool) {
 type Source string
 
 const (
+	// SourceNone is the absent authority — no rule set. It is the zero Source,
+	// and it is what Detect reports for a document it read and recognised as no
+	// format this package validates; Detection.Recognised tests for it. No
+	// Violation ever carries it: a finding with no Source is an emission site
+	// that did not decide whose rule it reports, which
+	// TestNoRuleIdentifierIsClaimedByTwoSources fails on.
+	SourceNone Source = ""
 	// SourceEN16931 is CEN's EN 16931 — the semantic model's core business rules
 	// (BR-*, BR-CO-*, BR-CL-*, BR-DEC-*, BR-IC-*, and the VAT category families)
 	// together with the UBL and CII syntax bindings (UBL-DT-*, UBL-SR-*, CII-SR-*).

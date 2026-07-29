@@ -115,3 +115,357 @@ func TestDetectorsAgreeOnCannotTell(t *testing.T) {
 		}
 	}
 }
+
+// The tests below cover the ordered entry point rather than the twelve
+// predicates: that it arbitrates where they overlap, that it keeps their
+// three-way answer, that it can now be asked which CIUS a document declares,
+// and that its answer routes.
+
+// overlapDocs are the documents that show the twelve Is* predicates are not a
+// partition. Each is read by two predicates as their own format, and each
+// resolves under Detect's documented order to exactly one.
+//
+// The rows carry the *whole* predicate answer, not just the pair that overlaps,
+// because the point of the test is that both contracts hold at once: the
+// per-predicate answer is unchanged and still correct on its own terms, and the
+// routing answer is single. Pinning only the overlap would let a future
+// predicate widen — the way IsTurkishInvoice already matches any identifier
+// beginning "TR" — and silently take over a route.
+var overlapDocs = []struct {
+	name string
+	doc  string
+	// true is the predicates that report true; every other predicate must
+	// report (false, nil).
+	true []string
+	// want is the one answer Detect gives, and why the order gives it.
+	want Source
+	why  string
+}{
+	{
+		name: "a distinguishing child of each of two formats",
+		doc:  `<Invoice><Biller/><SellerParty/></Invoice>`,
+		true: []string{"IsEbInterface", "IsSvefaktura"},
+		want: SourceEbInterface,
+		why:  "step 4: Biller belongs to ebInterface's own vocabulary, SellerParty is an ordinary UBL 1.0 party role",
+	},
+	{
+		name: "a specification identifier naming two profiles",
+		doc:  `<Invoice><CustomizationID>TR-OIOUBL-2.02</CustomizationID></Invoice>`,
+		true: []string{"IsOIOUBL", "IsTurkishInvoice"},
+		want: SourceOIOUBL,
+		why:  "step 2b: a brand name inside the identifier beats a two-character prefix over a shared namespace",
+	},
+	{
+		name: "a PINT identifier with a ZATCA profile identifier",
+		doc: `<Invoice><CustomizationID>urn:peppol:pint:x</CustomizationID>` +
+			`<ProfileID>reporting:1.0</ProfileID></Invoice>`,
+		true: []string{"IsZATCA", "IsPINT"},
+		want: SourcePINT,
+		why:  "steps 2a and 3: BT-24 is a claim about the rule set, a profile identifier is not",
+	},
+}
+
+// TestDetectArbitratesWhereThePredicatesOverlap holds both halves of the
+// contract on the same three documents.
+//
+// The overlap is not a defect in the predicates — IsOIOUBL means "the
+// specification identifier says OIOUBL", which is true of "TR-OIOUBL-2.02" —
+// it is a missing arbitration. Before Detect the package shipped twelve
+// independent tests and a README example that switched on them one at a time,
+// so the answer a caller got depended on the order they happened to ask in, and
+// every caller invented a different order. This test makes the ambiguity
+// explicit rather than hiding it: the predicates keep answering as documented,
+// and the routing answer is single and fixed.
+func TestDetectArbitratesWhereThePredicatesOverlap(t *testing.T) {
+	for _, tc := range overlapDocs {
+		t.Run(tc.name, func(t *testing.T) {
+			data := []byte(tc.doc)
+
+			wantTrue := map[string]bool{}
+			for _, n := range tc.true {
+				wantTrue[n] = true
+			}
+			if len(wantTrue) < 2 {
+				t.Fatalf("this row records %d overlapping predicates; it proves nothing about arbitration", len(wantTrue))
+			}
+			for name, fn := range exportedDetectors {
+				got, err := fn(data)
+				if err != nil {
+					t.Fatalf("%s: %v", name, err)
+				}
+				if got != wantTrue[name] {
+					t.Errorf("%s = %v, want %v; the per-predicate contract is that each is an independent test",
+						name, got, wantTrue[name])
+				}
+			}
+
+			det, err := Detect(data)
+			if err != nil {
+				t.Fatalf("Detect: %v", err)
+			}
+			if det.Source != tc.want {
+				t.Errorf("Detect = %q, want %q (%s)", det.Source, tc.want, tc.why)
+			}
+			if !det.Recognised() {
+				t.Error("Detect recognised nothing in a document two predicates both claim")
+			}
+			if det.Validator() == nil {
+				t.Errorf("Detect returned %q, which routes to no validator", det.Source)
+			}
+		})
+	}
+}
+
+// TestDetectSourceAndCIUSDisagreeOnPINT pins the one place Detection's two
+// answers differ, so the divergence is a documented property rather than a
+// surprise. A PINT identifier contains "peppol", so the BT-24 dispatch
+// ValidateCIUS performs reads it as the Peppol CIUS while Detect, which owns the
+// precedence, reports PINT — a different rule set with a validator of its own.
+func TestDetectSourceAndCIUSDisagreeOnPINT(t *testing.T) {
+	const doc = `<Invoice><CustomizationID>urn:peppol:pint:billing-1@my-1</CustomizationID></Invoice>`
+	det, err := Detect([]byte(doc))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if det.Source != SourcePINT {
+		t.Errorf("Source = %q, want %q", det.Source, SourcePINT)
+	}
+	if det.CIUS != CIUSPeppol {
+		t.Errorf("CIUS = %q, want %q: it is DetectCIUS(SpecID) and nothing else", det.CIUS, CIUSPeppol)
+	}
+	if det.CIUS != DetectCIUS(det.SpecID) {
+		t.Errorf("CIUS = %q but DetectCIUS(SpecID) = %q; the field is documented as the second",
+			det.CIUS, DetectCIUS(det.SpecID))
+	}
+}
+
+// TestDetectSeparatesUnrecognisedFromUnreadable keeps Detect on the discipline
+// every Is* predicate already obeys. There are three answers, not two: a format,
+// a document that was read and is no format this package validates, and a
+// document that could not be read at all. Folding the middle one into the error
+// would say the file is broken when it is merely foreign; folding it the other
+// way would route a truncated invoice somewhere.
+func TestDetectSeparatesUnrecognisedFromUnreadable(t *testing.T) {
+	unreadable := map[string]string{
+		"truncated mid-element": `<?xml version="1.0"?><Facturae><FileHeader><Schema`,
+		"mismatched end tag":    `<?xml version="1.0"?><Facturae><a></b></Facturae>`,
+		"empty input":           ``,
+		"not XML at all":        "%PDF-1.7\x00binary",
+		"unimplemented charset": `<?xml version="1.0" encoding="EBCDIC-CP-BE"?><Facturae/>`,
+	}
+	for name, doc := range unreadable {
+		det, err := Detect([]byte(doc))
+		if err == nil {
+			t.Errorf("%s: Detect = %+v, nil; unreadable input must be an error", name, det)
+		}
+		if det != (Detection{}) {
+			t.Errorf("%s: Detect returned %+v alongside an error; the value must mean nothing", name, det)
+		}
+	}
+
+	// Read, and no format this package validates. Root is still reported: it is
+	// the evidence the answer rests on, and a caller logging a rejection wants it.
+	unrecognised := map[string]string{
+		"an unrelated root":       `<?xml version="1.0"?><SomeUnrelatedRoot/>`,
+		"a UBL despatch advice":   `<DespatchAdvice><ID>1</ID></DespatchAdvice>`,
+		"the KSeF root, no head":  `<Faktura><Inne/></Faktura>`,
+		"a document with no root": `<!-- nothing here -->`,
+	}
+	for name, doc := range unrecognised {
+		det, err := Detect([]byte(doc))
+		if name == "a document with no root" {
+			// No root element at all is unreadable, not unrecognised: parseCII
+			// says so too, and detection must not diverge from it.
+			if err == nil {
+				t.Errorf("%s: Detect = %+v, nil; a document with no root element cannot be read", name, det)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v; the document is well-formed and must be read, not refused", name, err)
+			continue
+		}
+		if det.Recognised() {
+			t.Errorf("%s: Detect = %q, want no format", name, det.Source)
+		}
+		if det.Source != SourceNone {
+			t.Errorf("%s: Source = %q, want %q", name, det.Source, SourceNone)
+		}
+		if det.Validator() != nil {
+			t.Errorf("%s: an unrecognised document routed to a validator", name)
+		}
+		if det.Root == "" {
+			t.Errorf("%s: Detect dropped the root element name, which is what the answer rests on", name)
+		}
+	}
+}
+
+// TestDetectExtractsTheSpecificationIdentifier is the affordance that was
+// missing: DetectCIUS took a BT-24 string and nothing exported could produce
+// one from XML, so a caller who wanted to route on the CIUS — to log it, meter
+// it, pick a downstream schema, or reject before paying for a validation — had
+// to re-implement namespace-agnostic parsing of two different syntaxes.
+//
+// The identifier is checked against mustSpecID, which reads it through the
+// semantic mappers ValidateCIUS itself dispatches on, so this pins the two
+// readings together rather than asserting a literal twice.
+func TestDetectExtractsTheSpecificationIdentifier(t *testing.T) {
+	// The CII case is the one the streaming scan had to grow a capture for: the
+	// identifier is three elements below the root, not directly under it.
+	ciiXRechnung := strings.Replace(validCII, "urn:cen.eu:en16931:2017",
+		"urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0", 1)
+	if ciiXRechnung == validCII {
+		t.Fatal("the CII fixture no longer carries the identifier this test rewrites")
+	}
+
+	cases := []struct {
+		name       string
+		doc        string
+		wantSpecID string
+		wantCIUS   CIUS
+		wantSource Source
+	}{
+		{"CII, EN 16931 core", validCII, "urn:cen.eu:en16931:2017", CIUSNone, SourceEN16931},
+		{"CII, XRechnung", ciiXRechnung,
+			"urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0", CIUSXRechnung, SourceXRechnung},
+		{"UBL, XRechnung", minimalXRechnungUBL,
+			"urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0", CIUSXRechnung, SourceXRechnung},
+		{"UBL, Peppol", minimalPeppolUBL,
+			"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0", CIUSPeppol, SourcePeppol},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			det, err := Detect([]byte(tc.doc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if det.SpecID != tc.wantSpecID {
+				t.Errorf("SpecID = %q, want %q", det.SpecID, tc.wantSpecID)
+			}
+			// The dispatcher's own reading of BT-24, through the mappers.
+			if want := mustSpecID(t, tc.doc); det.SpecID != want {
+				t.Errorf("SpecID = %q, but ValidateCIUS routes on %q", det.SpecID, want)
+			}
+			if det.CIUS != tc.wantCIUS {
+				t.Errorf("CIUS = %q, want %q", det.CIUS, tc.wantCIUS)
+			}
+			if det.Source != tc.wantSource {
+				t.Errorf("Source = %q, want %q", det.Source, tc.wantSource)
+			}
+		})
+	}
+
+	// A root that is neither syntax carries no BT-24 this package could quote,
+	// and guessing one from a same-named element would be worse than silence.
+	det, err := Detect([]byte(`<Facturae><CustomizationID>urn:cen.eu:en16931:2017</CustomizationID></Facturae>`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if det.SpecID != "" || det.CIUS != CIUSNone {
+		t.Errorf("a Facturae root reported SpecID %q / CIUS %q; neither mapper reads that element",
+			det.SpecID, det.CIUS)
+	}
+}
+
+// TestDetectRoutesEveryFormatToAValidator makes the routing total. An order
+// nobody can act on without re-deriving a format-to-validator table of their own
+// has only moved the problem, so every Source Detect can return must name an
+// entry point, and the two that are not formats must name none.
+func TestDetectRoutesEveryFormatToAValidator(t *testing.T) {
+	for _, src := range allSources {
+		got := Detection{Source: src}.Validator()
+		if src == SourceChecker {
+			if got != nil {
+				t.Errorf("Source %q routes to a validator; it is this package speaking about its own run, not a format", src)
+			}
+			continue
+		}
+		if got == nil {
+			t.Errorf("Source %q routes to no validator, so a caller detecting it has nowhere to go", src)
+		}
+	}
+	if (Detection{}).Validator() != nil {
+		t.Error("the zero Detection routes somewhere; recognising nothing must route nowhere")
+	}
+}
+
+// TestDetectedValidatorRunsTheRuleSetItNamed closes the loop end to end: the
+// document is detected, the validator the detection names is called, and the
+// Report it returns declares the coverage of the Source that was detected. A
+// routing that reached a different rule set would show up here as a coverage
+// claim that does not contain the detected Source's gaps.
+func TestDetectedValidatorRunsTheRuleSetItNamed(t *testing.T) {
+	cases := map[string]struct {
+		doc  string
+		want Source
+	}{
+		"UBL XRechnung":     {minimalXRechnungUBL, SourceXRechnung},
+		"UBL Peppol":        {minimalPeppolUBL, SourcePeppol},
+		"CII EN 16931":      {validCII, SourceEN16931},
+		"OIOUBL":            {`<Invoice><CustomizationID>OIOUBL-2.1</CustomizationID></Invoice>`, SourceOIOUBL},
+		"UBL-TR":            {`<Invoice><CustomizationID>TR1.2</CustomizationID></Invoice>`, SourceUBLTR},
+		"PINT":              {`<Invoice><CustomizationID>urn:peppol:pint:billing-1@sg-1</CustomizationID></Invoice>`, SourcePINT},
+		"ZATCA":             {`<Invoice><ProfileID>reporting:1.0</ProfileID></Invoice>`, SourceZATCA},
+		"ebInterface":       {`<Invoice><Biller/></Invoice>`, SourceEbInterface},
+		"Svefaktura":        {`<Invoice><SellerParty/></Invoice>`, SourceSvefaktura},
+		"Facturae":          {`<Facturae><FileHeader/></Facturae>`, SourceFacturae},
+		"FatturaPA":         {`<FatturaElettronica/>`, SourceFatturaPA},
+		"NAV OSA":           {`<InvoiceData/>`, SourceOSA},
+		"Finvoice":          {`<Finvoice/>`, SourceFinvoice},
+		"TEAPPS":            {`<INVOICE_CENTER/>`, SourceTEAPPS},
+		"KSeF":              {`<Faktura><Naglowek/></Faktura>`, SourceKSeF},
+		"Order-X":           {`<SCRDMCCBDACIOMessageStructure/>`, SourceOrderX},
+		"NLCIUS":            {`<Invoice><CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0</CustomizationID></Invoice>`, SourceNLCIUS},
+		"CIUS-PT":           {`<Invoice><CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:feap.gov.pt:CIUS-PT:2.1.1</CustomizationID></Invoice>`, SourceCIUSPT},
+		"CIUS-RO":           {`<Invoice><CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:efactura.mfinante.ro:CIUS-RO:1.0.0</CustomizationID></Invoice>`, SourceCIUSRO},
+		"UBL.BE":            {`<Invoice><CustomizationID>urn:cen.eu:en16931:2017#conformant#urn:UBL.BE:1.0.0.20180214</CustomizationID></Invoice>`, SourceUBLBE},
+		"SRBDT":             {`<Invoice><CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:mfin.gov.rs:srbdt:2022</CustomizationID></Invoice>`, SourceSRBDT},
+		"unrecognised root": {`<SomeUnrelatedRoot/>`, SourceNone},
+	}
+
+	// Every format this package validates has a row, so a new Source cannot be
+	// added without deciding how Detect reaches it.
+	covered := map[Source]bool{}
+	for _, tc := range cases {
+		covered[tc.want] = true
+	}
+	for _, src := range allSources {
+		if src != SourceChecker && !covered[src] {
+			t.Errorf("no document in this table detects as %q", src)
+		}
+	}
+
+	ctx := context.Background()
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			det, err := Detect([]byte(tc.doc))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if det.Source != tc.want {
+				t.Fatalf("Detect = %q, want %q", det.Source, tc.want)
+			}
+			v := det.Validator()
+			if tc.want == SourceNone {
+				if v != nil {
+					t.Error("an unrecognised document routed to a validator")
+				}
+				return
+			}
+			if v == nil {
+				t.Fatalf("%q routes to no validator", det.Source)
+			}
+			rep := v(ctx, []byte(tc.doc))
+			gaps := map[string]bool{}
+			for _, g := range rep.NotEvaluated {
+				gaps[g] = true
+			}
+			for _, g := range Coverage(det.Source) {
+				if !gaps[g] {
+					t.Errorf("the validator Detect chose for %q did not declare that Source's coverage gap %q; "+
+						"the routing reached a different rule set", det.Source, g)
+				}
+			}
+		})
+	}
+}

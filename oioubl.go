@@ -22,6 +22,13 @@ import (
 // unsupported character encoding, or a guard that tripped — and the bool is
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
+//
+// The Is* predicates are independent tests, not a partition. This one reads the
+// Specification identifier of a root four national formats, seven CIUS and the
+// EN 16931 UBL binding all share, so more than one can report true about the
+// same document: "TR-OIOUBL-2.02" satisfies this predicate and IsTurkishInvoice
+// both. Detect applies a documented precedence — this one wins that pair — and
+// returns a single answer; route with it.
 func IsOIOUBL(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {

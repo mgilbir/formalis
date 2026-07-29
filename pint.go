@@ -36,6 +36,14 @@ func DetectPINTJurisdiction(customizationID string) string {
 // unsupported character encoding, or a guard that tripped — and the bool is
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
+//
+// The Is* predicates are independent tests, not a partition. This one reads the
+// Specification identifier of a root four national formats, seven CIUS and the
+// EN 16931 UBL binding all share, so more than one can report true about the
+// same document: an invoice declaring "urn:peppol:pint:x" and ProfileID
+// "reporting:1.0" satisfies this predicate and IsZATCA both. Detect applies a
+// documented precedence — this one wins that pair — and returns a single answer;
+// route with it.
 func IsPINT(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {
