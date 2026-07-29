@@ -1,0 +1,189 @@
+package formalis
+
+import (
+	"context"
+	"strings"
+	"testing"
+)
+
+// Per-rule tests for the 54 fatal UBL-SR-* rules of CEN's UBL syntax binding.
+//
+// The CEN unit-test suite is not a substitute for these. Of the 54 rules it
+// ships an <error> fragment for five — UBL-SR-12, 18, 42, 44 and 47 — and a
+// <success>-only fragment for one more, UBL-SR-43. The other forty-eight are
+// invisible to TestEN16931ConformanceSuite in both directions: it would neither
+// notice a rule that never fires nor a rule that fires on a conforming invoice.
+// The corpus is a stronger oracle but a partial one — it exercises the shapes
+// real producers emit, which is by construction the conforming half.
+//
+// So every rule gets both verdicts: a document that satisfies it, on which it
+// must stay silent, and a document that breaks it, on which it must fire. The
+// two together are what says the rule is a rule rather than a constant.
+//
+// Each case asserts about its own rule and no other, for the reason
+// en16931_core_rules_test.go gives: a fixture with three party tax schemes
+// breaks UBL-SR-42 and UBL-SR-13 at once, and pinning the whole finding set
+// would make each case fail for the other's reasons.
+
+// The insertion points in minimalUBL. The fixture is one clean EN 16931 invoice
+// and every case below is that invoice plus one thing, so what a case is about
+// is the string it inserts.
+const (
+	ublAtDocument = `<ID>INV-1</ID>`
+	ublAtSeller   = `<PartyLegalEntity><RegistrationName>Seller Ltd</RegistrationName></PartyLegalEntity>`
+	ublAtBuyer    = `<PartyLegalEntity><RegistrationName>Buyer Ltd</RegistrationName></PartyLegalEntity>`
+	ublAtAddress  = `<PostalAddress>` // the first one, which is the seller's
+	ublAtLine     = `<InvoiceLine><ID>1</ID>`
+	ublAtItem     = `<Item><Name>Widget</Name>`
+	ublAtPrice    = `<Price>`
+	ublAtCategory = `<TaxCategory><ID>S</ID><Percent>19</Percent>`
+)
+
+// ublWith is minimalUBL with x inserted immediately after anchor.
+func ublWith(t *testing.T, anchor, x string) string {
+	t.Helper()
+	return mutate(t, minimalUBL, anchor, anchor+x)
+}
+
+// ublCreditNote rewrites minimalUBL as the UBL CreditNote of the same invoice.
+// Only UBL-SR-43 distinguishes the two roots, and it is the only rule that needs
+// this.
+func ublCreditNote(s string) string {
+	for _, r := range [][2]string{
+		{`<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">`,
+			`<CreditNote xmlns="urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2">`},
+		{`</Invoice>`, `</CreditNote>`},
+		{`InvoiceTypeCode>380<`, `CreditNoteTypeCode>381<`},
+		{`</InvoiceTypeCode>`, `</CreditNoteTypeCode>`},
+		{`InvoiceLine>`, `CreditNoteLine>`},
+		{`InvoicedQuantity`, `CreditedQuantity`},
+	} {
+		s = strings.ReplaceAll(s, r[0], r[1])
+	}
+	return s
+}
+
+// The party tax scheme fragments the cardinality cases repeat. A complete one
+// carries both halves UBL-SR-53 requires.
+const (
+	ublVATScheme   = `<PartyTaxScheme><CompanyID>DE987654321</CompanyID><TaxScheme><ID>VAT</ID></TaxScheme></PartyTaxScheme>`
+	ublOtherScheme = `<PartyTaxScheme><CompanyID>123/456/789</CompanyID><TaxScheme><ID>FC</ID></TaxScheme></PartyTaxScheme>`
+)
+
+// TestUBLSyntaxRules is the per-rule table. Every fatal UBL-SR-* rule appears
+// twice, once with want=false and once with want=true.
+func TestUBLSyntaxRules(t *testing.T) {
+	// The fixture every case is built from must itself be clean, or a case that
+	// expects silence would be asserting nothing.
+	if v := Validate(context.Background(), []byte(minimalUBL), ProfileEN16931).Violations; len(v) != 0 {
+		t.Fatalf("baseline UBL not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
+	}
+
+	cases := []ruleCase{
+		// --- Document-element cardinality (context: /ubl:Invoice | /cn:CreditNote) ---
+		{"UBL-SR-01 one contract reference", ublWith(t, ublAtDocument,
+			`<ContractDocumentReference><ID>C-1</ID></ContractDocumentReference>`), "UBL-SR-01", false},
+		{"UBL-SR-01 two contract references", ublWith(t, ublAtDocument,
+			`<ContractDocumentReference><ID>C-1</ID></ContractDocumentReference>`+
+				`<ContractDocumentReference><ID>C-2</ID></ContractDocumentReference>`), "UBL-SR-01", true},
+
+		{"UBL-SR-02 one receipt advice reference", ublWith(t, ublAtDocument,
+			`<ReceiptDocumentReference><ID>R-1</ID></ReceiptDocumentReference>`), "UBL-SR-02", false},
+		{"UBL-SR-02 two receipt advice references", ublWith(t, ublAtDocument,
+			`<ReceiptDocumentReference><ID>R-1</ID></ReceiptDocumentReference>`+
+				`<ReceiptDocumentReference><ID>R-2</ID></ReceiptDocumentReference>`), "UBL-SR-02", true},
+
+		{"UBL-SR-03 one despatch advice reference", ublWith(t, ublAtDocument,
+			`<DespatchDocumentReference><ID>D-1</ID></DespatchDocumentReference>`), "UBL-SR-03", false},
+		{"UBL-SR-03 two despatch advice references", ublWith(t, ublAtDocument,
+			`<DespatchDocumentReference><ID>D-1</ID></DespatchDocumentReference>`+
+				`<DespatchDocumentReference><ID>D-2</ID></DespatchDocumentReference>`), "UBL-SR-03", true},
+
+		{"UBL-SR-04 one invoiced object identifier", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></AdditionalDocumentReference>`), "UBL-SR-04", false},
+		{"UBL-SR-04 two invoiced object identifiers", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></AdditionalDocumentReference>`+
+				`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-2</ID><DocumentTypeCode>130</DocumentTypeCode></AdditionalDocumentReference>`), "UBL-SR-04", true},
+
+		{"UBL-SR-05 one payment terms note", ublWith(t, ublAtDocument,
+			`<PaymentTerms><Note>Net 30 days</Note></PaymentTerms>`), "UBL-SR-05", false},
+		{"UBL-SR-05 two payment terms notes", ublWith(t, ublAtDocument,
+			`<PaymentTerms><Note>Net 30 days</Note><Note>2% within 10 days</Note></PaymentTerms>`), "UBL-SR-05", true},
+
+		{"UBL-SR-08 one invoicing period", ublWith(t, ublAtDocument,
+			`<InvoicePeriod><StartDate>2024-01-01</StartDate><EndDate>2024-01-31</EndDate></InvoicePeriod>`), "UBL-SR-08", false},
+		{"UBL-SR-08 two invoicing periods", ublWith(t, ublAtDocument,
+			`<InvoicePeriod><StartDate>2024-01-01</StartDate><EndDate>2024-01-31</EndDate></InvoicePeriod>`+
+				`<InvoicePeriod><StartDate>2024-02-01</StartDate><EndDate>2024-02-29</EndDate></InvoicePeriod>`), "UBL-SR-08", true},
+
+		{"UBL-SR-24 one deliver-to group", ublWith(t, ublAtDocument,
+			`<Delivery><ActualDeliveryDate>2024-01-10</ActualDeliveryDate></Delivery>`), "UBL-SR-24", false},
+		{"UBL-SR-24 two deliver-to groups", ublWith(t, ublAtDocument,
+			`<Delivery><ActualDeliveryDate>2024-01-10</ActualDeliveryDate></Delivery>`+
+				`<Delivery><ActualDeliveryDate>2024-01-11</ActualDeliveryDate></Delivery>`), "UBL-SR-24", true},
+
+		{"UBL-SR-29 one SEPA creditor identifier", ublWith(t, ublAtSeller,
+			`<PartyIdentification><ID schemeID="SEPA">DE98ZZZ09999999999</ID></PartyIdentification>`), "UBL-SR-29", false},
+		{"UBL-SR-29 a SEPA creditor identifier on the seller and on the payee", ublWith(t,
+			ublAtSeller, `<PartyIdentification><ID schemeID="SEPA">DE98ZZZ09999999999</ID></PartyIdentification>`+
+				`</Party></AccountingSupplierParty><PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName>`+
+				`<PartyIdentification><ID schemeID="SEPA">DE98ZZZ08888888888</ID></PartyIdentification></PayeeParty>`+
+				`<AccountingSupplierParty><Party>`), "UBL-SR-29", true},
+
+		{"UBL-SR-39 one project reference", ublWith(t, ublAtDocument,
+			`<ProjectReference><ID>PRJ-1</ID></ProjectReference>`), "UBL-SR-39", false},
+		{"UBL-SR-39 two project references", ublWith(t, ublAtDocument,
+			`<ProjectReference><ID>PRJ-1</ID></ProjectReference><ProjectReference><ID>PRJ-2</ID></ProjectReference>`), "UBL-SR-39", true},
+
+		{"UBL-SR-44 one payment reference repeated across payment means", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentID>REF-1</PaymentID></PaymentMeans>`+
+				`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentID>REF-1</PaymentID></PaymentMeans>`), "UBL-SR-44", false},
+		{"UBL-SR-44 two different payment references", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentID>REF-1</PaymentID></PaymentMeans>`+
+				`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentID>REF-2</PaymentID></PaymentMeans>`), "UBL-SR-44", true},
+
+		{"UBL-SR-45 one payment due date", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentDueDate>2024-02-15</PaymentDueDate></PaymentMeans>`), "UBL-SR-45", false},
+		{"UBL-SR-45 two payment due dates", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentDueDate>2024-02-15</PaymentDueDate></PaymentMeans>`+
+				`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentDueDate>2024-03-15</PaymentDueDate></PaymentMeans>`), "UBL-SR-45", true},
+
+		{"UBL-SR-46 one payment means text", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode name="Credit transfer">30</PaymentMeansCode></PaymentMeans>`), "UBL-SR-46", false},
+		{"UBL-SR-46 two payment means texts", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode name="Credit transfer">30</PaymentMeansCode></PaymentMeans>`+
+				`<PaymentMeans><PaymentMeansCode name="Bank transfer">30</PaymentMeansCode></PaymentMeans>`), "UBL-SR-46", true},
+
+		{"UBL-SR-47 two payment means groups agreeing on the code", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>`+
+				`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>`), "UBL-SR-47", false},
+		{"UBL-SR-47 two payment means groups disagreeing on the code", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>`+
+				`<PaymentMeans><PaymentMeansCode>58</PaymentMeansCode></PaymentMeans>`), "UBL-SR-47", true},
+
+		{"UBL-SR-49 one tax point date code", ublWith(t, ublAtDocument,
+			`<InvoicePeriod><DescriptionCode>3</DescriptionCode></InvoicePeriod>`), "UBL-SR-49", false},
+		{"UBL-SR-49 two tax point date codes", ublWith(t, ublAtDocument,
+			`<InvoicePeriod><DescriptionCode>3</DescriptionCode><DescriptionCode>35</DescriptionCode></InvoicePeriod>`), "UBL-SR-49", true},
+
+		{"UBL-SR-54 one payment card account", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>48</PaymentMeansCode><CardAccount><PrimaryAccountNumberID>1234</PrimaryAccountNumberID></CardAccount></PaymentMeans>`), "UBL-SR-54", false},
+		{"UBL-SR-54 two payment card accounts", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>48</PaymentMeansCode>`+
+				`<CardAccount><PrimaryAccountNumberID>1234</PrimaryAccountNumberID></CardAccount>`+
+				`<CardAccount><PrimaryAccountNumberID>5678</PrimaryAccountNumberID></CardAccount></PaymentMeans>`), "UBL-SR-54", true},
+
+		{"UBL-SR-55 one direct debit mandate", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>59</PaymentMeansCode><PaymentMandate><ID>MND-1</ID></PaymentMandate></PaymentMeans>`), "UBL-SR-55", false},
+		{"UBL-SR-55 two direct debit mandates", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>59</PaymentMeansCode>`+
+				`<PaymentMandate><ID>MND-1</ID></PaymentMandate><PaymentMandate><ID>MND-2</ID></PaymentMandate></PaymentMeans>`), "UBL-SR-55", true},
+
+		{"UBL-SR-56 one tender or lot reference", ublWith(t, ublAtDocument,
+			`<OriginatorDocumentReference><ID>LOT-1</ID></OriginatorDocumentReference>`), "UBL-SR-56", false},
+		{"UBL-SR-56 two tender or lot references", ublWith(t, ublAtDocument,
+			`<OriginatorDocumentReference><ID>LOT-1</ID></OriginatorDocumentReference>`+
+				`<OriginatorDocumentReference><ID>LOT-2</ID></OriginatorDocumentReference>`), "UBL-SR-56", true},
+	}
+	runRuleCases(t, cases)
+}
