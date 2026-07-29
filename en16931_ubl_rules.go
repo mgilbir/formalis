@@ -75,6 +75,10 @@ func validateUBLSyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ublSyntaxLineRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ublSyntaxReferenceRules(g, add)
 	return out
 }
 
@@ -627,4 +631,61 @@ func ublSyntaxLineRules(g *ublSyntaxNodes, add func(rule, msg string)) {
 			add("UBL-SR-48", fmt.Sprintf("An invoice line shall have exactly one classified tax category (BT-151), not %d", n))
 		}
 	}
+}
+
+// ublSyntaxReferenceRules are the rules on cac:BillingReference and
+// cac:AdditionalDocumentReference.
+func ublSyntaxReferenceRules(g *ublSyntaxNodes, add func(rule, msg string)) {
+	for _, br := range g.billingRefs {
+		// count(cac:InvoiceDocumentReference) <= 1
+		if atMostOnce(br, "InvoiceDocumentReference") {
+			add("UBL-SR-06", "A preceding invoice reference group (BG-3) shall carry at most one preceding invoice")
+		}
+		// (cac:InvoiceDocumentReference/cbc:ID) — an existence test, so a billing
+		// reference that names no preceding invoice number is a violation.
+		//
+		// This is the same defect BR-55 reports on the model, and CEN reports it
+		// twice for the same reason: the semantic rule says the term is required
+		// and the binding says which element carries it. A reference validator
+		// emits both, and so does this one.
+		if countAt(br, "InvoiceDocumentReference", "ID") == 0 {
+			add("UBL-SR-07", "A preceding invoice reference (BG-3) shall carry the preceding invoice number (BT-25)")
+		}
+	}
+
+	for _, d := range g.addDocRefs {
+		// count(cbc:DocumentDescription) <= 1
+		if atMostOnce(d, "DocumentDescription") {
+			add("UBL-SR-33", "The Supporting document description (BT-123) shall occur at most once")
+		}
+		// (cbc:DocumentTypeCode='130') or ((local-name(/*) = 'CreditNote') and
+		// (cbc:DocumentTypeCode='50')) or (not(cbc:ID/@schemeID) and
+		// not(cbc:DocumentTypeCode)).
+		//
+		// cac:AdditionalDocumentReference carries two different business terms:
+		// the Invoiced object identifier (BT-18), which is marked by document
+		// type code 130 and is the only one entitled to a scheme identifier, and
+		// a supporting document (BG-24), which carries neither. The rule keeps
+		// the two apart.
+		switch {
+		case ublDocRefHasTypeCode(d, "130"):
+		case g.isCreditNote && ublDocRefHasTypeCode(d, "50"):
+		case len(d.all("DocumentTypeCode")) == 0 && !ublHasIDScheme(d):
+		default:
+			add("UBL-SR-43", "A supporting document reference (BG-24) shall carry no scheme identifier and no document type code; only the Invoiced object identifier (BT-18, type code 130) may")
+		}
+	}
+}
+
+// ublHasIDScheme reports whether any cbc:ID child carries a @schemeID. CEN
+// writes it `not(cbc:ID/@schemeID)`, an existence test on the attribute node, so
+// an empty schemeID counts as present — hence hasAttr rather than a comparison
+// against "".
+func ublHasIDScheme(d *ciiNode) bool {
+	for _, id := range d.all("ID") {
+		if id.hasAttr("schemeID") {
+			return true
+		}
+	}
+	return false
 }

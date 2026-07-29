@@ -186,10 +186,15 @@ var notEvaluated = map[Source][]string{
 	// precedent — so the entry carves out the half that is evaluated rather than
 	// claiming the whole rule, which would send a caller to re-implement a check
 	// that already runs on every Factur-X document.
+	//
+	// The fatal half of the UBL syntax binding is no longer here. All 54 fatal
+	// UBL-SR-* rules are evaluated (en16931_ubl_rules.go), which took the entry
+	// that named 49 of them off this list; the CII binding's fatal half remains,
+	// so a Factur-X document is still checked against fewer of CEN's rules than
+	// a Peppol one, and Report.Conformant is still false for both.
 	SourceEN16931: {
 		"BR-51 other than in the CII binding: EN16931-CII-model.sch flags it fatal and this package evaluates it there, while EN16931-UBL-model.sch flags it warning, so a UBL invoice carrying a full card PAN (BT-87) is not reported",
 		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145) — CEN binds all four to true() in both syntaxes, so they are unenforceable rather than unimplemented",
-		"UBL-SR-06/07, 33 and 43 (4 of the 54 fatal UBL cardinality rules: the preceding invoice and supporting document references)",
 		"UBL-DT-* other than UBL-DT-01/06/07 (the 21 advisory UBL datatype rules)",
 		"UBL-CR-* (678 rules, all but two advisory: UBL elements outside the EN 16931 core)",
 		"CII-SR-* other than CII-SR-467/469 (40 of the 42 fatal CII syntax rules, and 440 advisory ones)",
