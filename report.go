@@ -83,9 +83,9 @@ package formalis
 type RuleFamily struct {
 	// Rules is the identifier or range the authority uses — "UBL-CR-666,
 	// UBL-CR-673", "BR-CIUS-PT-24..63", "BR-NL-19..35". It is the machine-ish
-	// half: the tests that hold this table to the published Schematron read
-	// identifiers out of this field, and the guard against claiming a rule the
-	// package does in fact emit reads this field alone.
+	// half, written the way the authority writes it, ranges included, so that the
+	// tests holding this table to the published Schematron can read identifiers
+	// out of it and a caller can search for one.
 	Rules string
 
 	// Severity is what not evaluating this family costs a conformance claim:
