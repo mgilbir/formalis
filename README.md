@@ -84,10 +84,16 @@ Every `Violation` carries the severity its authority gave the rule: CEN's
 authorities' equivalents. `SeverityFatal` is the zero value, so an unstamped
 finding reads as blocking rather than as advisory — the fail-safe direction.
 
-Today every rule this package implements is one its authority flags fatal, and
-that is checked rather than assumed: one test sweeps the whole corpus for a
-finding at any other severity, and another reads the flag off each of the 108
-EN 16931 rules the corpus exercises straight from the vendored CEN Schematron.
+Today every rule this package implements is fatal, and that is checked rather
+than assumed: one test sweeps the whole corpus for a finding at any other
+severity, and another reads the flag off each of the 108 EN 16931 rules the
+corpus exercises straight from the vendored CEN Schematron.
+
+Where the identifier was minted here rather than quoted — `FPA-*`, `ZA-*`,
+`ORDER-*` and the rest — there is no flag to quote, and fatal is a decision: each
+of those rules checks a mandatory element of the format's own schema or a value
+outside its own code list, so a document that breaks one is a document the
+authority's gateway rejects. `go doc formalis.Severity` says so.
 
 `Coverage`'s families carry a severity too, and that is what makes
 `Conformant()` answerable at all: an advisory gap leaves the verdict intact and

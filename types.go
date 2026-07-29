@@ -336,6 +336,24 @@ const (
 // TestEveryEmittedEN16931RuleIsFatalInCENsSchematron holds the one Source with
 // vendored ground truth to the flag CEN publishes.
 //
+// # This package's own rule identifiers
+//
+// Most national formats publish no rule identifier this package could quote, so
+// the identifiers under those Sources — FPA-*, FE-*, EB-*, KS-*, FI-*, ZA-*,
+// SV-*, TP-*, OIO-*, TR-*, HU-*, PINT-*, ORDER-* — were minted here (see
+// Source). No authority has flagged them, so their severity is a decision rather
+// than a quotation, and the decision is that all of them are fatal.
+//
+// The reason is what those rules check rather than who wrote them down. Each is a
+// mandatory element of the format's own schema or a value outside its own code
+// list, so a document that breaks one is a document the authority's gateway
+// rejects at the border: the SdI refuses a FatturaPA with no invoice number, and
+// Fatoora refuses a ZATCA invoice with no UUID. That is precisely what fatal
+// means here. If one of these formats is later found to publish a genuinely
+// advisory expectation and this package implements it, it belongs at
+// SeverityWarning and TestEveryEmittedFindingIsFatalToday is where the change
+// gets recorded.
+//
 // # SourceChecker findings
 //
 // RuleLimit, RuleProfile and RuleRoot are this package's statements about its
@@ -401,9 +419,11 @@ func (v Violation) Error() string {
 // stamping one Source over a returned slice would misattribute the core half.
 //
 // The severity is written out rather than left to Severity's zero value. Every
-// rule this package implements is one its authority flags fatal, which is a fact
-// about the rule set and not a property of this helper, so the site that would
-// have to change when that stops being true is the one that states it.
+// rule this package implements is fatal — quoted from its authority's flag where
+// there is one, and decided here where the identifier was minted here (see
+// Severity) — which is a fact about the rule set and not a property of this
+// helper, so the site that would have to change when that stops being true is the
+// one that states it.
 func adder(out *[]Violation, src Source) func(rule, msg string) {
 	return func(rule, msg string) {
 		*out = append(*out, Violation{Source: src, Rule: rule, Severity: SeverityFatal, Message: msg})
