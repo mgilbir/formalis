@@ -372,9 +372,9 @@ func Validate(ctx context.Context, xmlData []byte, profile Profile) (Report, err
 }
 
 // unknownProfile reports a Profile this package does not implement, as the one
-// and only finding of a run that therefore examined nothing. See RuleProfile
-// for why this is neither a syntax finding nor a limit one, and why it is not
-// silence.
+// and only finding of a run that therefore examined nothing. See RuleProfile for
+// why this is neither an error about the file, nor a finding about the document,
+// nor a limit, and why it is not silence.
 //
 // The message names the accepted values because the failure this rejection
 // exists to catch is a near miss — Profile("EN16931") for ProfileEN16931 is one
