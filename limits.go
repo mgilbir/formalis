@@ -120,6 +120,15 @@ import (
 // a caller filtering with IsCheckerViolation gets "unknown". Neither gets a
 // clean bill of health from a run that did not look.
 //
+// This is also why a stopped run is not the error return. Every exported
+// validator can answer with an error, for a document it could not read, and it
+// would have been tidier to fold "and one it did not finish reading" into the
+// same channel. It would also have broken the property above: an error carries no
+// findings, so the checks that *did* complete — which are true, just incomplete —
+// would be discarded, and pdf0, which drains its own container guards and this
+// package's findings from one mixed slice looking for one rule name, would have
+// to learn a second mechanism for the same event.
+//
 // Report.Complete is where this generalises. A stopped run is one of two ways a
 // validator can fail to have seen everything — the other is a rule set that
 // does not implement every rule its authority publishes — and Complete is false
@@ -129,10 +138,11 @@ import (
 // pdf0's own container guards keep the same meaning inside a mixed slice.
 //
 // This is also why a parse failure has to be told apart from a stopped parse.
-// Returning RuleSyntax ("not well-formed") when the run was merely cancelled
-// would be the same lie in the other direction — accusing a document the checker
-// never finished reading. syntaxViolation draws that line, and every exported
-// validator goes through it.
+// Returning ErrMalformedXML when the run was merely cancelled would be the same
+// lie in the other direction — refusing a document the checker never finished
+// reading. readFailure draws that line, and every exported validator goes through
+// it, by way of one of the two harnesses (modelValidate and treeValidator.validate)
+// rather than by twenty-two validators each remembering to.
 //
 // # Why the Is* predicates take no context
 //
@@ -167,20 +177,39 @@ import (
 // only one name for the second.
 const RuleLimit = "limit"
 
-// RuleSyntax is the rule identifier for XML that is not well-formed or is not
-// an invoice document at all. Unlike RuleLimit this *is* a statement about the
-// file, but it is still this checker's statement rather than a rule authority's,
-// so it too carries SourceChecker.
-const RuleSyntax = "syntax"
+// RuleRoot is the rule identifier for a document this package read and that is
+// not an EN 16931 invoice in either syntax — a root element that is neither a
+// CrossIndustryInvoice nor a UBL Invoice or CreditNote. Unlike RuleLimit this
+// *is* a statement about the document, but it is still this checker's statement
+// rather than a rule authority's, so it too carries SourceChecker.
+//
+// It replaces the RuleSyntax constant, which meant two things: "this file is not
+// well-formed XML" and "this file is not an invoice document at all". The first
+// is now an error — see ErrMalformedXML — because there is no document to make a
+// finding about, and the second stays a finding because there is. Narrowing
+// RuleSyntax to the surviving half would have been the quieter change and the
+// worse one: a caller filtering on it to catch malformed files would still
+// compile and would never match one again. Being made to look at the call site is
+// the point, and "root" is what the surviving meaning is actually about — the
+// same word the thirteen tree-reading validators already use for it (FPA-root,
+// ZA-root, ORDER-root, …), whose findings are unchanged.
+//
+// It is not an IsCheckerViolation, for the reason RuleSyntax was not: "you handed
+// me a Facturae and I check EN 16931 invoices" is a definite answer, not a
+// confession that the checker did not look.
+const RuleRoot = "root"
 
 // RuleProfile is the rule identifier carried by a Violation that reports the
 // caller naming a Profile this package does not implement. Like RuleLimit and
-// RuleSyntax it carries SourceChecker, because it is a statement by this
+// RuleRoot it carries SourceChecker, because it is a statement by this
 // checker; unlike either it is a statement about the *request*, not about the
 // document, which is innocent and was not examined.
 //
-// It exists because the alternatives are all worse. Reporting it as RuleSyntax
-// would accuse a document that may be perfectly conformant. Reporting it as
+// It exists because the alternatives are all worse. Returning an error, as this
+// package does for a document it could not read, would say the input was
+// unreadable when the input was never looked at and the caller's argument was the
+// problem. Reporting it as RuleRoot would accuse a document that may be perfectly
+// conformant of being the wrong kind of document. Reporting it as
 // RuleLimit would overload an identifier documented as a resource-budget or
 // cancellation event and shared verbatim with pdf0, so a caller that routes
 // "the checker ran out of room, retry it smaller" would retry forever on input
@@ -204,8 +233,10 @@ const RuleProfile = "profile"
 // this package does not implement (RuleProfile) all produce one. Treat it as
 // "unknown", never as "conformant" and never as "non-conformant".
 //
-// RuleSyntax is deliberately *not* one of them: "this file is not well-formed
-// XML" is a finding about the document, and a definite one.
+// RuleRoot is deliberately *not* one of them: "this document is not an EN 16931
+// invoice" is a finding about the document, and a definite one. Neither is the
+// error a document this package cannot read produces, which does not arrive as a
+// finding at all.
 //
 // It tests Rule alone, deliberately, even though every finding this package
 // emits now carries a Source and the pair a caller should think in is
@@ -362,9 +393,10 @@ func (r *run) note(guard, msg string) {
 	}
 	r.seen[guard] = true
 	r.trips = append(r.trips, Violation{
-		Source:  SourceChecker,
-		Rule:    RuleLimit,
-		Message: fmt.Sprintf("%s (%s); the checks that had not yet run were skipped, so this invoice is neither confirmed valid nor invalid", msg, guard),
+		Source:   SourceChecker,
+		Rule:     RuleLimit,
+		Severity: SeverityFatal,
+		Message:  fmt.Sprintf("%s (%s); the checks that had not yet run were skipped, so this invoice is neither confirmed valid nor invalid", msg, guard),
 	})
 }
 

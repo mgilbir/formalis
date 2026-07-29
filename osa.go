@@ -56,7 +56,7 @@ func IsOSA(xmlData []byte) (bool, error) {
 // whole schema its authority publishes, so the Report is never Conformant even
 // for a document with no findings: Report.NotEvaluated, from Coverage(SourceOSA),
 // says what was not checked.
-func ValidateOSA(ctx context.Context, xmlData []byte) Report {
+func ValidateOSA(ctx context.Context, xmlData []byte) (Report, error) {
 	return osaValidator.validate(ctx, xmlData)
 }
 

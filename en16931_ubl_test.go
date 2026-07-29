@@ -25,7 +25,7 @@ func TestValidateUBLCorpus(t *testing.T) {
 			t.Errorf("%s: %v", f, err)
 			continue
 		}
-		v := Validate(context.Background(), data, ProfileEN16931).Violations
+		v := findings(t, context.Background(), withProfile(ProfileEN16931), data)
 		if len(v) != 0 {
 			t.Errorf("%s: expected 0 violations on a conforming UBL invoice, got %d (first: %s: %s)",
 				filepath.Base(f), len(v), v[0].Rule, v[0].Message)
@@ -79,7 +79,7 @@ const minimalUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd
 
 func TestValidateUBLMutations(t *testing.T) {
 	// Baseline: the minimal invoice is clean.
-	if v := Validate(context.Background(), []byte(minimalUBL), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(minimalUBL)); len(v) != 0 {
 		t.Fatalf("baseline UBL not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 	cases := []struct {
@@ -98,7 +98,7 @@ func TestValidateUBLMutations(t *testing.T) {
 			if broken == minimalUBL {
 				t.Fatalf("mutation string %q not found", tc.remove)
 			}
-			v := Validate(context.Background(), []byte(broken), ProfileEN16931).Violations
+			v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(broken))
 			found := false
 			for _, x := range v {
 				if x.Rule == tc.wantRule {
@@ -163,7 +163,7 @@ func TestTaxTotalSelectedByCurrency(t *testing.T) {
 		{"accounting-currency TaxTotal first", accFirst},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if v := Validate(context.Background(), []byte(tc.xml), ProfileEN16931).Violations; len(v) != 0 {
+			if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(tc.xml)); len(v) != 0 {
 				t.Errorf("a conforming two-TaxTotal invoice reported %d violation(s): %v", len(v), v)
 			}
 		})
@@ -171,8 +171,8 @@ func TestTaxTotalSelectedByCurrency(t *testing.T) {
 
 	// Order must not be observable at all: the same document in either order is
 	// the same invoice and must produce the same verdict.
-	a := Validate(context.Background(), []byte(docFirst), ProfileEN16931).Violations
-	b := Validate(context.Background(), []byte(accFirst), ProfileEN16931).Violations
+	a := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(docFirst))
+	b := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(accFirst))
 	if len(a) != len(b) {
 		t.Errorf("TaxTotal order changed the verdict: %d violation(s) one way, %d the other (%v / %v)",
 			len(a), len(b), a, b)
@@ -184,7 +184,7 @@ func TestTaxTotalSelectedByCurrency(t *testing.T) {
 		"<TaxInclusiveAmount>119.00</TaxInclusiveAmount>",
 		"<TaxInclusiveAmount>999.00</TaxInclusiveAmount>", 1)
 	var co15 string
-	for _, v := range Validate(context.Background(), []byte(brokenGrand), ProfileEN16931).Violations {
+	for _, v := range findings(t, context.Background(), withProfile(ProfileEN16931), []byte(brokenGrand)) {
 		if v.Rule == "BR-CO-15" {
 			co15 = v.Message
 		}
@@ -343,7 +343,7 @@ func TestInvoicingPeriodOrdersCalendarDays(t *testing.T) {
 		{"unreadable end", "2024-02-01", "sometime in March", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := hasFacturXRule(Validate(context.Background(), withPeriod("InvoicePeriod", tc.start, tc.end), ProfileEN16931).Violations, "BR-29")
+			got := hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), withPeriod("InvoicePeriod", tc.start, tc.end)), "BR-29")
 			if got != tc.wantViolation {
 				t.Errorf("BR-29 for period %s..%s: got %v, want %v", tc.start, tc.end, got, tc.wantViolation)
 			}
@@ -353,12 +353,12 @@ func TestInvoicingPeriodOrdersCalendarDays(t *testing.T) {
 	// BR-30 is the same rule on the line period (BG-26) and takes the same path.
 	sameDay := []byte(strings.Replace(minimalUBL, "<Item>",
 		"<InvoicePeriod><StartDate>2024-02-01+02:00</StartDate><EndDate>2024-02-01</EndDate></InvoicePeriod><Item>", 1))
-	if hasFacturXRule(Validate(context.Background(), sameDay, ProfileEN16931).Violations, "BR-30") {
+	if hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), sameDay), "BR-30") {
 		t.Error("BR-30 must not fire for a line period that starts and ends on the same calendar day")
 	}
 	outOfOrder := []byte(strings.Replace(minimalUBL, "<Item>",
 		"<InvoicePeriod><StartDate>2024-03-01+02:00</StartDate><EndDate>2024-02-01</EndDate></InvoicePeriod><Item>", 1))
-	if !hasFacturXRule(Validate(context.Background(), outOfOrder, ProfileEN16931).Violations, "BR-30") {
+	if !hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), outOfOrder), "BR-30") {
 		t.Error("BR-30 should still fire for a line period that genuinely ends before it starts")
 	}
 }
@@ -390,7 +390,7 @@ func TestVATIdentifierCountryPrefix(t *testing.T) {
 		{"de123", true},     // lowercase is not the code
 	} {
 		t.Run(tc.id, func(t *testing.T) {
-			got := hasFacturXRule(Validate(context.Background(), withSellerVATID(tc.id), ProfileEN16931).Violations, "BR-CO-09")
+			got := hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), withSellerVATID(tc.id)), "BR-CO-09")
 			if got != tc.wantViolation {
 				t.Errorf("BR-CO-09 for seller VAT identifier %q: got %v, want %v", tc.id, got, tc.wantViolation)
 			}
@@ -401,7 +401,7 @@ func TestVATIdentifierCountryPrefix(t *testing.T) {
 	// seller cannot be identified, and BR-CO-09 says nothing.
 	noVATID := []byte(strings.Replace(minimalUBL,
 		"<PartyTaxScheme><CompanyID>DE123456789</CompanyID><TaxScheme><ID>VAT</ID></TaxScheme></PartyTaxScheme>", "", 1))
-	if hasFacturXRule(Validate(context.Background(), noVATID, ProfileEN16931).Violations, "BR-CO-09") {
+	if hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), noVATID), "BR-CO-09") {
 		t.Error("BR-CO-09 must not fire when there is no VAT identifier to prefix")
 	}
 }
@@ -414,13 +414,13 @@ func TestVATAmountTolerance(t *testing.T) {
 	within := strings.Replace(minimalUBL,
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>19.00</TaxAmount>",
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>19.60</TaxAmount>", 1)
-	if hasFacturXRule(Validate(context.Background(), []byte(within), ProfileEN16931).Violations, "BR-CO-17") {
+	if hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(within)), "BR-CO-17") {
 		t.Error("BR-CO-17 must not fire for a 0.60 rounding drift (within the ±1 tolerance)")
 	}
 	beyond := strings.Replace(minimalUBL,
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>19.00</TaxAmount>",
 		"<TaxableAmount>100.00</TaxableAmount><TaxAmount>21.00</TaxAmount>", 1)
-	if !hasFacturXRule(Validate(context.Background(), []byte(beyond), ProfileEN16931).Violations, "BR-CO-17") {
+	if !hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(beyond)), "BR-CO-17") {
 		t.Error("BR-CO-17 should fire for a 2.00 drift (beyond the ±1 tolerance)")
 	}
 }
@@ -434,7 +434,7 @@ func TestBindingRuleIDsPerSyntax(t *testing.T) {
 		"<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>"+
 			"<SpecifiedTradeSettlementPaymentMeans><TypeCode>30</TypeCode></SpecifiedTradeSettlementPaymentMeans>"+
 			"<SpecifiedTradeSettlementPaymentMeans><TypeCode>58</TypeCode></SpecifiedTradeSettlementPaymentMeans>", 1)
-	v := Validate(context.Background(), []byte(cii), ProfileEN16931).Violations
+	v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(cii))
 	if !hasFacturXRule(v, "CII-SR-467") {
 		t.Errorf("CII invoice should report CII-SR-467; got %v", v)
 	}
@@ -445,7 +445,7 @@ func TestBindingRuleIDsPerSyntax(t *testing.T) {
 	ubl := strings.Replace(minimalUBL, "</Invoice>",
 		"<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>"+
 			"<PaymentMeans><PaymentMeansCode>58</PaymentMeansCode></PaymentMeans></Invoice>", 1)
-	v = Validate(context.Background(), []byte(ubl), ProfileEN16931).Violations
+	v = findings(t, context.Background(), withProfile(ProfileEN16931), []byte(ubl))
 	if !hasFacturXRule(v, "UBL-SR-47") {
 		t.Errorf("UBL invoice should report UBL-SR-47; got %v", v)
 	}
@@ -460,7 +460,7 @@ func TestValidateUBLCalcMutation(t *testing.T) {
 	broken := bytes.Replace([]byte(minimalUBL),
 		[]byte("<TaxInclusiveAmount>119.00</TaxInclusiveAmount>"),
 		[]byte("<TaxInclusiveAmount>999.00</TaxInclusiveAmount>"), 1)
-	v := Validate(context.Background(), broken, ProfileEN16931).Violations
+	v := findings(t, context.Background(), withProfile(ProfileEN16931), broken)
 	found := false
 	for _, x := range v {
 		if x.Rule == "BR-CO-15" {

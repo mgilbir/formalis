@@ -14,16 +14,17 @@ import "context"
 // the same five steps — parse, route a parse failure, check the root, build the
 // finding sink, wrap the result — and one of the thirteen drifted off the
 // contract limits.go states as a property of the whole package. ValidateOrderXML
-// answered a parse error with a finding of its own rather than with
-// syntaxViolation, so malformed XML, empty input and a perfectly well-formed
+// answered a parse error with a finding of its own rather than through the one
+// shared path, so malformed XML, empty input and a perfectly well-formed
 // CrossIndustryInvoice all came back as the single claim "the order XML is not a
 // well-formed Cross Industry Order": false about the third document, silent
 // about *where* the first one broke, and invisible to a caller filtering on
-// RuleSyntax to tell a bad file from a bad invoice.
+// the exported constant for a malformed file to tell a bad file from a bad
+// invoice.
 //
 // The point of the harness is therefore not brevity but that there is now one
 // path from bytes to findings for every one of these validators, and it goes
-// through syntaxViolation. A national file can no longer express the divergence,
+// through readFailure. A national file can no longer express the divergence,
 // because it no longer contains the code that diverged.
 
 // treeValidator is one format's tree-reading validator: the roots it accepts,
@@ -35,12 +36,14 @@ type treeValidator struct {
 	source Source
 
 	// rootRule and rootMsg are the finding for a well-formed document that is not
-	// of this format. It is deliberately not RuleSyntax: such a document may be
-	// impeccable XML and a valid invoice in some other format, so reporting it as
-	// malformed would be an accusation the parser never made. Each format names
-	// it in its own space (FPA-root, FE-root, ZA-root, ...) so that a caller can
-	// tell "I was handed the wrong document" apart from "this document is
-	// broken", which is the distinction C5 collapsed.
+	// of this format. It is deliberately a finding and not the error a document
+	// this package cannot read produces: such a document may be impeccable XML and
+	// a valid invoice in some other format, so refusing to have read it would be
+	// an accusation the parser never made. Each format names it in its own space
+	// (FPA-root, FE-root, ZA-root, ...) so that a caller can tell "I was handed the
+	// wrong document" apart from "this document is broken", which is the
+	// distinction C5 collapsed. The EN 16931 half says the same thing with
+	// RuleRoot.
 	rootRule string
 	rootMsg  string
 
@@ -59,28 +62,30 @@ type treeValidator struct {
 }
 
 // validate is the whole body of the exported entry point: parse the document
-// once, route a parse failure through syntaxViolation, refuse a root this format
-// does not describe, then run the rule body.
+// once, hand a parse failure to readFailure, refuse a root this format does not
+// describe, then run the rule body.
 //
-// Every exit is wrapped in r.finish, so the invariant that a stopped run never
-// returns an empty slice holds on all four of them, and the single parse per
-// exported call that makes maxNodes a property of the document rather than of
-// the entry point is preserved: nothing below here reads the bytes again.
+// Every exit that produces a Report is wrapped in r.finish, so the invariant that
+// a stopped run never returns an empty slice holds on all of them, and the single
+// parse per exported call that makes maxNodes a property of the document rather
+// than of the entry point is preserved: nothing below here reads the bytes again.
 //
-// Every exit is also wrapped in newReport under this format's own Source, so
-// the coverage claim is the same on all four: these validators check the
-// mandatory structure and code lists rather than the whole XSD their authority
-// publishes, and that is true of a document they refused as much as of one they
-// read to the end.
-func (t treeValidator) validate(ctx context.Context, xmlData []byte) Report {
+// Every such exit is also wrapped in newReport under this format's own Source, so
+// the coverage claim does not depend on which one was taken: these validators
+// check the mandatory structure and code lists rather than the whole XSD their
+// authority publishes, and that is true of a document they refused as much as of
+// one they read to the end. The one exit that produces no Report is a document
+// that could not be read, where there is no rule set to have covered anything.
+func (t treeValidator) validate(ctx context.Context, xmlData []byte) (Report, error) {
 	r := newRun(ctx)
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		// syntaxViolation returns nothing when the parse was stopped rather than
-		// broken; the RuleLimit trip r.finish appends is then the whole answer.
-		return newReport(r.finish(syntaxViolation(err)), t.source)
+		// readFailure answers with the run's own RuleLimit trip when the parse was
+		// stopped rather than defeated, and with an error when the document could
+		// not be read. Neither is this format's to decide, which is the point.
+		return readFailure(r, err, t.source)
 	}
-	return newReport(r.finish(t.checkTree(root)), t.source)
+	return newReport(r.finish(t.checkTree(root)), t.source), nil
 }
 
 // checkTree is the half of validate that does not read bytes: refuse a root this
@@ -95,7 +100,7 @@ func (t treeValidator) validate(ctx context.Context, xmlData []byte) Report {
 // the dispatcher.
 func (t treeValidator) checkTree(root *ciiNode) []Violation {
 	if !t.accepts(root) {
-		return []Violation{{Source: t.source, Rule: t.rootRule, Message: t.rootMsg}}
+		return []Violation{{Source: t.source, Rule: t.rootRule, Severity: SeverityFatal, Message: t.rootMsg}}
 	}
 	var out []Violation
 	t.check(root, adder(&out, t.source))

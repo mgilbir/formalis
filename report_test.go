@@ -52,7 +52,7 @@ var completeSources = map[Source]bool{SourceChecker: true}
 func TestConformantIsFalseForACancelledRun(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	r := Validate(ctx, []byte(validCII), ProfileEN16931)
+	r := mustReport(t, ctx, withProfile(ProfileEN16931), []byte(validCII))
 	if r.Complete() {
 		t.Error("a cancelled run reported Complete")
 	}
@@ -69,7 +69,7 @@ func TestConformantIsFalseForACancelledRun(t *testing.T) {
 // route (a RuleLimit finding), and it is the case a caller is least likely to
 // have thought about, since nothing the caller did caused it.
 func TestConformantIsFalseForAnOverBudgetRun(t *testing.T) {
-	r := Validate(context.Background(), flatUBLBE(maxNodes+1), ProfileEN16931)
+	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), flatUBLBE(maxNodes+1))
 	if r.Complete() {
 		t.Error("an over-budget run reported Complete")
 	}
@@ -87,7 +87,7 @@ func TestConformantIsFalseForAnOverBudgetRun(t *testing.T) {
 // finding. NotEvaluated is empty on purpose — naming the gaps of a rule set
 // that never ran would suggest something was checked.
 func TestConformantIsFalseForAnUnknownProfile(t *testing.T) {
-	r := Validate(context.Background(), []byte(validCII), Profile("EN16931"))
+	r := mustReport(t, context.Background(), withProfile(Profile("EN16931")), []byte(validCII))
 	if r.Complete() {
 		t.Error("an unknown Profile reported Complete; no rule set was chosen")
 	}
@@ -103,25 +103,52 @@ func TestConformantIsFalseForAnUnknownProfile(t *testing.T) {
 	}
 }
 
-// TestConformantIsFalseForAMalformedDocument is the fourth. Here Conformant is
-// false because of the finding, not because of doubt: "this file is not
-// well-formed XML" is a definite statement about the document. The assertion is
-// on Conformant rather than on Complete for exactly that reason.
-func TestConformantIsFalseForAMalformedDocument(t *testing.T) {
-	r := Validate(context.Background(), []byte(`<a></b>`), ProfileEN16931)
+// TestConformantIsFalseForADocumentThatIsNotAnInvoice is the fourth. Here
+// Conformant is false because of the finding, not because of doubt: "this is not
+// an EN 16931 invoice" is a definite statement about a document that was read.
+// The assertion is on Conformant rather than on Complete for exactly that reason.
+//
+// It was written against a malformed document, which is now an error rather than
+// a Report and is covered by TestMalformedXMLIsAnError and by
+// TestReportFromAnIgnoredErrorIsNotConformant below. The surviving half of that
+// case — a document this package read and will not judge — is what this now
+// exercises, and it is the half where the coverage assertion still means
+// something: a Report exists on both sides, so the two can be compared.
+func TestConformantIsFalseForADocumentThatIsNotAnInvoice(t *testing.T) {
+	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(unknownRoot))
 	if r.Conformant() {
-		t.Error("a malformed document reported Conformant")
+		t.Error("a document that is not an invoice reported Conformant")
 	}
-	if len(r.Violations) != 1 || r.Violations[0].Rule != RuleSyntax {
-		t.Fatalf("a malformed document reported %v, want exactly one %q finding", r.Violations, RuleSyntax)
+	if len(r.Violations) != 1 || r.Violations[0].Rule != RuleRoot {
+		t.Fatalf("a document that is not an invoice reported %v, want exactly one %q finding", r.Violations, RuleRoot)
 	}
-	// The coverage claim must not depend on whether the document parsed: a
+	// The coverage claim must not depend on what the document turned out to be: a
 	// caller comparing two Reports would otherwise read a shorter NotEvaluated
-	// as better coverage when it only means the parse failed earlier.
-	clean := Validate(context.Background(), []byte(validCII), ProfileEN16931)
+	// as better coverage when it only means the run gave up earlier.
+	clean := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII))
 	if !reflect.DeepEqual(r.NotEvaluated, clean.NotEvaluated) {
-		t.Errorf("a malformed document reported different coverage from a readable one:\n  malformed %v\n  readable  %v",
+		t.Errorf("a document that is not an invoice reported different coverage from a readable one:\n  refused  %v\n  readable %v",
 			r.NotEvaluated, clean.NotEvaluated)
+	}
+}
+
+// TestReportFromAnIgnoredErrorIsNotConformant is the case the error return
+// created, and the reason Report.ran has to exist rather than being an
+// implementation detail nobody would miss.
+//
+// A caller who writes `r, _ := formalis.Validate(...)` — which Go makes easy, and
+// which some caller will write — must not get a value that reads as a clean
+// invoice. The Report beside an error is the zero Report, so it does not.
+func TestReportFromAnIgnoredErrorIsNotConformant(t *testing.T) {
+	r, _ := Validate(context.Background(), []byte(`<a></b>`), ProfileEN16931)
+	if r.Conformant() {
+		t.Error("the Report beside an error is Conformant; ignoring the error reads as a valid invoice")
+	}
+	if r.Complete() {
+		t.Error("the Report beside an error is Complete")
+	}
+	if len(r.Violations) != 0 || len(r.NotEvaluated) != 0 {
+		t.Errorf("the Report beside an error carries content: %+v", r)
 	}
 }
 
@@ -132,7 +159,7 @@ func TestConformantIsFalseForAMalformedDocument(t *testing.T) {
 // were never run. Before Report there was nothing a caller could read that said
 // so.
 func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
-	r := ValidateCIUSPT(context.Background(), []byte(minimalCIUSPTUBL))
+	r := mustReport(t, context.Background(), ValidateCIUSPT, []byte(minimalCIUSPTUBL))
 	if len(ptRuleViolations(r.Violations)) != 0 {
 		t.Fatalf("the fixture is no longer clean under the CIUS-PT rules, so this test proves nothing: %v", r.Violations)
 	}
@@ -233,7 +260,7 @@ func TestCoverageReturnsACopy(t *testing.T) {
 // CIUS half would say the core was complete, which is the same overstatement in
 // a smaller place.
 func TestComposedValidatorReportsTheUnionOfItsRuleSets(t *testing.T) {
-	r := ValidateCIUSPT(context.Background(), []byte(minimalCIUSPTUBL))
+	r := mustReport(t, context.Background(), ValidateCIUSPT, []byte(minimalCIUSPTUBL))
 	want := append(Coverage(SourceEN16931), Coverage(SourceCIUSPT)...)
 	if !reflect.DeepEqual(r.NotEvaluated, want) {
 		t.Errorf("ValidateCIUSPT NotEvaluated =\n  %v\nwant the union of the core and CIUS-PT gaps:\n  %v", r.NotEvaluated, want)
@@ -257,7 +284,7 @@ func TestComposedValidatorReportsTheUnionOfItsRuleSets(t *testing.T) {
 func TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan(t *testing.T) {
 	ctx := context.Background()
 
-	xr := ValidateCIUS(ctx, []byte(minimalXRechnungUBL))
+	xr := mustReport(t, ctx, ValidateCIUS, []byte(minimalXRechnungUBL))
 	wantXR := append(Coverage(SourceEN16931), Coverage(SourceXRechnung)...)
 	if !reflect.DeepEqual(xr.NotEvaluated, wantXR) {
 		t.Errorf("an XRechnung document routed through ValidateCIUS reported\n  %v\nwant the XRechnung union\n  %v", xr.NotEvaluated, wantXR)
@@ -269,7 +296,7 @@ func TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan(t *testing.T) {
 	// A document that declares no recognised CIUS is validated against the core
 	// alone, so naming any CIUS's gaps would be a claim about a rule set that
 	// never ran.
-	core := ValidateCIUS(ctx, []byte(minimalUBL))
+	core := mustReport(t, ctx, ValidateCIUS, []byte(minimalUBL))
 	if !reflect.DeepEqual(core.NotEvaluated, Coverage(SourceEN16931)) {
 		t.Errorf("a document with no recognised CIUS reported\n  %v\nwant the core's gaps alone\n  %v", core.NotEvaluated, Coverage(SourceEN16931))
 	}
@@ -287,7 +314,7 @@ func TestEveryValidatorReportsItsCoverage(t *testing.T) {
 			// Any well-formed document will do: coverage is a property of the
 			// rule set, not of the document, so it is reported even for one
 			// this validator refuses.
-			r := fn(ctx, []byte(unknownRoot))
+			r := mustReport(t, ctx, fn, []byte(unknownRoot))
 			if len(r.NotEvaluated) == 0 {
 				t.Fatalf("%s reported no coverage gaps at all", name)
 			}
@@ -315,7 +342,7 @@ func TestNotEvaluatedComesOnlyFromTheCoverageTable(t *testing.T) {
 	}
 	ctx := context.Background()
 	for name, fn := range allValidators {
-		for _, g := range fn(ctx, []byte(unknownRoot)).NotEvaluated {
+		for _, g := range mustReport(t, ctx, fn, []byte(unknownRoot)).NotEvaluated {
 			if !inTable[g] {
 				t.Errorf("%s reported the unevaluated family %q, which is not in the coverage table", name, g.Rules)
 			}
@@ -746,7 +773,7 @@ func TestZeroReportIsNotConformant(t *testing.T) {
 	// A copy is as good as the original, and a Report assembled by a caller out
 	// of parts is not: the field is unexported, so a value built outside this
 	// package cannot claim to have been validated by it.
-	real := ValidateCIUSPT(context.Background(), []byte(minimalCIUSPTUBL))
+	real := mustReport(t, context.Background(), ValidateCIUSPT, []byte(minimalCIUSPTUBL))
 	copied := real
 	if copied.Conformant() != real.Conformant() || copied.Complete() != real.Complete() {
 		t.Error("copying a Report changed what it claims")

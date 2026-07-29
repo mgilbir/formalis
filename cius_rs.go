@@ -36,9 +36,15 @@ var rsPIB = regexp.MustCompile(`^RS(\d{9}|\d{13})$`)
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice or credit note.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // The Report names the rule families neither rule set evaluates — the union of
 // Coverage(SourceEN16931) and Coverage(SourceSRBDT).
-func ValidateSRBDT(ctx context.Context, xmlData []byte) Report {
+func ValidateSRBDT(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceSRBDT}, validateSRBDT)
 }
 

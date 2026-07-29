@@ -34,7 +34,7 @@ func TestCIUSROCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if ro := roRuleViolations(ValidateCIUSRO(context.Background(), data).Violations); len(ro) != 0 {
+		if ro := roRuleViolations(findings(t, context.Background(), ValidateCIUSRO, data)); len(ro) != 0 {
 			t.Errorf("%s: expected 0 CIUS-RO violations on a conformant sample, got %v", filepath.Base(f), ro)
 		}
 	}
@@ -62,7 +62,7 @@ const minimalCIUSROUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 </Invoice>`
 
 func TestCIUSROMutations(t *testing.T) {
-	if ro := roRuleViolations(ValidateCIUSRO(context.Background(), []byte(minimalCIUSROUBL)).Violations); len(ro) != 0 {
+	if ro := roRuleViolations(findings(t, context.Background(), ValidateCIUSRO, []byte(minimalCIUSROUBL))); len(ro) != 0 {
 		t.Fatalf("baseline CIUS-RO invoice not clean: %v", ro)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -89,8 +89,8 @@ func TestCIUSROMutations(t *testing.T) {
 			if broken == minimalCIUSROUBL {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateCIUSRO(context.Background(), []byte(broken)).Violations, tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, roRuleViolations(ValidateCIUSRO(context.Background(), []byte(broken)).Violations))
+			if !hasFacturXRule(findings(t, context.Background(), ValidateCIUSRO, []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, roRuleViolations(findings(t, context.Background(), ValidateCIUSRO, []byte(broken))))
 			}
 		})
 	}

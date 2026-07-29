@@ -46,7 +46,7 @@ func withAllowanceCharge(ac string) string {
 }
 
 func TestValidateFacturXInvoiceValid(t *testing.T) {
-	if v := Validate(context.Background(), []byte(validCII), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII)); len(v) != 0 {
 		t.Fatalf("valid CII reported %d violation(s): %v", len(v), v)
 	}
 }
@@ -57,7 +57,11 @@ func TestValidateFacturXInvoiceViolations(t *testing.T) {
 		xml  string
 		rule string
 	}{
-		{"not CII or UBL", `<Foo/>`, "syntax"},
+		// A document that was read and is not an invoice: RuleRoot, the same
+		// answer the tree-reading validators give as FPA-root, ZA-root and the
+		// rest. Malformed XML is no longer here at all — it is an error, and
+		// error_contract_test.go holds every validator to that.
+		{"not CII or UBL", `<Foo/>`, RuleRoot},
 		{"missing spec id", strings.Replace(validCII, "<ID>urn:cen.eu:en16931:2017</ID>", "", 1), "BR-01"},
 		{"missing invoice number", strings.Replace(validCII, "<ID>INV-1</ID>", "", 1), "BR-02"},
 		{"missing issue date", strings.Replace(validCII, "<IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime>", "", 1), "BR-03"},
@@ -95,7 +99,7 @@ func TestValidateFacturXInvoiceViolations(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Validate(context.Background(), []byte(tc.xml), ProfileEN16931).Violations
+			v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(tc.xml))
 			found := false
 			for _, e := range v {
 				if e.Rule == tc.rule {
@@ -155,13 +159,13 @@ const subLineCII = `<CrossIndustryInvoice>
 </CrossIndustryInvoice>`
 
 func TestValidateFacturXSubLines(t *testing.T) {
-	if v := Validate(context.Background(), []byte(subLineCII), ProfileExtended).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileExtended), []byte(subLineCII)); len(v) != 0 {
 		t.Fatalf("valid sub-invoice-line document reported %d violation(s): %v", len(v), v)
 	}
 	// Breaking a child amount so the top-level rollup no longer matches must fire.
 	bad := strings.Replace(subLineCII, "<LineTotalAmount>100.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", "<LineTotalAmount>90.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", 1)
 	found := false
-	for _, e := range Validate(context.Background(), []byte(bad), ProfileExtended).Violations {
+	for _, e := range findings(t, context.Background(), withProfile(ProfileExtended), []byte(bad)) {
 		if e.Rule == "BR-CO-10" {
 			found = true
 		}

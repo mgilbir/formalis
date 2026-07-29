@@ -39,11 +39,17 @@ var nlciusTypeCodes = map[string]bool{"380": true, "381": true, "384": true, "38
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice or credit note.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // The Report names the rule families neither rule set evaluates. NLCIUS is the
 // one CIUS here whose fatal rules are implemented in full; its entry in the
 // coverage table is the advisory BR-NL-19..35 alone. The EN 16931 core it runs
 // on is another matter — see Coverage(SourceEN16931).
-func ValidateNLCIUS(ctx context.Context, xmlData []byte) Report {
+func ValidateNLCIUS(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceNLCIUS}, validateNLCIUS)
 }
 

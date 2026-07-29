@@ -45,10 +45,18 @@ const exampleUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd
 // Example validates a document against whichever rule set it declares, and reads
 // the answer the way this package intends: not "were there findings?" but "was
 // anything left unexamined?".
+//
+// The error is a separate question from the findings. It means the input could not
+// be read at all — malformed XML, an encoding this package does not implement —
+// and nothing about the invoice, which is why it is not a finding.
 func Example() {
-	report := formalis.ValidateCIUS(context.Background(), []byte(exampleUBL))
+	report, err := formalis.ValidateCIUS(context.Background(), []byte(exampleUBL))
+	if err != nil {
+		fmt.Println("could not read it:", err)
+		return
+	}
 
-	for _, v := range report.Violations {
+	for _, v := range report.Fatal() {
 		fmt.Printf("%s %s: %s\n", v.Source, v.Rule, v.Message)
 	}
 
@@ -68,13 +76,17 @@ func ExampleValidate() {
 	// An invoice whose seller has no registered name breaks BR-06.
 	broken := strings.Replace(exampleUBL, "<RegistrationName>Seller Ltd</RegistrationName>", "", 1)
 
-	report := formalis.Validate(context.Background(), []byte(broken), formalis.ProfileEN16931)
+	report, err := formalis.Validate(context.Background(), []byte(broken), formalis.ProfileEN16931)
+	if err != nil {
+		fmt.Println("could not read it:", err)
+		return
+	}
 	for _, v := range report.Violations {
-		fmt.Printf("%s %s\n", v.Source, v.Rule)
+		fmt.Printf("%s %s (%s)\n", v.Source, v.Rule, v.Severity)
 	}
 
 	// Output:
-	// EN 16931 BR-06
+	// EN 16931 BR-06 (fatal)
 }
 
 // ExampleDetect routes a document without a table of the caller's own. The three
@@ -102,7 +114,11 @@ func ExampleDetect() {
 
 		// Detection.Validator is ValidatePINT here, so the findings are PINT's
 		// and not Peppol BIS Billing 3.0's.
-		report := det.Validator()(context.Background(), []byte(pint))
+		report, verr := det.Validator()(context.Background(), []byte(pint))
+		if verr != nil {
+			fmt.Println("could not read it:", verr)
+			return
+		}
 		fmt.Println("judged by:", report.Violations[0].Source)
 	}
 
@@ -135,7 +151,11 @@ func ExampleIsCheckerViolation() {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	report := formalis.ValidateCIUS(ctx, []byte(exampleUBL))
+	report, err := formalis.ValidateCIUS(ctx, []byte(exampleUBL))
+	if err != nil {
+		fmt.Println("could not read it:", err)
+		return
+	}
 	for _, v := range report.Violations {
 		if formalis.IsCheckerViolation(v) {
 			fmt.Printf("unknown: %s %s\n", v.Source, v.Rule)
@@ -161,7 +181,12 @@ func ExampleViolation() {
 
 	counts := map[key]int{}
 	for _, doc := range [][]byte{[]byte(exampleUBL), []byte(`<Invoice/>`)} {
-		for _, v := range formalis.ValidateCIUS(context.Background(), doc).Violations {
+		report, err := formalis.ValidateCIUS(context.Background(), doc)
+		if err != nil {
+			fmt.Println("could not read it:", err)
+			return
+		}
+		for _, v := range report.Violations {
 			counts[key{v.Source, v.Rule}]++
 		}
 	}

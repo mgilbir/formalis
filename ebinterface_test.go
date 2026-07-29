@@ -30,7 +30,7 @@ func TestEbInterfaceCorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as ebInterface", filepath.Base(f))
 			continue
 		}
-		if v := ValidateEbInterface(context.Background(), data).Violations; len(v) != 0 {
+		if v := findings(t, context.Background(), ValidateEbInterface, data); len(v) != 0 {
 			t.Errorf("%s: expected 0 ebInterface violations, got %d (first %s: %s)", filepath.Base(f), len(v), v[0].Rule, v[0].Message)
 		}
 	}
@@ -43,7 +43,7 @@ const minimalEbInterface = `<eb:Invoice xmlns:eb="http://www.ebinterface.at/sche
 </eb:Invoice>`
 
 func TestEbInterfaceMutations(t *testing.T) {
-	if v := ValidateEbInterface(context.Background(), []byte(minimalEbInterface)).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), ValidateEbInterface, []byte(minimalEbInterface)); len(v) != 0 {
 		t.Fatalf("baseline ebInterface not clean: %v", v)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -59,8 +59,8 @@ func TestEbInterfaceMutations(t *testing.T) {
 			if broken == minimalEbInterface {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateEbInterface(context.Background(), []byte(broken)).Violations, tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateEbInterface(context.Background(), []byte(broken)).Violations)
+			if !hasFacturXRule(findings(t, context.Background(), ValidateEbInterface, []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, findings(t, context.Background(), ValidateEbInterface, []byte(broken)))
 			}
 		})
 	}

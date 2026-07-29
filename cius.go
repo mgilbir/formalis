@@ -264,22 +264,29 @@ func DetectCIUS(specID string) CIUS {
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice or credit note.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // The Report's coverage follows the document, not this entry point: it names
 // the gaps of the rule set the dispatch actually ran, so an XRechnung invoice
 // comes back with the XRechnung gaps and a Portuguese one with the CIUS-PT gaps.
 // A document that declares nothing recognisable is validated against the EN
 // 16931 core and reports the core's gaps alone.
-func ValidateCIUS(ctx context.Context, xmlData []byte) Report {
+func ValidateCIUS(ctx context.Context, xmlData []byte) (Report, error) {
 	r := newRun(ctx)
 	p, err := parseEN16931(r, xmlData)
 	if err != nil {
 		// The document never got as far as declaring anything, so the core — the
 		// rule set every branch of the dispatch either runs or is measured
-		// against — is the honest claim here.
-		return newReport(r.finish(syntaxViolation(err)), SourceEN16931)
+		// against — is the honest coverage claim on the paths that still produce a
+		// Report. parseFailure decides which those are.
+		return parseFailure(r, err, SourceEN16931)
 	}
 	out, sources := validateCIUS(r, p)
-	return newReport(r.finish(out), sources...)
+	return newReport(r.finish(out), sources...), nil
 }
 
 // modelValidators are the rule sets that read the syntax-neutral EN 16931 model,

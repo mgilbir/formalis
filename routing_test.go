@@ -401,8 +401,8 @@ func TestValidateCIUSRunsWhatDetectNamed(t *testing.T) {
 			if v == nil {
 				t.Fatalf("Detect = %q, which routes to no validator", det.Source)
 			}
-			got := ValidateCIUS(ctx, data)
-			want := v(ctx, data)
+			got := mustReport(t, ctx, ValidateCIUS, data)
+			want := mustReport(t, ctx, v, data)
 			if !reflect.DeepEqual(got.Violations, want.Violations) {
 				t.Errorf("ValidateCIUS reported\n  %v\nbut Detect named %q, whose validator reported\n  %v",
 					got.Violations, det.Source, want.Violations)

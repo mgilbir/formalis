@@ -41,12 +41,13 @@ import (
 // saying otherwise accuses a document the parser never complained about. The
 // other two lost information rather than inventing it — the decoder's message is
 // the only thing that says *where* the XML broke, and a caller filtering on the
-// exported RuleSyntax constant to separate "bad file" from "bad invoice" saw
-// nothing from this validator at all, though limits.go states that every
-// exported validator routes its parse errors through syntaxViolation.
+// exported constant for a malformed file to separate "bad file" from "bad
+// invoice" saw nothing from this validator at all, though limits.go states that
+// every exported validator routes its parse errors through one shared path.
 //
-// The three cases are now three answers: a malformed or empty document is
-// RuleSyntax carrying the decoder's own text, a well-formed document of another
+// The three cases are now three answers: a malformed or empty document is an
+// error wrapping ErrMalformedXML and carrying the decoder's own text, a
+// well-formed document of another
 // root is ORDER-root under SourceOrderX (the convention FPA-root, FE-root,
 // ZA-root … already follow), and a run that stopped early is RuleLimit and
 // nothing else. Holding to that is no longer this file's job: treeValidator owns
@@ -66,11 +67,17 @@ var orderXTypeCodes = map[string]bool{"220": true, "230": true, "231": true}
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean order.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // This validator checks the mandatory structure and code lists rather than the
 // whole schema its authority publishes, so the Report is never Conformant even
 // for a document with no findings: Report.NotEvaluated, from Coverage(SourceOrderX),
 // says what was not checked.
-func ValidateOrderXML(ctx context.Context, xmlData []byte) Report {
+func ValidateOrderXML(ctx context.Context, xmlData []byte) (Report, error) {
 	return orderXValidator.validate(ctx, xmlData)
 }
 

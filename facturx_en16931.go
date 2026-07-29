@@ -12,6 +12,40 @@ import (
 	"strings"
 )
 
+// The two ways this package can fail to read a document at all.
+//
+// Both are statements about the file rather than about the invoice, which is why
+// they are errors and not findings: there is no document to judge, so any
+// finding would be a claim about something nobody read. A stopped run is the
+// other way round — see RuleLimit — and the two are never confused.
+//
+// They are sentinels so the discrimination a caller actually makes is available
+// without parsing a message. "The sender's file is corrupt, ask for it again" and
+// "this producer emits UTF-16, add a transcoding step" are different operational
+// answers, and errors.Is is how a caller tells them apart. Nothing finer is
+// offered on purpose: the decoder's own text is wrapped in and carries the line
+// and column, which is the only thing that says *where* a document broke, and a
+// taxonomy of XML defects on top of that would be a second vocabulary for
+// something encoding/xml already describes well.
+var (
+	// ErrMalformedXML reports input the XML decoder rejected: not well-formed,
+	// no root element at all, an entity reference this decoder refuses. The
+	// wrapped error is the decoder's own, so %v on the result names the position.
+	ErrMalformedXML = errors.New("the invoice XML is not well-formed")
+
+	// ErrUnsupportedEncoding reports a document declaring a character encoding
+	// this package does not implement. See xmlCharsetReader for why that is a
+	// refusal rather than a passthrough.
+	ErrUnsupportedEncoding = errors.New("the invoice XML declares a character encoding this package does not implement")
+)
+
+// One error matches neither sentinel, and deliberately: a document that nests
+// deeper than maxDepth, which only the Is* predicates can return, because a
+// validator answers that same document with a RuleLimit finding. It is neither
+// malformed nor badly encoded — it is refused for what a tree of it would cost —
+// so claiming either sentinel would send a caller to the wrong remedy. A caller
+// that switches on the two sentinels needs a default arm, which it needs anyway.
+
 // xmlCharsetReader lets the XML decoder read the non-UTF-8 encodings some
 // national e-invoice formats declare (ISO-8859-1 / Windows-1252 are common in
 // Austrian ebInterface). It stays dependency-free: ISO-8859-1 maps each byte to
@@ -21,8 +55,8 @@ import (
 // bytes of, say, a UTF-16 or EBCDIC document read as UTF-8 are not the document:
 // element names come out mangled, so the rules run against text the sender never
 // wrote and report business-rule violations that say nothing about the invoice.
-// Refusing to read it is the honest answer, and the caller gets it as a parse
-// error rather than as a list of false accusations.
+// Refusing to read it is the honest answer, and the caller gets it as an error
+// rather than as a list of false accusations.
 func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
 	switch strings.ToLower(strings.TrimSpace(charset)) {
 	case "utf-8", "utf8", "us-ascii", "ascii":
@@ -40,7 +74,37 @@ func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
 		}
 		return strings.NewReader(sb.String()), nil
 	}
-	return nil, fmt.Errorf("unsupported XML character encoding %q", charset)
+	return nil, fmt.Errorf("%w: %q", ErrUnsupportedEncoding, charset)
+}
+
+// charsetTrap remembers an encoding refusal that the XML decoder would otherwise
+// reduce to text.
+//
+// encoding/xml formats a CharsetReader failure with %v and not %w, so
+// ErrUnsupportedEncoding does not survive the decoder and errors.Is on what
+// Token returns cannot see it. Wrapping the reader keeps the original error where
+// the two readers of these bytes — the tree parser and the streaming scan — can
+// both reach it, which is what lets them classify one document the same way.
+type charsetTrap struct{ err error }
+
+func (t *charsetTrap) reader(charset string, input io.Reader) (io.Reader, error) {
+	rd, err := xmlCharsetReader(charset, input)
+	// Only the refusal is remembered. A read failure from the underlying reader
+	// is not a statement about the declared encoding, and mislabelling it would
+	// send a caller to add a transcoding step it does not need.
+	if err != nil && errors.Is(err, ErrUnsupportedEncoding) {
+		t.err = err
+	}
+	return rd, err
+}
+
+// classify names what defeated a read: the encoding refusal if there was one,
+// otherwise the decoder's complaint under ErrMalformedXML.
+func (t *charsetTrap) classify(err error) error {
+	if t.err != nil {
+		return t.err
+	}
+	return fmt.Errorf("%w: %w", ErrMalformedXML, err)
 }
 
 // This file begins the EN 16931 semantic validation of the invoice XML embedded
@@ -104,7 +168,7 @@ func (n *ciiNode) hasAttr(name string) bool {
 // errStopped reports that the run ended before the document was fully parsed —
 // the caller's context was cancelled, or the nesting cap tripped. It is distinct
 // from a parse error because it says nothing about the document: a caller must
-// report it as a RuleLimit finding, never as RuleSyntax. The trip itself is
+// report it as a RuleLimit finding, never as a defect in the file. The trip itself is
 // already recorded on the run.
 var errStopped = errors.New("the run stopped before the invoice was fully parsed")
 
@@ -117,11 +181,15 @@ var errStopped = errors.New("the run stopped before the invoice was fully parsed
 const cancelParseTokens = 1024
 
 // parseCII parses invoice XML into a local-name element tree, or returns nil and
-// an error if it is not well-formed. It returns errStopped if r's context ended
-// or the document nested deeper than maxDepth.
+// an error if it could not be read. That error is always one of three things,
+// and every exported validator's answer is decided by which: errStopped if r's
+// context ended or the document nested deeper than maxDepth, and otherwise
+// ErrUnsupportedEncoding or ErrMalformedXML, classified here so that no caller
+// has to inspect a decoder message to tell them apart.
 func parseCII(r *run, data []byte) (*ciiNode, error) {
 	dec := xml.NewDecoder(bytes.NewReader(data))
-	dec.CharsetReader = xmlCharsetReader
+	var trap charsetTrap
+	dec.CharsetReader = trap.reader
 	var stack []*ciiNode
 	var root *ciiNode
 	for n := 0; ; n++ {
@@ -138,7 +206,7 @@ func parseCII(r *run, data []byte) (*ciiNode, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, err
+			return nil, trap.classify(err)
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
@@ -191,7 +259,10 @@ func parseCII(r *run, data []byte) (*ciiNode, error) {
 		n.closeNode()
 	}
 	if root == nil {
-		return nil, fmt.Errorf("no root element")
+		// A document with no root element is not well-formed XML: the standard
+		// requires exactly one. Empty input reaches here, which is why "there was
+		// nothing to read" and "what was there could not be read" are one answer.
+		return nil, fmt.Errorf("%w: no root element", ErrMalformedXML)
 	}
 	return root, nil
 }
@@ -269,15 +340,31 @@ func (n *ciiNode) str(path ...string) string {
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice or credit note.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. That is
+// a statement about the file rather than about the invoice, and it is the one
+// answer no Report can carry honestly, since there is no document to judge. The
+// Report returned with it is the zero Report, so a caller who ignores the error
+// cannot read the value as clean either. Everything else, including a
+// well-formed document that is not an invoice, is a finding: see ErrMalformedXML
+// and RuleRoot.
+//
 // The Report names the EN 16931 rule families this package does not evaluate —
 // see Coverage(SourceEN16931), which is not empty — so Report.Conformant is
 // false even for a document with no findings. Report says why.
-func Validate(ctx context.Context, xmlData []byte, profile Profile) Report {
+func Validate(ctx context.Context, xmlData []byte, profile Profile) (Report, error) {
 	if !knownProfile(profile) {
 		// No Source: a rejected Profile chose no rule set, so there is no
 		// coverage to report. The RuleProfile finding is what makes the Report
-		// incomplete.
-		return newReport(unknownProfile(profile))
+		// incomplete. It is not an error: the request was bad, the document was
+		// never read, and an error would say this package could not read it.
+		return newReport(unknownProfile(profile)), nil
 	}
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931}, func(r *run, p *parsed) []Violation {
 		return validateEN16931(r, p, profile)
@@ -300,21 +387,70 @@ func unknownProfile(p Profile) []Violation {
 		names[i] = strconv.Quote(string(k))
 	}
 	return []Violation{{
-		Source:  SourceChecker,
-		Rule:    RuleProfile,
-		Message: fmt.Sprintf("%q is not an EN 16931 conformance profile this checker implements, so no rules were run and this invoice is neither confirmed valid nor invalid; the profiles are %s, and a national CIUS is not one of them — for those use ValidateCIUS or the validator for that CIUS", string(p), strings.Join(names, ", ")),
+		Source:   SourceChecker,
+		Rule:     RuleProfile,
+		Severity: SeverityFatal,
+		Message:  fmt.Sprintf("%q is not an EN 16931 conformance profile this checker implements, so no rules were run and this invoice is neither confirmed valid nor invalid; the profiles are %s, and a national CIUS is not one of them — for those use ValidateCIUS or the validator for that CIUS", string(p), strings.Join(names, ", ")),
 	}}
 }
 
-// syntaxViolation reports a parse failure as a finding about the document —
-// unless the parse was stopped by the run, in which case it says nothing about
-// the document and the RuleLimit trip already recorded on the run is the whole
-// answer.
-func syntaxViolation(err error) []Violation {
+// readFailure is the answer an exported validator gives when the parse produced
+// no tree. There are exactly two, and which one is not a per-validator decision:
+//
+//   - the run was stopped — a cancelled context, a tripped budget — so nothing
+//     was read and nothing can be said about the document. That is a statement
+//     about the *run*, so it stays a finding: the RuleLimit trip r.finish appends
+//     is the whole answer, and Report is not empty, which is the invariant a
+//     caller testing len(r.Violations) == 0 depends on. pdf0 drains those trips
+//     from one mixed slice by rule name, so they cannot become errors.
+//   - the document could not be read at all. That is a statement about the file,
+//     it is the one thing a Report has no honest way to express, and it comes
+//     back as an error with the zero Report beside it — not conformant, not
+//     complete, so a caller who ignores the error still cannot read the value as
+//     clean.
+//
+// This is the one place that line is drawn, deliberately. The property finding C5
+// asked for is that no validator can express a different answer, and there are
+// two harnesses above this function and twenty-two validators above them.
+func readFailure(r *run, err error, sources ...Source) (Report, error) {
 	if errors.Is(err, errStopped) {
-		return nil
+		return newReport(r.finish(nil), sources...), nil
 	}
-	return []Violation{{Source: SourceChecker, Rule: RuleSyntax, Message: err.Error()}}
+	return Report{}, err
+}
+
+// notAnInvoiceError reports a document that was read and is not an EN 16931
+// invoice in either syntax.
+//
+// It is an error type only to travel out of parseEN16931 alongside the read
+// failures; it never reaches a caller, because parseFailure turns it into a
+// finding. Both of parseEN16931's callers go through parseFailure.
+type notAnInvoiceError struct{ root string }
+
+func (e *notAnInvoiceError) Error() string {
+	return fmt.Sprintf("the invoice XML root %q is neither a CrossIndustryInvoice (CII) nor a UBL Invoice/CreditNote", e.root)
+}
+
+// parseFailure is readFailure with the third answer the semantic layer needs: a
+// well-formed document that simply is not an invoice.
+//
+// That case is a finding and not an error, which is the boundary D8 leaves open
+// and this is the argument for where it falls. "This file cannot be read" is a
+// statement about the file; "this file is a Facturae, and I check EN 16931
+// invoices" is a statement about the document, made after reading it
+// successfully, and it is the same statement every tree-reading validator in this
+// package already makes as a finding (FPA-root, ZA-root, ORDER-root, …). Answering
+// it with an error here would mean the same question got two different kinds of
+// answer depending on which entry point the caller reached for, which is the
+// incoherence C5 was, one level up. A caller aggregating findings across formats
+// keeps one drain, and RuleRoot is how it recognises this one.
+func parseFailure(r *run, err error, sources ...Source) (Report, error) {
+	var nai *notAnInvoiceError
+	if errors.As(err, &nai) {
+		v := Violation{Source: SourceChecker, Rule: RuleRoot, Severity: SeverityFatal, Message: nai.Error()}
+		return newReport(r.finish([]Violation{v}), sources...), nil
+	}
+	return readFailure(r, err, sources...)
 }
 
 // parsed is one document, read once: the element tree and, when the document is
@@ -339,7 +475,11 @@ type parsed struct {
 func parseEN16931(r *run, xmlData []byte) (*parsed, error) {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return nil, fmt.Errorf("the invoice XML is not well-formed: %w", err)
+		// parseCII has already classified this — errStopped, ErrMalformedXML or
+		// ErrUnsupportedEncoding — and re-wrapping it with a description of its own
+		// would put "the invoice XML is not well-formed" in front of a cancelled
+		// run and an encoding refusal alike.
+		return nil, err
 	}
 	switch root.name {
 	case "CrossIndustryInvoice":
@@ -351,28 +491,28 @@ func parseEN16931(r *run, xmlData []byte) (*parsed, error) {
 		collectCommon(root, inv)
 		return &parsed{root: root, inv: inv}, nil
 	}
-	return nil, fmt.Errorf("the invoice XML root %q is neither a CrossIndustryInvoice (CII) nor a UBL Invoice/CreditNote", root.name)
+	return nil, &notAnInvoiceError{root: root.name}
 }
 
 // modelValidate is the whole body of every exported entry point that validates
-// against the syntax-neutral model: parse once, route a parse failure through
-// syntaxViolation, run the rule body, and report the coverage of the rule sets
-// it ran.
+// against the syntax-neutral model: parse once, hand a parse failure to
+// parseFailure, run the rule body, and report the coverage of the rule sets it
+// ran.
 //
 // It is to the EN 16931 half what treeValidator is to the national half, and it
 // exists for the same reason: nine entry points were writing out the same four
 // lines, and the coverage claim is now one of them. A validator that named its
 // own sources at the exit it happens to take could name a different set on the
 // parse-failure path than on the success path, and Report.NotEvaluated would
-// then depend on whether the document parsed. Here both paths pass the same
-// sources.
-func modelValidate(ctx context.Context, xmlData []byte, sources []Source, check func(*run, *parsed) []Violation) Report {
+// then depend on whether the document parsed. Here every path that produces a
+// Report passes the same sources.
+func modelValidate(ctx context.Context, xmlData []byte, sources []Source, check func(*run, *parsed) []Violation) (Report, error) {
 	r := newRun(ctx)
 	p, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return newReport(r.finish(syntaxViolation(err)), sources...)
+		return parseFailure(r, err, sources...)
 	}
-	return newReport(r.finish(check(r, p)), sources...)
+	return newReport(r.finish(check(r, p)), sources...), nil
 }
 
 // findAll returns every descendant (self included) with the given local name.
