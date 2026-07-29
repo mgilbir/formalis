@@ -18,6 +18,7 @@ func TestValidateUBLCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("EN 16931 UBL corpus not present (make en16931-ubl)")
 	}
+	atLeast(t, "EN 16931 UBL corpus", len(files), minEN16931UBLInvoices)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

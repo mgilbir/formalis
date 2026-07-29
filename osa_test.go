@@ -13,8 +13,13 @@ func TestOSACorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("OSA corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "OSA corpus", len(files), minOSAInstances)
 	for _, f := range files {
-		data, _ := os.ReadFile(f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+			continue
+		}
 		ok, err := IsOSA(data)
 		if err != nil {
 			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)

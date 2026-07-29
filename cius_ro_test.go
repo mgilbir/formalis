@@ -28,6 +28,7 @@ func TestCIUSROCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("CIUS-RO corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "CIUS-RO corpus", len(files), minCIUSROInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

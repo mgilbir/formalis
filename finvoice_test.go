@@ -13,6 +13,7 @@ func TestFinvoiceCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("Finvoice corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "Finvoice corpus", len(files), minFinvoiceInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

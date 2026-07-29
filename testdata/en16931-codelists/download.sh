@@ -5,7 +5,11 @@
 # versioned machine-readable code lists; they are gitignored, not vendored. The
 # committed Go tables (en16931_codelists.go, facturx_units.go) are generated from
 # them by gen.py, and en16931_codelists_test.go verifies the tables still match.
-set -u
+#
+# Every step is fatal. A bundle that arrived in part would leave the fidelity
+# test verifying the committed tables against whichever code lists happened to
+# download, which is a weaker claim wearing the same words.
+set -euo pipefail
 dir="$(cd "$(dirname "$0")" && pwd)"
 base="https://ec.europa.eu/digital-building-blocks/sites/download/attachments/467108974"
 curl -sfL -o "$dir/digital-genericodes.zip" "$base/digital-genericodes-2026-05-15.zip?version=2&modificationDate=1776349554309&api=v2" && echo "  genericode zip"

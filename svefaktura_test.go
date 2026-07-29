@@ -15,9 +15,14 @@ func TestSvefakturaCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("Svefaktura corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "Svefaktura corpus", len(files), minSvefakturaFiles)
 	recognised := 0
 	for _, f := range files {
-		data, _ := os.ReadFile(f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+			continue
+		}
 		ok, err := IsSvefaktura(data)
 		if err != nil {
 			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
@@ -31,9 +36,9 @@ func TestSvefakturaCorpus(t *testing.T) {
 			t.Errorf("%s: expected 0 Svefaktura violations, got %v", filepath.Base(f), v)
 		}
 	}
-	if recognised == 0 {
-		t.Error("no Svefaktura invoice recognised in the corpus")
-	}
+	// The transport-enveloped sample is not a direct Svefaktura document, so the
+	// recognised half is smaller than the file count and is ratcheted separately.
+	atLeast(t, "Svefaktura invoices recognised", recognised, minSvefakturaRecognised)
 }
 
 const minimalSvefaktura = `<Invoice xmlns="urn:sfti:documents:BasicInvoice:1:0">

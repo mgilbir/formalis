@@ -83,6 +83,7 @@ func TestEN16931ConformanceSuite(t *testing.T) {
 	if len(files) == 0 {
 		t.Fatalf("no unit-test files found under %s/test", dir)
 	}
+	atLeast(t, "EN 16931 unit-test files", len(files), minEN16931UnitTestFiles)
 
 	var falsePositives []string
 	caught := map[string]bool{}
@@ -144,17 +145,17 @@ func TestEN16931ConformanceSuite(t *testing.T) {
 	}
 
 	// Ratchet the number of rules whose error fragments we catch. It only goes
-	// up as rule coverage grows; a drop means a regression.
-	const caughtBaseline = 198
-	if len(caught) < caughtBaseline {
+	// up as rule coverage grows; a drop means a regression. The constant lives
+	// in corpus_test.go with the rest of the ratchets.
+	if len(caught) < minEN16931RulesCaught {
 		var caughtList []string
 		for r := range caught {
 			caughtList = append(caughtList, r)
 		}
 		sort.Strings(caughtList)
 		t.Errorf("caught %d/%d rules, below baseline %d; coverage regressed: %v",
-			len(caught), len(errorSeen), caughtBaseline, caughtList)
+			len(caught), len(errorSeen), minEN16931RulesCaught, caughtList)
 	}
 	t.Logf("EN 16931 conformance: 0 false positives, %d/%d rules caught (baseline %d)",
-		len(caught), len(errorSeen), caughtBaseline)
+		len(caught), len(errorSeen), minEN16931RulesCaught)
 }

@@ -165,6 +165,9 @@ func TestScanMatchesTreeDetection(t *testing.T) {
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {
+			// Skipping a document silently would shrink the population this
+			// parity claim is made over without saying so.
+			t.Errorf("%s: %v", p, err)
 			return nil
 		}
 		files++
@@ -180,6 +183,7 @@ func TestScanMatchesTreeDetection(t *testing.T) {
 	if files == 0 {
 		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
 	}
+	atLeast(t, "scan/tree parity corpus", files, minCorpusDocuments)
 	t.Logf("checked %d documents against the tree reference", files)
 }
 
@@ -442,15 +446,17 @@ func TestNodeBudgetStopsTheTree(t *testing.T) {
 // asserted in a comment: no document in the corpus comes near the budget, and
 // a document just under it still validates without tripping.
 func TestNodeBudgetLeavesRealInvoicesAlone(t *testing.T) {
-	worst, worstPath := 0, ""
+	worst, worstPath, files := 0, "", 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
 			return nil
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {
+			t.Errorf("%s: %v", p, err)
 			return nil
 		}
+		files++
 		r := newRun(nil)
 		if _, err := parseCII(r, data); err != nil {
 			return nil
@@ -464,9 +470,13 @@ func TestNodeBudgetLeavesRealInvoicesAlone(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Not vendored, so the margin can only be re-derived where the corpus is.
+	// Where it is, the margin is a claim about the whole corpus and has to be
+	// measured over the whole corpus: "no document here comes near the budget"
+	// is worth nothing if "here" is three documents.
 	if worst == 0 {
 		t.Log("no corpus present (make cius-oracles); the margin was not re-derived")
 	} else {
+		atLeast(t, "documents measured for the node budget margin", files, minCorpusDocuments)
 		t.Logf("largest corpus document: %d elements (%s), budget %d — %.0fx margin",
 			worst, worstPath, maxNodes, float64(maxNodes)/float64(worst))
 		if worst*20 > maxNodes {
@@ -575,14 +585,6 @@ var corpusFormat = map[string]Source{
 	"zatca":       SourceZATCA,
 }
 
-// minRoutedDocuments is the ratchet on the sweep below, in the same spirit as
-// en16931_conformance_test.go's caughtBaseline: the corpora are fetched by a
-// Makefile target whose downloads are not individually checked, so a test that
-// only asserted "every document I saw routed correctly" would pass loudly on
-// three files. The number is what the corpora contained when this was written;
-// it may grow.
-const minRoutedDocuments = 818
-
 // TestDetectRoutesTheCorpus is the evidence that the precedence is right about
 // documents rather than only about the constructed overlaps.
 //
@@ -640,10 +642,9 @@ func TestDetectRoutesTheCorpus(t *testing.T) {
 	if routed == 0 && unrecognised == 0 {
 		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
 	}
-	if routed < minRoutedDocuments {
-		t.Errorf("routed %d documents, want at least %d; a partial corpus fetch makes this test agree with anything",
-			routed, minRoutedDocuments)
-	}
+	// The ratchet, from corpus_test.go: a test that only asserted "every
+	// document I saw routed correctly" would pass loudly on three files.
+	atLeast(t, "documents routed", routed, minRoutedDocuments)
 	t.Logf("routed %d corpus documents to the format their corpus publishes (%d other document types skipped)",
 		routed, unrecognised)
 }

@@ -16,8 +16,13 @@ func TestPINTCorpus(t *testing.T) {
 		t.Skip("PINT corpus not present (make cius-oracles)")
 	}
 	seen := map[string]bool{}
+	recognised := 0
 	for _, f := range files {
-		data, _ := os.ReadFile(f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+			continue
+		}
 		ok, err := IsPINT(data)
 		if err != nil {
 			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
@@ -26,12 +31,14 @@ func TestPINTCorpus(t *testing.T) {
 		if !ok {
 			continue
 		}
+		recognised++
 		root, _ := parseCII(newRun(nil), data)
 		seen[DetectPINTJurisdiction(root.str("CustomizationID"))] = true
 		if v := ValidatePINT(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: expected 0 PINT violations, got %v", filepath.Base(f), v)
 		}
 	}
+	atLeast(t, "PINT corpus", recognised, minPINTInstances)
 	if len(seen) < 2 {
 		t.Errorf("expected multiple PINT jurisdictions in the corpus, saw %v", seen)
 	}

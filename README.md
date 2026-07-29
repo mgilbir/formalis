@@ -229,6 +229,38 @@ document.
 
 ## Tests
 
-`make test` runs the suite. The oracle-backed tests need their (gitignored)
-reference corpora — see the `en16931-*` and `cius-oracles` Makefile targets;
-without them those tests skip.
+`make test` runs the suite. Without the reference corpora it exercises the rule
+engine against hand-written fixtures and skips the oracle-backed tests; that is
+the mode a clean checkout and the fast CI job run in, and it is green.
+
+The oracles need corpora this repository does not vendor (`testdata/` is
+gitignored). Fetching them needs **`git`**, **`bash`**, **`curl`**, **`python3`**
+— several Romanian and Portuguese sample filenames are non-ASCII and are
+URL-encoded with it — and **`gh` authenticated against GitHub**, because the
+fetch makes about fifteen `gh api` calls and the unauthenticated rate limit of 60
+requests an hour is not enough for them. `make check-deps` verifies all of this
+up front and names what is missing, rather than failing two hundred lines into a
+download.
+
+```
+make check-deps                    # what the fetch targets need
+make cius-oracles                  # ~600 documents: XRechnung, Peppol, NLCIUS,
+                                   # the CIUS and the national-format samples
+make en16931-artefacts             # the CEN/TC 434 per-rule unit-test suite
+make en16931-ubl                   # the EN 16931 UBL example invoices
+make en16931-genericode            # the official code lists (needs unzip)
+make test
+```
+
+Each target is stamped, so re-running it is a no-op rather than an error; the
+matching `clean-*` target removes the stamp and the data, and is how you force a
+re-fetch. `make en16931-codelists` goes one step further and *regenerates* the
+committed code-list tables from the genericode with `gen.py` — a deliberate act,
+not part of running the tests, which is why fetching the oracle is its own
+target.
+
+With the corpora present the suite runs with no skips, and each oracle ratchets
+the number of documents it saw — the constants are collected in
+[`corpus_test.go`](corpus_test.go). A corpus that arrives truncated therefore
+fails the build rather than reporting a clean verdict over whatever landed, and
+the fetch itself fails on the first download it cannot complete.

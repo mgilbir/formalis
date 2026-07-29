@@ -26,6 +26,7 @@ func TestSRBDTCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("SRBDT corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "SRBDT corpus", len(files), minSRBDTInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
