@@ -3,7 +3,11 @@ package formalis
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"slices"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -381,4 +385,311 @@ func TestStoppedRunIsNotReportedAsBadSyntax(t *testing.T) {
 			}
 		})
 	}
+}
+
+// textDoc builds a document whose one inner element holds at least n bytes of
+// character data, laid down in the given chunk. The chunk is what decides the
+// shape: one long run, or a run broken into many tokens by comments.
+func textDoc(n int, chunk string) []byte {
+	var b strings.Builder
+	b.Grow(n + 128)
+	b.WriteString(`<Invoice><Note>`)
+	for b.Len() < n {
+		b.WriteString(chunk)
+	}
+	b.WriteString(`</Note></Invoice>`)
+	return []byte(b.String())
+}
+
+// TestBigTextDoesNotSpendTheNodeBudget states the gap limits.go documents: the
+// budgets count elements, and character data is not an element. A document that
+// is almost entirely one string spends two of a million, so nothing about the
+// element budget engages on it.
+//
+// This is the property, not a defect to be fixed — see limits.go for why there
+// is no text budget — and it is pinned so that the documentation cannot quietly
+// stop being true in either direction: if a text budget is ever added, this test
+// is where the decision has to be re-argued.
+func TestBigTextDoesNotSpendTheNodeBudget(t *testing.T) {
+	const size = 20 << 20
+	data := textDoc(size, strings.Repeat("x", 4096))
+
+	r := newRun(context.Background())
+	root, err := parseCII(r, data)
+	if err != nil {
+		t.Fatalf("a %d-byte document of one text node failed to parse: %v", len(data), err)
+	}
+	spent := maxNodes - r.nodes
+	t.Logf("%d bytes, of which %d is one element's text: %d of the %d-element budget spent",
+		len(data), len(root.child("Note").text), spent, maxNodes)
+	if spent != 2 {
+		t.Errorf("a two-element document spent %d of the node budget, want 2", spent)
+	}
+	if len(r.trips) != 0 {
+		t.Errorf("a two-element document tripped a guard: %v", r.trips)
+	}
+	if got := len(root.child("Note").text); got < size {
+		t.Errorf("the text was truncated to %d of %d bytes; nothing bounds it, so it must arrive whole", got, size)
+	}
+}
+
+// TestElementTextIsBoundedOnlyByTheInput pins the cost table in limits.go.
+//
+// The claim being checked is not "text is cheap" but "text costs a constant
+// multiple of the input, whatever shape it arrives in" — which is what makes the
+// absence of a text budget defensible, and what would stop being true if the
+// accumulator regressed to something quadratic or started retaining more than
+// one copy. Both multiples are measured at two sizes an octave apart, so a
+// growth rate would show up as a difference between the two rather than as a
+// number a threshold has to be guessed for.
+func TestElementTextIsBoundedOnlyByTheInput(t *testing.T) {
+	if testing.Short() {
+		t.Skip("allocates ~50 MB per shape")
+	}
+	shapes := []struct {
+		name  string
+		build func(int) []byte
+	}{
+		{"one contiguous run", func(n int) []byte { return textDoc(n, strings.Repeat("x", 4096)) }},
+		// The shape that was quadratic before parseCII appended to a []byte: the
+		// run arrives as one CharData token per four bytes.
+		{"split into 4-byte tokens", func(n int) []byte { return textDoc(n, "xxxx<!---->") }},
+		{"many 4 KB text nodes", func(n int) []byte {
+			var b strings.Builder
+			b.Grow(n + 128)
+			b.WriteString(`<Invoice>`)
+			for b.Len() < n {
+				b.WriteString(`<Note>` + strings.Repeat("x", 4096) + `</Note>`)
+			}
+			b.WriteString(`</Invoice>`)
+			return []byte(b.String())
+		}},
+		// Every accumulator live at once: 900 nested elements each carrying text,
+		// so none of them is closed until the deepest is reached. This is the
+		// shape that would defeat "closeNode releases it as the element ends".
+		{"900 nested, all open", func(n int) []byte {
+			const depth = 900
+			var b strings.Builder
+			b.Grow(n + 8192)
+			b.WriteString(`<Invoice>`)
+			for i := 0; i < depth; i++ {
+				b.WriteString(`<a>` + strings.Repeat("x", n/depth))
+			}
+			for i := 0; i < depth; i++ {
+				b.WriteString(`</a>`)
+			}
+			b.WriteString(`</Invoice>`)
+			return []byte(b.String())
+		}},
+	}
+
+	// Generous against the measured 2.1x-6.7x allocated and 1.06x retained: the
+	// thresholds separate a constant multiple from a growth rate, which is the
+	// only thing they have to do.
+	const maxAllocated, maxRetained = 10.0, 2.0
+	for _, sh := range shapes {
+		var prev float64
+		for _, size := range []int{10 << 20, 40 << 20} {
+			data := sh.build(size)
+			allocated, retained := parseCost(t, data)
+			t.Logf("%-24s %2d MB: allocated %.2fx the input, retained %.2fx", sh.name, size>>20, allocated, retained)
+			if allocated > maxAllocated {
+				t.Errorf("%s at %d MB allocated %.2fx the input, over the %.1fx this package documents",
+					sh.name, size>>20, allocated, maxAllocated)
+			}
+			// Every string in the tree is a copy of a stretch of the input, so
+			// retaining more than one input's worth means something is keeping a
+			// second copy — the accumulator closeNode is supposed to release.
+			if retained > maxRetained {
+				t.Errorf("%s at %d MB retained %.2fx the input; the tree holds one copy of the text, not more",
+					sh.name, size>>20, retained)
+			}
+			// The multiple is a constant, so quadrupling the input must not move
+			// it. A growth rate would show here even if both points passed above.
+			if prev != 0 && allocated > prev*1.5 {
+				t.Errorf("%s: the allocation multiple grew from %.2fx at %d MB to %.2fx at %d MB; it must be constant",
+					sh.name, prev, size>>22, allocated, size>>20)
+			}
+			prev = allocated
+		}
+	}
+
+	// Where the cost actually is. scanShape reads the same document building no
+	// tree and capturing nothing from <Note>, so what it spends is
+	// encoding/xml's own buffering of a contiguous run — the part no budget in
+	// this package could reach. limits.go rests the "a cap could not recover
+	// most of the cost" argument on this being the majority of the total.
+	data := textDoc(40<<20, strings.Repeat("x", 4096))
+	floor, floorRetained := scanCost(t, data)
+	whole, _ := parseCost(t, data)
+	t.Logf("of the parser's %.2fx, %.2fx is encoding/xml's own buffering (the scan retains %.2fx and builds nothing)",
+		whole, floor, floorRetained)
+	if floor >= whole {
+		t.Errorf("the streaming scan allocated %.2fx and the tree parse %.2fx; the tree must cost more than the decoder alone", floor, whole)
+	}
+	if floor < whole/2 {
+		t.Errorf("the decoder's own buffering is %.2fx of the parser's %.2fx; limits.go argues a text budget is not worth "+
+			"having because most of the cost is not this package's, and that is no longer true", floor, whole)
+	}
+}
+
+// parseCost reports what one parseCII of data allocates in total, and what is
+// still reachable through the tree afterwards, each as a multiple of the input.
+//
+// TotalAlloc is used rather than a sampled peak because it is deterministic: it
+// counts every byte the parse asked the allocator for, including the copies
+// append discards as it doubles, and it is an upper bound on the live peak. A
+// sampled peak measures the collector's timing as much as the parser's cost.
+func parseCost(t *testing.T, data []byte) (allocated, retained float64) {
+	t.Helper()
+	var before, during, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	root, err := parseCII(newRun(context.Background()), data)
+	if err != nil {
+		t.Fatalf("parse of a %d-byte document: %v", len(data), err)
+	}
+	runtime.ReadMemStats(&during)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	// The tree stays reachable across the second reading, which is what makes
+	// "retained" the tree's own cost.
+	runtime.KeepAlive(root)
+	runtime.KeepAlive(data)
+	return float64(during.TotalAlloc-before.TotalAlloc) / float64(len(data)), heapDelta(before, after) / float64(len(data))
+}
+
+// scanCost is parseCost for the streaming reader.
+func scanCost(t *testing.T, data []byte) (allocated, retained float64) {
+	t.Helper()
+	var before, during, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	d, err := scanShape(data)
+	if err != nil {
+		t.Fatalf("scan of a %d-byte document: %v", len(data), err)
+	}
+	runtime.ReadMemStats(&during)
+	runtime.GC()
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(d)
+	runtime.KeepAlive(data)
+	return float64(during.TotalAlloc-before.TotalAlloc) / float64(len(data)), heapDelta(before, after) / float64(len(data))
+}
+
+// heapDelta is after minus before, floored at zero: a reader that retains
+// nothing can leave the heap smaller than it found it, and an unsigned
+// subtraction would report that as an enormous positive.
+func heapDelta(before, after runtime.MemStats) float64 {
+	if after.HeapAlloc < before.HeapAlloc {
+		return 0
+	}
+	return float64(after.HeapAlloc - before.HeapAlloc)
+}
+
+// TestOrNilDoesNotAllocate pins the reason orNil returns a fresh node rather
+// than a shared one.
+//
+// The fresh &ciiNode{} reads like an allocation per nil hit, and the tidy fix
+// is a package-level shared instance — which would be correct only for as long
+// as nothing ever writes through the returned pointer, an invariant this package
+// would then have to keep by hand. It is not worth keeping, because there is no
+// allocation there to remove: orNil is small enough to inline and the compiler
+// proves the node does not escape at 86 of its 87 call sites.
+//
+// mapCII on a bare root is the worst case in the package — it reaches orNil 41
+// times in one call — so if the node were reaching the heap it would show here
+// as ~42 allocations rather than the one the en16931Invoice itself costs.
+func TestOrNilDoesNotAllocate(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		doc  string
+		fn   func(*ciiNode) *en16931Invoice
+	}{
+		{"mapCII", `<CrossIndustryInvoice/>`, mapCII},
+		{"mapUBL", `<Invoice/>`, mapUBL},
+	} {
+		root, err := parseCII(newRun(context.Background()), []byte(tc.doc))
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := testing.AllocsPerRun(100, func() { _ = tc.fn(root) })
+		t.Logf("%s on %s: %.0f allocations", tc.name, tc.doc, got)
+		// One for the en16931Invoice. Anything more means the empty nodes are on
+		// the heap, and the shared-instance argument would need re-opening.
+		if got > 2 {
+			t.Errorf("%s on a bare root made %.0f allocations, want 1 (the en16931Invoice); "+
+				"the empty nodes orNil returns are reaching the heap", tc.name, got)
+		}
+	}
+}
+
+// TestValidatorsAreSafeForConcurrentUse pins a property the package has always
+// had and never stated: there is no global mutable state, so every exported
+// entry point may be called from any number of goroutines at once. The code-list
+// maps and compiled regexps are written at init and read-only thereafter, and
+// every per-call artefact — the run, the tree, the semantic model — is allocated
+// inside the call.
+//
+// It earns its place next to the cost tests because that is exactly the property
+// an allocation fix is tempted to trade away: a shared node, a memo table, a
+// reused buffer hung off the package rather than the run. Under -race this test
+// is what makes such a trade fail rather than pass quietly and corrupt a report
+// once in production. Without -race it still checks the results agree.
+func TestValidatorsAreSafeForConcurrentUse(t *testing.T) {
+	docs := [][]byte{
+		[]byte(validCII),
+		[]byte(minimalUBL),
+		// A document missing everything the mappers walk, so the nil paths —
+		// including orNil — are exercised concurrently too.
+		[]byte(`<CrossIndustryInvoice/>`),
+		[]byte(`<Invoice/>`),
+	}
+
+	// The single-threaded answer, to compare against.
+	want := map[string][]string{}
+	for name, fn := range allValidators {
+		for _, doc := range docs {
+			want[name+string(doc)] = ruleNames(fn(context.Background(), doc).Violations)
+		}
+	}
+
+	const goroutines, rounds = 8, 4
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var bad []string
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < rounds; i++ {
+				for name, fn := range allValidators {
+					for _, doc := range docs {
+						got := ruleNames(fn(context.Background(), doc).Violations)
+						if !slices.Equal(got, want[name+string(doc)]) {
+							mu.Lock()
+							bad = append(bad, fmt.Sprintf("%s: concurrent run gave %v, single run gave %v",
+								name, got, want[name+string(doc)]))
+							mu.Unlock()
+						}
+					}
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	for _, b := range bad {
+		t.Error(b)
+	}
+}
+
+// ruleNames is the sorted rule identifiers of v, which is the part of a report
+// that must not depend on who else is running.
+func ruleNames(v []Violation) []string {
+	out := make([]string, 0, len(v))
+	for _, e := range v {
+		out = append(out, string(e.Source)+"/"+e.Rule)
+	}
+	sort.Strings(out)
+	return out
 }

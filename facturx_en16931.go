@@ -874,7 +874,37 @@ func isUpperAlpha(s string, n int) bool {
 	return true
 }
 
-// orNil lets a possibly-nil node be traversed without panicking.
+// orNil lets a possibly-nil node be traversed without panicking. Its zero value
+// is load-bearing beyond the traversal: several validators write `x.orNil()`
+// and then test `x.name == ""` as the sentinel for "that element was absent"
+// (facturae.go, ksef.go, ebinterface.go).
+//
+// The fresh node looks like an allocation per nil hit, and a package-level
+// shared instance looks like the obvious fix, but the measurement says
+// otherwise and the shared instance is the worse shape. orNil is small enough
+// to inline, and it is inlined at all 86 of its call sites here; at every one of
+// them the compiler proves the node does not escape and puts it on the stack.
+// `go build -gcflags=-m` reports "&ciiNode{} does not escape" 86 times and
+// "escapes to heap" once, for the out-of-line copy of this function that nothing
+// in the package reaches. So there is no allocation to remove: AllocsPerRun over
+// mapCII on a bare <CrossIndustryInvoice/>, the document that reaches this 41
+// times in one call, counts 1 allocation, and that one is the
+// en16931Invoice. Benchmarks of mapCII, mapUBL and Validate against a corpus
+// invoice and against that bare root are identical, to the byte and to the
+// allocation, with and without a shared node.
+//
+// Sharing one would also be worse than neutral. It is safe only while nothing
+// ever writes through the returned pointer — true today, since parseCII is the
+// only thing in this package that assigns to a ciiNode's fields and every node
+// it touches is one it allocated — but that is an invariant a reader has to be
+// told about, in a package whose exported functions are otherwise concurrency-
+// safe without anyone having to check. The fresh node is private by
+// construction, and in the one case where it *would* escape it has to be: a
+// shared node aliased into a caller's data structure is the bug the private one
+// cannot have.
+//
+// TestOrNilDoesNotAllocate pins the escape-analysis property, so a change that
+// makes this function too large to inline is caught rather than discovered.
 func (n *ciiNode) orNil() *ciiNode {
 	if n == nil {
 		return &ciiNode{}
