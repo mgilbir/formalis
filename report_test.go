@@ -381,9 +381,17 @@ func TestCoverageNamesNoRuleThePackageEmits(t *testing.T) {
 			if carveOut(entry.Rules) {
 				continue
 			}
-			for rule := range emitted[src] {
-				if regexp.MustCompile(`\b` + regexp.QuoteMeta(rule) + `\b`).MatchString(entry.Rules) {
-					t.Errorf("Coverage(%q) claims %q is not evaluated, but a validator reported it: %q", src, rule, entry.Rules)
+			// Both fields, so the split into Rules and Reason cannot weaken this
+			// guard by moving a claim into the prose. The carve-out test above is
+			// per entry rather than per field for the same reason: an entry that
+			// names the implemented part of a family does so in Rules and then
+			// explains it in Reason, and skipping only the first half would fail
+			// on the explanation.
+			for _, text := range []string{entry.Rules, entry.Reason} {
+				for rule := range emitted[src] {
+					if regexp.MustCompile(`\b` + regexp.QuoteMeta(rule) + `\b`).MatchString(text) {
+						t.Errorf("Coverage(%q) claims %q is not evaluated, but a validator reported it: %q", src, rule, text)
+					}
 				}
 			}
 		}
