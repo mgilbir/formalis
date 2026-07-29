@@ -137,6 +137,18 @@ const maxDepth = 1000
 // peaks at 167, 203 and 236 MB rather than 610 MB, 1.24 GB and 2.56 GB, and
 // reports one RuleLimit finding instead of eighteen invented business-rule
 // violations.
+//
+// The budget is a property of the *document*, not of the entry point the caller
+// reached for. That has to be arranged rather than assumed: run.nodes is spent
+// one element at a time by parseCII, so a call that read the same bytes twice
+// would halve the ceiling. Every exported validator therefore parses exactly
+// once, at its own boundary, and threads the parsed artefacts down — see parsed
+// in facturx_en16931.go — rather than the raw bytes. Before that, ValidateCIUS
+// (which reads BT-24 to choose a validator) reached UBL.BE through three parses
+// and refused, as too large, documents that ValidateUBLBE validated and
+// Validate validated: a third of the number below. Nothing about the document
+// decided that; only how many layers the call passed through did.
+// TestNodeBudgetIsPerDocumentNotPerEntryPoint pins the property.
 const maxNodes = 1_000_000
 
 // maxVATSumWork bounds the (breakdown x operand) pairs validateVATTaxableSums
@@ -196,7 +208,9 @@ type run struct {
 	cancel canceler
 	// vatWork is the remaining validateVATTaxableSums pair budget.
 	vatWork int
-	// nodes is the remaining element budget for the tree parseCII builds.
+	// nodes is the remaining element budget for the tree parseCII builds. One
+	// call reads its document once, so this is the document's element count and
+	// not a per-parse allowance; see maxNodes.
 	nodes int
 	// trips accumulates the RuleLimit findings this run has to report. A run
 	// records at most one trip per distinct cause, since repeating "the checker

@@ -24,23 +24,31 @@ var orderXTypeCodes = map[string]bool{"220": true, "230": true, "231": true}
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateOrderXML(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateOrderXML(r, xmlData))
-}
-
-func validateOrderXML(r *run, xmlData []byte) []Violation {
-	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
-
 	root, err := parseCII(r, xmlData)
 	if errors.Is(err, errStopped) {
 		// A run that stopped says nothing about the order. Reporting "not
 		// well-formed" here would accuse a document the checker never finished
 		// reading; the trip itself is already recorded on the run.
-		return nil
+		return r.finish(nil)
 	}
-	if err != nil || root.name != "SCRDMCCBDACIOMessageStructure" {
-		add("order-xml", "the order XML is not a well-formed Cross Industry Order (SCRDMCCBDACIOMessageStructure)")
-		return out
+	if err != nil {
+		return r.finish([]Violation{notAnOrder})
+	}
+	return r.finish(validateOrderXML(r, root))
+}
+
+// notAnOrder is the finding for XML that is not a Cross Industry Order.
+var notAnOrder = Violation{
+	Rule:    "order-xml",
+	Message: "the order XML is not a well-formed Cross Industry Order (SCRDMCCBDACIOMessageStructure)",
+}
+
+func validateOrderXML(r *run, root *ciiNode) []Violation {
+	var out []Violation
+	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+
+	if root.name != "SCRDMCCBDACIOMessageStructure" {
+		return []Violation{notAnOrder}
 	}
 	doc := root.child("ExchangedDocument").orNil()
 	agr := root.child("SupplyChainTradeTransaction", "ApplicableHeaderTradeAgreement").orNil()

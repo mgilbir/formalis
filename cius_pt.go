@@ -25,17 +25,16 @@ import "context"
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateCIUSPT(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateCIUSPT(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateCIUSPT(r, p))
 }
 
-func validateCIUSPT(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
-	out := validateEN16931(r, inv, ProfileEN16931)
-	out = append(out, validateCIUSPTRules(inv)...)
-	return out
+func validateCIUSPT(r *run, p *parsed) []Violation {
+	out := validateEN16931(r, p.inv, ProfileEN16931)
+	return append(out, validateCIUSPTRules(p.inv)...)
 }
 
 func validateCIUSPTRules(inv *en16931Invoice) []Violation {

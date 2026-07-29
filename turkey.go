@@ -39,14 +39,14 @@ func IsTurkishInvoice(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateTurkishInvoice(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateTurkishInvoice(r, xmlData))
-}
-
-func validateTurkishInvoice(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateTurkishInvoice(r, root))
+}
+
+func validateTurkishInvoice(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" {
 		return []Violation{{Rule: "TR-root", Message: "the document root shall be an Invoice"}}
 	}

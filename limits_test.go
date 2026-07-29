@@ -264,6 +264,82 @@ func TestVATSumBudgetDeclinesRatherThanAccuses(t *testing.T) {
 	}
 }
 
+// flatUBLBE builds a well-formed UBL.BE invoice of n padding elements: enough
+// to weigh against the element budget, small enough to parse in well under a
+// second. The CustomizationID is what makes ValidateCIUS route it to the
+// UBL.BE validator, which is the longest dispatch path in the package.
+func flatUBLBE(n int) []byte {
+	var b strings.Builder
+	b.Grow(n*4 + 256)
+	b.WriteString(`<?xml version="1.0"?><Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2">`)
+	b.WriteString(`<CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:UBL.BE:1.0.0.20180214</CustomizationID>`)
+	// The CustomizationID costs one element, so n padding siblings under the
+	// root make n+2 in all.
+	for i := 0; i < n-2; i++ {
+		b.WriteString(`<a/>`)
+	}
+	b.WriteString(`</Invoice>`)
+	return []byte(b.String())
+}
+
+// TestNodeBudgetIsPerDocumentNotPerEntryPoint pins what maxNodes means.
+//
+// The budget belongs to the document, not to the number of layers a call
+// happened to pass through. It used to belong to the parse: run.nodes is spent
+// one element at a time by parseCII, every validator took raw bytes and parsed
+// them itself, and the dispatchers parsed more than once against the same run —
+// ValidateCIUS read the document once only to learn its CIUS from BT-24,
+// discarded the result and handed the bytes to a validator that read them
+// again, and ValidateUBLBE read them a second time purely to recover the tree
+// for its ubl-BE-* rules. So the effective ceiling was maxNodes, maxNodes/2 or
+// maxNodes/3 depending on the entry point, and the same bytes were "readable"
+// through ValidateUBLBE and "too large" through ValidateCIUS.
+//
+// That is the failure this test exists to prevent, and it is worse than a
+// performance bug: the guard exists so a hostile document cannot exhaust
+// memory, and it was firing on a benign one because the package chose to read
+// it three times.
+func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
+	entryPoints := map[string]func(context.Context, []byte) []Violation{
+		"Validate":      func(c context.Context, b []byte) []Violation { return Validate(c, b, ProfileEN16931) },
+		"ValidateUBLBE": ValidateUBLBE,
+		"ValidateCIUS":  ValidateCIUS,
+	}
+
+	// Comfortably inside the budget, but more than a third of it: a document
+	// this size trips nothing when read once and trips when read three times.
+	inside := flatUBLBE(400_000)
+	for name, fn := range entryPoints {
+		v := fn(context.Background(), inside)
+		if got := checkerCount(v); got != 0 {
+			t.Errorf("%s reported %d limit violations on a 400000-element document (budget %d): %v",
+				name, got, maxNodes, v)
+		}
+		// The findings a stopped run would have skipped are the point of not
+		// stopping, so check the document was really validated rather than
+		// merely not refused.
+		if len(v) == 0 {
+			t.Errorf("%s reported nothing at all on a document that is not a conforming invoice", name)
+		}
+	}
+
+	// One element past the budget trips exactly once, through every entry
+	// point, and never as a statement about the XML — which is well-formed.
+	over := flatUBLBE(maxNodes + 1)
+	for name, fn := range entryPoints {
+		v := fn(context.Background(), over)
+		if got := checkerCount(v); got != 1 {
+			t.Errorf("%s reported %d limit violations on a %d-element document, want exactly 1: %v",
+				name, got, maxNodes+1, v)
+		}
+		for _, e := range v {
+			if e.Rule == RuleSyntax {
+				t.Errorf("%s reported a well-formed over-budget document as malformed: %s", name, e.Message)
+			}
+		}
+	}
+}
+
 // TestStoppedRunIsNotReportedAsBadSyntax pins the other half of the honesty
 // contract: a run that stopped must not be reported as a malformed document.
 // Every exported validator routes its parse error through syntaxViolation, so

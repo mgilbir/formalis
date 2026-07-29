@@ -36,17 +36,16 @@ var rsPIB = regexp.MustCompile(`^RS(\d{9}|\d{13})$`)
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateSRBDT(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateSRBDT(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateSRBDT(r, p))
 }
 
-func validateSRBDT(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
-	out := validateEN16931(r, inv, ProfileEN16931)
-	out = append(out, validateSRBDTRules(inv)...)
-	return out
+func validateSRBDT(r *run, p *parsed) []Violation {
+	out := validateEN16931(r, p.inv, ProfileEN16931)
+	return append(out, validateSRBDTRules(p.inv)...)
 }
 
 func validateSRBDTRules(inv *en16931Invoice) []Violation {

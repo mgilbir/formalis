@@ -58,34 +58,40 @@ func DetectCIUS(specID string) CIUS {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateCIUS(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateCIUS(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateCIUS(r, p))
 }
 
-func validateCIUS(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
+func validateCIUS(r *run, p *parsed) []Violation {
 	// The dispatch is to the unexported forms so the whole dispatched call shares
 	// this run: one cancellation signal and one set of budgets across the detect
 	// and the validate, rather than a fresh (uncancellable) allowance for the
 	// second half of the work.
-	switch DetectCIUS(inv.specID) {
+	//
+	// It also hands on the document already parsed. Routing on BT-24 needs the
+	// model, and the validator it routes to needs the same model: reading the
+	// bytes again to rebuild a byte-identical tree would charge the shared
+	// element budget twice for one document, so the CIUS entry point would refuse
+	// documents the CIUS-specific entry point accepts.
+	switch DetectCIUS(p.inv.specID) {
 	case CIUSXRechnung:
-		return validateXRechnung(r, xmlData)
+		return validateXRechnung(r, p)
 	case CIUSNLCIUS:
-		return validateNLCIUS(r, xmlData)
+		return validateNLCIUS(r, p)
 	case CIUSPortugal:
-		return validateCIUSPT(r, xmlData)
+		return validateCIUSPT(r, p)
 	case CIUSRomania:
-		return validateCIUSRO(r, xmlData)
+		return validateCIUSRO(r, p)
 	case CIUSBelgium:
-		return validateUBLBE(r, xmlData)
+		return validateUBLBE(r, p)
 	case CIUSSerbia:
-		return validateSRBDT(r, xmlData)
+		return validateSRBDT(r, p)
 	case CIUSPeppol:
-		return validatePeppol(r, xmlData)
+		return validatePeppol(r, p)
 	default:
-		return validateEN16931(r, inv, ProfileEN16931)
+		return validateEN16931(r, p.inv, ProfileEN16931)
 	}
 }

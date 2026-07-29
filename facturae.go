@@ -46,14 +46,14 @@ func IsFacturae(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateFacturae(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateFacturae(r, xmlData))
-}
-
-func validateFacturae(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateFacturae(r, root))
+}
+
+func validateFacturae(r *run, root *ciiNode) []Violation {
 	if root.name != "Facturae" {
 		return []Violation{{Rule: "FE-root", Message: "the document root shall be Facturae"}}
 	}

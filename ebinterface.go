@@ -39,14 +39,14 @@ func IsEbInterface(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateEbInterface(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateEbInterface(r, xmlData))
-}
-
-func validateEbInterface(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateEbInterface(r, root))
+}
+
+func validateEbInterface(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" || root.child("Biller") == nil {
 		return []Violation{{Rule: "EB-root", Message: "the document root shall be an ebInterface Invoice with a Biller"}}
 	}

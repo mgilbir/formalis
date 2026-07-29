@@ -62,14 +62,14 @@ func IsFatturaPA(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateFatturaPA(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateFatturaPA(r, xmlData))
-}
-
-func validateFatturaPA(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateFatturaPA(r, root))
+}
+
+func validateFatturaPA(r *run, root *ciiNode) []Violation {
 	if root.name != "FatturaElettronica" {
 		return []Violation{{Rule: "FPA-root", Message: "the document root shall be FatturaElettronica"}}
 	}

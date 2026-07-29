@@ -235,11 +235,11 @@ func (n *ciiNode) str(path ...string) string {
 // shared semantic model before running the one rule engine (validateEN16931).
 func Validate(ctx context.Context, xmlData []byte, profile Profile) []Violation {
 	r := newRun(ctx)
-	inv, err := parseEN16931(r, xmlData)
+	p, err := parseEN16931(r, xmlData)
 	if err != nil {
 		return r.finish(syntaxViolation(err))
 	}
-	return r.finish(validateEN16931(r, inv, profile))
+	return r.finish(validateEN16931(r, p.inv, profile))
 }
 
 // syntaxViolation reports a parse failure as a finding about the document —
@@ -253,9 +253,26 @@ func syntaxViolation(err error) []Violation {
 	return []Violation{{Rule: RuleSyntax, Message: err.Error()}}
 }
 
+// parsed is one document, read once: the element tree and, when the document is
+// an EN 16931 invoice in either syntax, the syntax-neutral model built from it.
+//
+// Threading this rather than the raw bytes is what makes maxNodes a property of
+// the document instead of a property of how many layers the call happened to
+// pass through. Every element the parser builds is drawn from one budget held by
+// one run, so a second read of the same bytes would spend the budget twice and
+// make the same document "too large" through a dispatching entry point and
+// readable through a direct one. The exported wrappers parse; nothing below them
+// does.
+type parsed struct {
+	root *ciiNode        // the local-name element tree
+	inv  *en16931Invoice // the syntax-neutral model
+}
+
 // parseEN16931 parses the invoice XML and maps it onto the semantic model,
-// dispatching on the root element to the CII or UBL mapper.
-func parseEN16931(r *run, xmlData []byte) (*en16931Invoice, error) {
+// dispatching on the root element to the CII or UBL mapper. It keeps the tree
+// alongside the model: the UBL.BE rules are structural and want the tree, and
+// re-reading the bytes to get it would spend the element budget a second time.
+func parseEN16931(r *run, xmlData []byte) (*parsed, error) {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
 		return nil, fmt.Errorf("the invoice XML is not well-formed: %w", err)
@@ -264,11 +281,11 @@ func parseEN16931(r *run, xmlData []byte) (*en16931Invoice, error) {
 	case "CrossIndustryInvoice":
 		inv := mapCII(root)
 		collectCommon(root, inv)
-		return inv, nil
+		return &parsed{root: root, inv: inv}, nil
 	case "Invoice", "CreditNote":
 		inv := mapUBL(root)
 		collectCommon(root, inv)
-		return inv, nil
+		return &parsed{root: root, inv: inv}, nil
 	}
 	return nil, fmt.Errorf("the invoice XML root %q is neither a CrossIndustryInvoice (CII) nor a UBL Invoice/CreditNote", root.name)
 }

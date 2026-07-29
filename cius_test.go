@@ -55,9 +55,9 @@ func TestValidateCIUSRoutes(t *testing.T) {
 
 func mustSpecID(t *testing.T, xml string) string {
 	t.Helper()
-	inv, err := parseEN16931(newRun(nil), []byte(xml))
+	p, err := parseEN16931(newRun(nil), []byte(xml))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return inv.specID
+	return p.inv.specID
 }

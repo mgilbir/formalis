@@ -52,19 +52,19 @@ var beExemptionReasonCodes = map[string]bool{
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateUBLBE(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateUBLBE(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateUBLBE(r, p))
 }
 
-func validateUBLBE(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
-	out := validateEN16931(r, inv, ProfileEN16931)
-	if root, err := parseCII(r, xmlData); err == nil {
-		out = append(out, validateUBLBERules(root)...)
-	}
-	return out
+func validateUBLBE(r *run, p *parsed) []Violation {
+	out := validateEN16931(r, p.inv, ProfileEN16931)
+	// The ubl-BE rules read the tree the parse already built. This used to parse
+	// the bytes a second time to obtain it, which produced a byte-identical tree
+	// at the cost of a second full pass over the shared element budget.
+	return append(out, validateUBLBERules(p.root)...)
 }
 
 func validateUBLBERules(root *ciiNode) []Violation {
