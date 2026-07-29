@@ -149,13 +149,9 @@ type Violation struct {
 	Source  Source
 	Rule    string
 	Message string
-	Object  int
 }
 
 func (v Violation) Error() string {
-	if v.Object != 0 {
-		return fmt.Sprintf("%s %s: %s (object %d)", v.Source, v.Rule, v.Message, v.Object)
-	}
 	return fmt.Sprintf("%s %s: %s", v.Source, v.Rule, v.Message)
 }
 
