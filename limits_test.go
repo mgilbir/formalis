@@ -47,13 +47,13 @@ func checkerCount(v []Violation) int {
 func TestCancelledRunIsNeverClean(t *testing.T) {
 	// validCII is clean, so an uncancelled run really does return nothing —
 	// which is what makes the cancelled run's non-empty result meaningful.
-	if v := Validate(context.Background(), []byte(validCII), ProfileEN16931); len(v) != 0 {
+	if v := Validate(context.Background(), []byte(validCII), ProfileEN16931).Violations; len(v) != 0 {
 		t.Fatalf("fixture is not clean: %v", v)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	v := Validate(ctx, []byte(validCII), ProfileEN16931)
+	v := Validate(ctx, []byte(validCII), ProfileEN16931).Violations
 	if len(v) == 0 {
 		t.Fatal("a cancelled run returned no violations, which is indistinguishable from a valid invoice")
 	}
@@ -85,7 +85,7 @@ func TestCancelledRunIsPrompt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), cancelAfter)
 	defer cancel()
 	t1 := time.Now()
-	v := Validate(ctx, xml, ProfileEN16931)
+	v := Validate(ctx, xml, ProfileEN16931).Violations
 	latency := time.Since(t1) - cancelAfter
 
 	if latency > full/4 {
@@ -114,7 +114,7 @@ func TestDeepNestingIsGuarded(t *testing.T) {
 	}
 	b.WriteString(`</CrossIndustryInvoice>`)
 
-	v := Validate(context.Background(), []byte(b.String()), ProfileEN16931)
+	v := Validate(context.Background(), []byte(b.String()), ProfileEN16931).Violations
 	if len(v) == 0 {
 		t.Fatal("a document nested past the cap returned no violations")
 	}
@@ -126,7 +126,7 @@ func TestDeepNestingIsGuarded(t *testing.T) {
 	}
 	// A document just inside the cap must still validate normally, or the guard
 	// would be rejecting legitimate invoices.
-	if strings.Contains(fmt.Sprint(Validate(context.Background(), []byte(validCII), ProfileEN16931)), "xml-depth") {
+	if strings.Contains(fmt.Sprint(Validate(context.Background(), []byte(validCII), ProfileEN16931).Violations), "xml-depth") {
 		t.Error("the depth guard fired on an ordinary invoice")
 	}
 }
@@ -219,7 +219,7 @@ func timeValidate(t *testing.T, xml []byte) time.Duration {
 // inside a validator running on untrusted input.
 func TestNilContextDoesNotPanic(t *testing.T) {
 	//lint:ignore SA1012 deliberately testing the nil case
-	if v := Validate(nil, []byte(validCII), ProfileEN16931); len(v) != 0 {
+	if v := Validate(nil, []byte(validCII), ProfileEN16931).Violations; len(v) != 0 {
 		t.Errorf("a nil context changed the result: %v", v)
 	}
 }
@@ -300,8 +300,8 @@ func flatUBLBE(n int) []byte {
 // memory, and it was firing on a benign one because the package chose to read
 // it three times.
 func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
-	entryPoints := map[string]func(context.Context, []byte) []Violation{
-		"Validate":      func(c context.Context, b []byte) []Violation { return Validate(c, b, ProfileEN16931) },
+	entryPoints := map[string]func(context.Context, []byte) Report{
+		"Validate":      func(c context.Context, b []byte) Report { return Validate(c, b, ProfileEN16931) },
 		"ValidateUBLBE": ValidateUBLBE,
 		"ValidateCIUS":  ValidateCIUS,
 	}
@@ -310,7 +310,7 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 	// this size trips nothing when read once and trips when read three times.
 	inside := flatUBLBE(400_000)
 	for name, fn := range entryPoints {
-		v := fn(context.Background(), inside)
+		v := fn(context.Background(), inside).Violations
 		if got := checkerCount(v); got != 0 {
 			t.Errorf("%s reported %d limit violations on a 400000-element document (budget %d): %v",
 				name, got, maxNodes, v)
@@ -327,7 +327,14 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 	// point, and never as a statement about the XML — which is well-formed.
 	over := flatUBLBE(maxNodes + 1)
 	for name, fn := range entryPoints {
-		v := fn(context.Background(), over)
+		rep := fn(context.Background(), over)
+		v := rep.Violations
+		// A tripped budget is the other stopped-run case Complete has to
+		// answer for, and the one a caller is least likely to think about.
+		if rep.Complete || rep.Conformant() {
+			t.Errorf("%s reported an over-budget run as Complete=%v Conformant=%v; the checks that had not "+
+				"run were skipped", name, rep.Complete, rep.Conformant())
+		}
 		if got := checkerCount(v); got != 1 {
 			t.Errorf("%s reported %d limit violations on a %d-element document, want exactly 1: %v",
 				name, got, maxNodes+1, v)
@@ -346,8 +353,8 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 // this walks a representative set of them rather than only the one that had the
 // bug (ValidateOrderXML reported "not a well-formed Cross Industry Order").
 func TestStoppedRunIsNotReportedAsBadSyntax(t *testing.T) {
-	cases := map[string]func(ctx context.Context, b []byte) []Violation{
-		"Validate":          func(c context.Context, b []byte) []Violation { return Validate(c, b, ProfileEN16931) },
+	cases := map[string]func(ctx context.Context, b []byte) Report{
+		"Validate":          func(c context.Context, b []byte) Report { return Validate(c, b, ProfileEN16931) },
 		"ValidateOrderXML":  ValidateOrderXML,
 		"ValidateCIUS":      ValidateCIUS,
 		"ValidateXRechnung": ValidateXRechnung,
@@ -360,7 +367,7 @@ func TestStoppedRunIsNotReportedAsBadSyntax(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			v := fn(ctx, []byte(validCII))
+			v := fn(ctx, []byte(validCII)).Violations
 			if len(v) == 0 {
 				t.Fatal("a cancelled run returned nothing, which reads as valid")
 			}

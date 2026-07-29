@@ -29,7 +29,7 @@ func TestKSeFCorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as KSeF", filepath.Base(f))
 			continue
 		}
-		if v := ValidateKSeF(context.Background(), data); len(v) != 0 {
+		if v := ValidateKSeF(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: expected 0 KSeF violations, got %d (first %s: %s)", filepath.Base(f), len(v), v[0].Rule, v[0].Message)
 		}
 	}
@@ -44,7 +44,7 @@ const minimalKSeF = `<Faktura xmlns="http://crd.gov.pl/wzor/2023/06/29/12648/">
 </Faktura>`
 
 func TestKSeFMutations(t *testing.T) {
-	if v := ValidateKSeF(context.Background(), []byte(minimalKSeF)); len(v) != 0 {
+	if v := ValidateKSeF(context.Background(), []byte(minimalKSeF)).Violations; len(v) != 0 {
 		t.Fatalf("baseline KSeF not clean: %v", v)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -63,8 +63,8 @@ func TestKSeFMutations(t *testing.T) {
 			if broken == minimalKSeF {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateKSeF(context.Background(), []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateKSeF(context.Background(), []byte(broken)))
+			if !hasFacturXRule(ValidateKSeF(context.Background(), []byte(broken)).Violations, tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateKSeF(context.Background(), []byte(broken)).Violations)
 			}
 		})
 	}

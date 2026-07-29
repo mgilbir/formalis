@@ -31,7 +31,7 @@ func TestUBLBECorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if be := beRuleViolations(ValidateUBLBE(context.Background(), data)); len(be) != 0 {
+		if be := beRuleViolations(ValidateUBLBE(context.Background(), data).Violations); len(be) != 0 {
 			t.Errorf("%s: expected 0 UBL.BE violations on a conformant sample, got %v", filepath.Base(f), be)
 		}
 	}
@@ -59,7 +59,7 @@ const minimalUBLBE = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:x
 </Invoice>`
 
 func TestUBLBEMutations(t *testing.T) {
-	if be := beRuleViolations(ValidateUBLBE(context.Background(), []byte(minimalUBLBE))); len(be) != 0 {
+	if be := beRuleViolations(ValidateUBLBE(context.Background(), []byte(minimalUBLBE)).Violations); len(be) != 0 {
 		t.Fatalf("baseline UBL.BE invoice not clean: %v", be)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -81,8 +81,8 @@ func TestUBLBEMutations(t *testing.T) {
 			if broken == minimalUBLBE {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateUBLBE(context.Background(), []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, beRuleViolations(ValidateUBLBE(context.Background(), []byte(broken))))
+			if !hasFacturXRule(ValidateUBLBE(context.Background(), []byte(broken)).Violations, tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, beRuleViolations(ValidateUBLBE(context.Background(), []byte(broken)).Violations))
 			}
 		})
 	}

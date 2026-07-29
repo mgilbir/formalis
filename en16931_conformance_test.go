@@ -113,7 +113,7 @@ func TestEN16931ConformanceSuite(t *testing.T) {
 				harnessErr++
 				continue
 			}
-			vs := Validate(context.Background(), []byte(doc), ProfileEN16931)
+			vs := Validate(context.Background(), []byte(doc), ProfileEN16931).Violations
 			reports := hasFacturXRule(vs, rule)
 			if isError {
 				errorSeen[rule] = true

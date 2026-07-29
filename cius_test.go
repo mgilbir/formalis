@@ -36,7 +36,7 @@ func TestValidateCIUSRoutes(t *testing.T) {
 		t.Fatal("the XRechnung fixture should declare the XRechnung CIUS")
 	}
 	// The XRechnung fixture is conformant, so both routes are clean.
-	if v := ValidateCIUS(context.Background(), []byte(minimalXRechnungUBL)); len(v) != 0 {
+	if v := ValidateCIUS(context.Background(), []byte(minimalXRechnungUBL)).Violations; len(v) != 0 {
 		t.Errorf("conformant XRechnung invoice via ValidateCIUS: %v", v)
 	}
 	// Remove the buyer reference: XRechnung's BR-DE-15 must fire through the
@@ -45,10 +45,10 @@ func TestValidateCIUSRoutes(t *testing.T) {
 	if broken == minimalXRechnungUBL {
 		t.Fatal("buyer reference not found in the XRechnung fixture")
 	}
-	if !hasFacturXRule(ValidateCIUS(context.Background(), []byte(broken)), "BR-DE-15") {
+	if !hasFacturXRule(ValidateCIUS(context.Background(), []byte(broken)).Violations, "BR-DE-15") {
 		t.Error("ValidateCIUS should apply XRechnung's BR-DE-15 to an XRechnung document")
 	}
-	if hasFacturXRule(Validate(context.Background(), []byte(broken), ProfileEN16931), "BR-DE-15") {
+	if hasFacturXRule(Validate(context.Background(), []byte(broken), ProfileEN16931).Violations, "BR-DE-15") {
 		t.Error("the EN 16931 core must not emit the XRechnung rule BR-DE-15")
 	}
 }

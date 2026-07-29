@@ -46,7 +46,7 @@ const minimalPeppolUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 </Invoice>`
 
 func TestValidatePeppolBaseline(t *testing.T) {
-	if v := ValidatePeppol(context.Background(), []byte(minimalPeppolUBL)); len(v) != 0 {
+	if v := ValidatePeppol(context.Background(), []byte(minimalPeppolUBL)).Violations; len(v) != 0 {
 		t.Fatalf("baseline Peppol not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 }
@@ -65,7 +65,7 @@ func TestValidatePeppolRules(t *testing.T) {
 			if broken == minimalPeppolUBL {
 				t.Fatalf("mutation %q not found", tc.from)
 			}
-			v := ValidatePeppol(context.Background(), []byte(broken))
+			v := ValidatePeppol(context.Background(), []byte(broken)).Violations
 			found := false
 			for _, x := range v {
 				if x.Rule == tc.rule {
@@ -129,7 +129,7 @@ func TestPeppolLinePeriodOrdersCalendarDays(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := ValidatePeppol(context.Background(), build(tc.docStart, tc.docEnd, tc.lineStart, tc.lineEnd))
+			v := ValidatePeppol(context.Background(), build(tc.docStart, tc.docEnd, tc.lineStart, tc.lineEnd)).Violations
 			if got := hasFacturXRule(v, "PEPPOL-EN16931-R110"); got != tc.wantR110 {
 				t.Errorf("R110: got %v, want %v (violations: %v)", got, tc.wantR110, v)
 			}
@@ -159,7 +159,7 @@ func TestValidatePeppolCorpus(t *testing.T) {
 			return nil
 		}
 		files++
-		if v := ValidatePeppol(context.Background(), data); len(v) != 0 {
+		if v := ValidatePeppol(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: conforming Peppol reported %d violations (first: %s: %s)",
 				filepath.Base(p), len(v), v[0].Rule, v[0].Message)
 		} else {

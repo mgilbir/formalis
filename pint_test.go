@@ -28,7 +28,7 @@ func TestPINTCorpus(t *testing.T) {
 		}
 		root, _ := parseCII(newRun(nil), data)
 		seen[DetectPINTJurisdiction(root.str("CustomizationID"))] = true
-		if v := ValidatePINT(context.Background(), data); len(v) != 0 {
+		if v := ValidatePINT(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: expected 0 PINT violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -60,7 +60,7 @@ const minimalPINT = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xs
 </Invoice>`
 
 func TestPINTMutations(t *testing.T) {
-	if v := ValidatePINT(context.Background(), []byte(minimalPINT)); len(v) != 0 {
+	if v := ValidatePINT(context.Background(), []byte(minimalPINT)).Violations; len(v) != 0 {
 		t.Fatalf("baseline PINT not clean: %v", v)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -80,8 +80,8 @@ func TestPINTMutations(t *testing.T) {
 			if broken == minimalPINT {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidatePINT(context.Background(), []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidatePINT(context.Background(), []byte(broken)))
+			if !hasFacturXRule(ValidatePINT(context.Background(), []byte(broken)).Violations, tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidatePINT(context.Background(), []byte(broken)).Violations)
 			}
 		})
 	}

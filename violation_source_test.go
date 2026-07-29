@@ -6,14 +6,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
-// allValidators is every exported entry point that reports Violations, keyed by
+// allValidators is every exported entry point that reports a Report, keyed by
 // the name it is called by. It is the surface the Source invariants below are
-// checked over; a new validator belongs here.
-var allValidators = map[string]func(context.Context, []byte) []Violation{
-	"Validate":               func(c context.Context, b []byte) []Violation { return Validate(c, b, ProfileEN16931) },
+// checked over — and, since the return type became Report, the surface the
+// coverage invariants in report_test.go are checked over too; a new validator
+// belongs here.
+var allValidators = map[string]func(context.Context, []byte) Report{
+	"Validate":               func(c context.Context, b []byte) Report { return Validate(c, b, ProfileEN16931) },
 	"ValidateCIUS":           ValidateCIUS,
 	"ValidateXRechnung":      ValidateXRechnung,
 	"ValidatePeppol":         ValidatePeppol,
@@ -49,18 +52,20 @@ type claim struct {
 // claims accumulates, per rule identifier, the Sources seen claiming it.
 type claims map[string]map[Source]claim
 
-func (c claims) record(t *testing.T, validator string, vs []Violation) {
-	t.Helper()
+// record folds one validator's findings in, returning a complaint for any
+// finding that cannot be keyed at all.
+func (c claims) record(validator string, vs []Violation) []string {
+	var defects []string
 	for _, v := range vs {
 		// A Source that never got stamped is worse than a wrong one: it means an
 		// emission site was added without deciding whose rule it reports, and ""
 		// collides with every other unstamped rule in the package.
 		if v.Source == "" {
-			t.Errorf("%s emitted %q with no Source", validator, v.Rule)
+			defects = append(defects, validator+" emitted "+v.Rule+" with no Source")
 			continue
 		}
 		if v.Rule == "" {
-			t.Errorf("%s emitted a %s finding with no Rule: %s", validator, v.Source, v.Message)
+			defects = append(defects, validator+" emitted a "+string(v.Source)+" finding with no Rule: "+v.Message)
 			continue
 		}
 		if c[v.Rule] == nil {
@@ -70,7 +75,61 @@ func (c claims) record(t *testing.T, validator string, vs []Violation) {
 			c[v.Rule][v.Source] = claim{validator: validator, message: v.Message}
 		}
 	}
+	return defects
 }
+
+// sweep is the result of running every exported validator over every document
+// available: the identifier -> Source map, the rules each Source was seen to
+// report, and how many corpus files were read.
+type sweep struct {
+	claims  claims
+	byRule  map[Source]map[string]bool
+	files   int
+	defects []string
+}
+
+// corpusSweep runs the full cross product once per test binary and memoises it.
+//
+// Two tests need it — the identifier-collision guard in this file and the
+// coverage over-claim guard in report_test.go — and it is the most expensive
+// thing the suite does: 22 validators over 1613 documents. Running it twice
+// would add half again to the whole suite's runtime to learn nothing new, so
+// the sweep gathers data and each test states its own assertions over it.
+var corpusSweep = sync.OnceValue(func() *sweep {
+	s := &sweep{claims: claims{}, byRule: map[Source]map[string]bool{}}
+	ctx := context.Background()
+
+	add := func(vname string, r Report) {
+		s.defects = append(s.defects, s.claims.record(vname, r.Violations)...)
+		for _, v := range r.Violations {
+			if s.byRule[v.Source] == nil {
+				s.byRule[v.Source] = map[string]bool{}
+			}
+			s.byRule[v.Source][v.Rule] = true
+		}
+	}
+
+	for _, doc := range collidingDocs {
+		for vname, fn := range allValidators {
+			add(vname, fn(ctx, []byte(doc)))
+		}
+	}
+	_ = filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return nil
+		}
+		s.files++
+		for vname, fn := range allValidators {
+			add(vname, fn(ctx, data))
+		}
+		return nil
+	})
+	return s
+})
 
 // check fails for any identifier two Sources both claim.
 func (c claims) check(t *testing.T) {
@@ -133,37 +192,13 @@ var collidingDocs = map[string]string{
 // of the documents reaches 207 of the 226 identifiers the whole corpus does, so
 // the discount is paid for in coverage of the very map being checked.
 func TestNoRuleIdentifierIsClaimedByTwoSources(t *testing.T) {
-	seen := claims{}
-	ctx := context.Background()
-
-	for _, doc := range collidingDocs {
-		for vname, fn := range allValidators {
-			seen.record(t, vname, fn(ctx, []byte(doc)))
-		}
+	s := corpusSweep()
+	for _, d := range s.defects {
+		t.Error(d)
 	}
-
-	files := 0
-	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
-			return nil
-		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			return nil
-		}
-		files++
-		for vname, fn := range allValidators {
-			seen.record(t, vname, fn(ctx, data))
-		}
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	seen.check(t)
+	s.claims.check(t)
 	t.Logf("checked %d rule identifiers across %d Sources, over %d corpus documents and %d hand-written ones",
-		len(seen), countSources(seen), files, len(collidingDocs))
+		len(s.claims), countSources(s.claims), s.files, len(collidingDocs))
 }
 
 func countSources(c claims) int {
@@ -185,7 +220,7 @@ func countSources(c claims) int {
 func TestOrderXAndVATCategoryOAreDistinguishable(t *testing.T) {
 	ctx := context.Background()
 
-	order := ValidateOrderXML(ctx, []byte(`<SCRDMCCBDACIOMessageStructure/>`))
+	order := ValidateOrderXML(ctx, []byte(`<SCRDMCCBDACIOMessageStructure/>`)).Violations
 	orderRules := map[string]bool{}
 	for _, v := range order {
 		if v.Source != SourceOrderX {
@@ -205,7 +240,7 @@ func TestOrderXAndVATCategoryOAreDistinguishable(t *testing.T) {
 
 	// An O line whose only breakdown group is categorised E: BR-O-01 fires.
 	oInvoice := strings.Replace(notSubjectToVATUBL, "<TaxCategory><ID>O</ID>", "<TaxCategory><ID>E</ID>", 1)
-	vat := Validate(ctx, []byte(oInvoice), ProfileEN16931)
+	vat := Validate(ctx, []byte(oInvoice), ProfileEN16931).Violations
 	foundBRO01 := false
 	for _, v := range vat {
 		if v.Rule != "BR-O-01" {
@@ -231,7 +266,7 @@ func TestOrderXAndVATCategoryOAreDistinguishable(t *testing.T) {
 func TestCheckerFindingsCarryTheCheckerSource(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	v := Validate(ctx, []byte(validCII), ProfileEN16931)
+	v := Validate(ctx, []byte(validCII), ProfileEN16931).Violations
 	if len(v) == 0 {
 		t.Fatal("a cancelled run returned nothing, which reads as valid")
 	}
@@ -245,7 +280,7 @@ func TestCheckerFindingsCarryTheCheckerSource(t *testing.T) {
 	}
 
 	// Malformed XML: a statement about the file, still made by the checker.
-	bad := Validate(context.Background(), []byte(`<a></b>`), ProfileEN16931)
+	bad := Validate(context.Background(), []byte(`<a></b>`), ProfileEN16931).Violations
 	if len(bad) != 1 {
 		t.Fatalf("malformed XML reported %d findings, want 1: %v", len(bad), bad)
 	}
