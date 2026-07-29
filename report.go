@@ -170,8 +170,16 @@ var notEvaluated = map[Source][]string{
 	// remaining bindings, and it has no error fragment at all for thirty model
 	// rules. Reading the published Schematron instead of the oracle gives the
 	// list below.
+	//
+	// BR-51 is one assertion in the abstract model with two severities in the two
+	// bindings: EN16931-CII-model.sch flags it fatal and EN16931-UBL-model.sch
+	// flags it warning. This package reports what an authority makes fatal and
+	// names its advisory rules here instead — NLCIUS's BR-NL-19..35 are the
+	// precedent — so the entry carves out the half that is evaluated rather than
+	// claiming the whole rule, which would send a caller to re-implement a check
+	// that already runs on every Factur-X document.
 	SourceEN16931: {
-		"BR-51 (advisory: an invoice should not carry a full card PAN, BT-87)",
+		"BR-51 other than in the CII binding: EN16931-CII-model.sch flags it fatal and this package evaluates it there, while EN16931-UBL-model.sch flags it warning, so a UBL invoice carrying a full card PAN (BT-87) is not reported",
 		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145)",
 		"BR-DEC-02/06/15/25/28 (decimal limits on BT-93, BT-100, BT-111, BT-137, BT-142)",
 		"UBL-SR-* other than UBL-SR-12/18/42/44/47 (49 of the 54 fatal UBL cardinality rules)",
