@@ -59,7 +59,7 @@ func ValidateUBLBE(ctx context.Context, xmlData []byte) Report {
 }
 
 func validateUBLBE(r *run, p *parsed) []Violation {
-	out := validateEN16931(r, p.inv, ProfileEN16931)
+	out := validateEN16931(r, p, ProfileEN16931)
 	// The ubl-BE rules read the tree the parse already built. This used to parse
 	// the bytes a second time to obtain it, which produced a byte-identical tree
 	// at the cost of a second full pass over the shared element budget.

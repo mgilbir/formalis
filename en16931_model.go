@@ -226,10 +226,18 @@ type lineAllowanceCharge struct {
 // expresses for two-decimal amounts.
 const vatAmountTolerance = 1.0
 
-// validateEN16931 applies the EN 16931 core business rules to a mapped invoice.
+// validateEN16931 applies the EN 16931 core business rules to a parsed invoice.
 // The rule identifiers, messages and tolerances match the values validators and
 // the EN 16931 Schematron report, so the same output holds for either syntax.
-func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
+//
+// It takes the parsed document rather than the model alone because EN 16931 is
+// two kinds of statement, not one. The BR-* rules are about business terms and
+// are evaluated on the syntax-neutral model, which is the whole point of the
+// model. CEN also publishes a syntax binding per syntax — UBL-SR-*, CII-SR-* —
+// whose rules are about the shape of the XML, and reading those wants the tree
+// the same parse already built.
+func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
+	inv := p.inv
 	var out []Violation
 	add := adder(&out, SourceEN16931)
 	req := func(rule, msg, val string) {

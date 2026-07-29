@@ -35,7 +35,7 @@ func ValidateCIUSPT(ctx context.Context, xmlData []byte) Report {
 }
 
 func validateCIUSPT(r *run, p *parsed) []Violation {
-	out := validateEN16931(r, p.inv, ProfileEN16931)
+	out := validateEN16931(r, p, ProfileEN16931)
 	return append(out, validateCIUSPTRules(p.inv)...)
 }
 

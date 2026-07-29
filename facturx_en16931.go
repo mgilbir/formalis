@@ -268,7 +268,7 @@ func Validate(ctx context.Context, xmlData []byte, profile Profile) Report {
 		return newReport(unknownProfile(profile))
 	}
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931}, func(r *run, p *parsed) []Violation {
-		return validateEN16931(r, p.inv, profile)
+		return validateEN16931(r, p, profile)
 	})
 }
 
