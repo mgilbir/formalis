@@ -12,24 +12,73 @@ import (
 	"strings"
 )
 
-// Profile is an EN 16931 conformance profile, in increasing data richness. The
-// first five are the Factur-X/ZUGFeRD profiles; XRechnung is the German CIUS.
+// Profile is a Factur-X/ZUGFeRD conformance profile: how much of the EN 16931
+// semantic model a document undertakes to carry, in increasing data richness.
+// The five values below are the whole set, and Profile means only this. It is
+// not a rule set chosen by nationality: a Core Invoice Usage Specification is a
+// separate concept carried by CIUS, reached through ValidateCIUS or a
+// CIUS-specific validator such as ValidateXRechnung.
+//
+// Keeping the two apart is what makes the type checkable. While XRechnung was
+// also a Profile constant it was accepted by Validate and applied no BR-DE-*
+// rule, so the call that looked most like "validate this as XRechnung" was the
+// one that validated it least; and because any string was accepted, a
+// mistyped profile was silently read as EN 16931. Validate now reports a
+// Profile it does not implement — see RuleProfile.
+//
+// Only three of the five change what Validate checks, and only in these ways:
+// MINIMUM and BASIC WL are head-only, so the invoice-line rules (BR-12, BR-16)
+// are not applied to them; MINIMUM additionally omits the buyer postal address
+// (BR-10, BR-11), the VAT breakdown (BR-CO-18) and the amount-due summation
+// (BR-CO-16); and EXTENDED is exempt from the allowance/charge total
+// summations (BR-CO-11, BR-CO-12), whose operands it may carry unitemized.
+// BASIC, EN 16931 and EXTENDED are otherwise checked alike.
+// TestProfilesThatDifferStillDiffer pins each of those differences.
 type Profile string
 
 const (
-	ProfileMinimum   Profile = "MINIMUM"
-	ProfileBasicWL   Profile = "BASIC WL"
-	ProfileBasic     Profile = "BASIC"
-	ProfileEN16931   Profile = "EN 16931"
-	ProfileExtended  Profile = "EXTENDED"
-	ProfileXRechnung Profile = "XRECHNUNG" // ZUGFeRD 2.x German XRechnung CIUS of EN 16931
+	ProfileMinimum  Profile = "MINIMUM"
+	ProfileBasicWL  Profile = "BASIC WL"
+	ProfileBasic    Profile = "BASIC"
+	ProfileEN16931  Profile = "EN 16931"
+	ProfileExtended Profile = "EXTENDED"
 )
 
-// ProfileFor maps an XMP ConformanceLevel string to a profile. The value is
-// matched case- and space-insensitively, since producers write both "EN 16931"
-// and "EN16931", and "BASIC WL" and "BASICWL".
+// profiles is every Profile this package implements, in the order Profile
+// documents them. It is the single list that knownProfile, the message
+// unknownProfile writes, and TestProfileForRoundTrips all read.
+var profiles = []Profile{ProfileMinimum, ProfileBasicWL, ProfileBasic, ProfileEN16931, ProfileExtended}
+
+// knownProfile reports whether p is one of the five profiles this package
+// implements. Validate consults it before doing any work; see RuleProfile.
+func knownProfile(p Profile) bool {
+	for _, k := range profiles {
+		if p == k {
+			return true
+		}
+	}
+	return false
+}
+
+// conformanceKey folds an XMP ConformanceLevel string for matching: producers
+// write both "EN 16931" and "EN16931", and "BASIC WL" and "BASICWL".
+func conformanceKey(level string) string {
+	return strings.ToUpper(strings.ReplaceAll(level, " ", ""))
+}
+
+// ProfileFor maps an XMP ConformanceLevel string to the Factur-X profile it
+// names. The value is matched case- and space-insensitively.
+//
+// It reports false for "XRECHNUNG", which is a level a ZUGFeRD 2.x producer
+// really does write but which names the German CIUS rather than a data-richness
+// profile; CIUSFor maps that one. A caller reading a PDF's XMP therefore asks
+// both, and gets from the pair the two facts the metadata actually carries —
+// how rich the data claims to be, and which national rule set it claims to
+// follow — instead of one value that conflates them. Neither returning
+// ("", false) for the level (which loses it) nor returning a Profile that no
+// validator honours (which was the bug) would do that.
 func ProfileFor(level string) (Profile, bool) {
-	switch strings.ToUpper(strings.ReplaceAll(level, " ", "")) {
+	switch conformanceKey(level) {
 	case "MINIMUM":
 		return ProfileMinimum, true
 	case "BASICWL":
@@ -40,10 +89,29 @@ func ProfileFor(level string) (Profile, bool) {
 		return ProfileEN16931, true
 	case "EXTENDED":
 		return ProfileExtended, true
-	case "XRECHNUNG":
-		return ProfileXRechnung, true
 	}
 	return "", false
+}
+
+// CIUSFor maps an XMP ConformanceLevel string to the CIUS it names, for the
+// levels that name one rather than a Factur-X profile. It is the companion to
+// ProfileFor over the same input, matched the same way; exactly one of the two
+// reports true for any level either recognises.
+//
+// Today that is only "XRECHNUNG" (ZUGFeRD 2.x). The CIUS it returns is the one
+// ValidateCIUS routes on and ValidateXRechnung implements, so a caller that
+// reaches here reaches a validator that actually applies the BR-DE-* rules.
+//
+// This says what the container's metadata claims. DetectCIUS says what the
+// invoice itself declares in BT-24, and that is the more reliable of the two:
+// prefer it, and treat a disagreement as the container and its attachment
+// describing different documents.
+func CIUSFor(level string) (CIUS, bool) {
+	switch conformanceKey(level) {
+	case "XRECHNUNG":
+		return CIUSXRechnung, true
+	}
+	return CIUSNone, false
 }
 
 // Source identifies the authority that defines a rule, so that a rule identifier
