@@ -88,7 +88,10 @@ type RuleFamily struct {
 	// package does in fact emit reads this field alone.
 	Rules string
 
-	// Severity is what not evaluating this family costs, as described above.
+	// Severity is what not evaluating this family costs a conformance claim:
+	// fatal when an authority could reject a document over one of these rules,
+	// advisory when it could not. See the type's own comment for the two entries
+	// where that is not simply the authority's published flag, and why.
 	Severity Severity
 
 	// Reason is why it is not evaluated, in prose. It is where a judgement gets
@@ -297,16 +300,17 @@ func Coverage(src Source) []RuleFamily {
 //
 // Two writing conventions, which those tests read:
 //
-//   - The Rules field is the claim and the Reason field is prose. Only Rules is
-//     read as naming unevaluated identifiers, which is what lets a Reason
-//     explain a gap by referring to a rule that *is* evaluated (BR-51 in the CII
-//     binding, BR-CO-16 under the EXTENSION sub-profile) without the table
-//     appearing to disclaim it.
+//   - The Rules field is the claim and the Reason field is prose. Both are read
+//     by both guards, so moving a claim into the prose cannot dodge either; what
+//     the split buys is that the severity and the identifiers sit where a caller
+//     can use them without parsing a sentence.
 //   - An entry that carves out the implemented part of a family says "other
 //     than" or "emits only" in Rules and then lists it. Those two phrases mark
-//     the field as containing identifiers this package *does* report, so the
-//     over-claim test skips it. Any other phrasing is taken as a plain claim
-//     that everything it names is unevaluated.
+//     the *entry* as containing identifiers this package does report, so the
+//     over-claim test skips both its fields — a Reason that explains such a
+//     carve-out has to be able to name the evaluated half (BR-51 in the CII
+//     binding is the example). Any other phrasing is taken as a plain claim that
+//     everything the entry names is unevaluated.
 //
 // A family whose members do not share one flag is split into one entry per
 // severity rather than recorded at the stronger of the two. That is not
