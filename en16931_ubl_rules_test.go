@@ -2,6 +2,10 @@ package formalis
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -360,6 +364,135 @@ func TestUBLSyntaxRules(t *testing.T) {
 		{"UBL-SR-52 two line document references", ublWith(t, ublAtLine,
 			`<DocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></DocumentReference>`+
 				`<DocumentReference><ID schemeID="AAB">OBJ-2</ID><DocumentTypeCode>130</DocumentTypeCode></DocumentReference>`), "UBL-SR-52", true},
+
+		// --- Preceding invoice and supporting document references ---------
+		{"UBL-SR-06 one preceding invoice", ublWith(t, ublAtDocument,
+			`<BillingReference><InvoiceDocumentReference><ID>PREV-1</ID></InvoiceDocumentReference></BillingReference>`), "UBL-SR-06", false},
+		{"UBL-SR-06 two preceding invoices in one group", ublWith(t, ublAtDocument,
+			`<BillingReference><InvoiceDocumentReference><ID>PREV-1</ID></InvoiceDocumentReference>`+
+				`<InvoiceDocumentReference><ID>PREV-2</ID></InvoiceDocumentReference></BillingReference>`), "UBL-SR-06", true},
+
+		{"UBL-SR-07 preceding invoice carries its number", ublWith(t, ublAtDocument,
+			`<BillingReference><InvoiceDocumentReference><ID>PREV-1</ID></InvoiceDocumentReference></BillingReference>`), "UBL-SR-07", false},
+		{"UBL-SR-07 preceding invoice without a number", ublWith(t, ublAtDocument,
+			`<BillingReference><InvoiceDocumentReference><IssueDate>2023-12-01</IssueDate></InvoiceDocumentReference></BillingReference>`), "UBL-SR-07", true},
+
+		{"UBL-SR-33 one supporting document description", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID>DOC-1</ID><DocumentDescription>Timesheet</DocumentDescription></AdditionalDocumentReference>`), "UBL-SR-33", false},
+		{"UBL-SR-33 two supporting document descriptions", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID>DOC-1</ID><DocumentDescription>Timesheet</DocumentDescription>`+
+				`<DocumentDescription>Delivery note</DocumentDescription></AdditionalDocumentReference>`), "UBL-SR-33", true},
+
+		{"UBL-SR-43 supporting document with neither scheme nor type code", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID>DOC-1</ID><DocumentDescription>Timesheet</DocumentDescription></AdditionalDocumentReference>`), "UBL-SR-43", false},
+		{"UBL-SR-43 invoiced object identifier with a scheme and type code 130", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></AdditionalDocumentReference>`), "UBL-SR-43", false},
+		{"UBL-SR-43 credit note object identifier with type code 50", ublCreditNote(ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>50</DocumentTypeCode></AdditionalDocumentReference>`)), "UBL-SR-43", false},
+		{"UBL-SR-43 supporting document carrying a scheme identifier", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">DOC-1</ID><DocumentDescription>Timesheet</DocumentDescription></AdditionalDocumentReference>`), "UBL-SR-43", true},
+		{"UBL-SR-43 type code 50 on an invoice rather than a credit note", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>50</DocumentTypeCode></AdditionalDocumentReference>`), "UBL-SR-43", true},
 	}
 	runRuleCases(t, cases)
+
+	// The table above must cover the binding, not a subset of it that happens to
+	// be easy: both verdicts, for every fatal rule CEN publishes.
+	fires := map[string]bool{}
+	silent := map[string]bool{}
+	for _, c := range cases {
+		if c.want {
+			fires[c.rule] = true
+		} else {
+			silent[c.rule] = true
+		}
+	}
+	for _, rule := range ublFatalSyntaxRules(t) {
+		if !silent[rule] {
+			t.Errorf("%s has no conforming case in this table: nothing says it stays silent on a document that satisfies it", rule)
+		}
+		if !fires[rule] {
+			t.Errorf("%s has no violating case in this table: nothing says it is a rule rather than dead code", rule)
+		}
+	}
+}
+
+// ublFatalSyntaxRules reads the fatal UBL-SR-* identifiers out of the vendored
+// CEN Schematron, so the table above is measured against what CEN publishes
+// rather than against a list this package wrote down. It skips when the
+// artefacts are absent, like every other oracle here.
+func ublFatalSyntaxRules(t *testing.T) []string {
+	t.Helper()
+	dir := en16931SuiteDir()
+	if dir == "" {
+		t.Skip("EN 16931 artefact suite not present; run `make en16931-artefacts`")
+	}
+	// The abstract pattern is where the severity lives: the UBL binding file
+	// supplies each rule's XPath, the abstract file its flag and its message.
+	data, err := os.ReadFile(filepath.Join(dir, "ubl", "schematron", "abstract", "EN16931-syntax.sch"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	re := regexp.MustCompile(`\bid="(UBL-SR-\d+)"`)
+	fatal := regexp.MustCompile(`flag="fatal"`)
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range regexp.MustCompile(`<assert[^>]*>`).FindAllString(string(data), -1) {
+		if !fatal.MatchString(m) {
+			continue
+		}
+		id := re.FindStringSubmatch(m)
+		if id == nil || seen[id[1]] {
+			continue
+		}
+		seen[id[1]] = true
+		out = append(out, id[1])
+	}
+	sort.Strings(out)
+	if len(out) != 54 {
+		t.Fatalf("expected 54 fatal UBL-SR-* assertions in the CEN Schematron, found %d", len(out))
+	}
+	return out
+}
+
+// TestUBLSyntaxRulesAreNotAskedOfCII pins the half of the design that the file
+// comment argues for: the UBL binding is a statement about UBL, so a CII invoice
+// must never be accused under one of its identifiers.
+func TestUBLSyntaxRulesAreNotAskedOfCII(t *testing.T) {
+	for _, tc := range []struct{ name, doc string }{
+		{"clean CII invoice", validCII},
+		{"CII invoice with two payment means codes", withCIISettlement(
+			`<SpecifiedTradeSettlementPaymentMeans><TypeCode>30</TypeCode></SpecifiedTradeSettlementPaymentMeans>` +
+				`<SpecifiedTradeSettlementPaymentMeans><TypeCode>58</TypeCode></SpecifiedTradeSettlementPaymentMeans>`)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, v := range Validate(context.Background(), []byte(tc.doc), ProfileEN16931).Violations {
+				if strings.HasPrefix(v.Rule, "UBL-") {
+					t.Errorf("CII invoice reported the UBL binding rule %s: %s", v.Rule, v.Message)
+				}
+			}
+		})
+	}
+}
+
+// TestUBLSyntaxRulesCarryTheEN16931Source pins the PR 3 decision: CEN publishes
+// the syntax bindings as normative parts of EN 16931, so a binding finding is an
+// EN 16931 finding and not one from a source of its own.
+func TestUBLSyntaxRulesCarryTheEN16931Source(t *testing.T) {
+	doc := ublWith(t, ublAtDocument,
+		`<ContractDocumentReference><ID>C-1</ID></ContractDocumentReference>`+
+			`<ContractDocumentReference><ID>C-2</ID></ContractDocumentReference>`)
+	found := false
+	for _, v := range Validate(context.Background(), []byte(doc), ProfileEN16931).Violations {
+		if v.Rule != "UBL-SR-01" {
+			continue
+		}
+		found = true
+		if v.Source != SourceEN16931 {
+			t.Errorf("UBL-SR-01 carries Source %q, want %q", v.Source, SourceEN16931)
+		}
+	}
+	if !found {
+		t.Fatal("UBL-SR-01 did not fire on the fixture this test is built from")
+	}
 }

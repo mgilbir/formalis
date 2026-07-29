@@ -201,9 +201,10 @@ func CIUSFor(level string) (CIUS, bool) {
 //     of the same standard as the semantic model (EN 16931-1); they arrive in the
 //     same conformance artefacts this package is tested against, and the FP=0
 //     oracle counts them among the rules it must catch. Splitting them would also
-//     make one finding's Source depend on the invoice's syntax, since the rule
-//     engine picks UBL-SR-44 or CII-SR-469 for the same defect from the same
-//     model — a distinction the caller did not ask for. A caller that does want
+//     make one finding's Source depend on the invoice's syntax, since the same
+//     defect — two disagreeing payment means codes — is UBL-SR-47 on a UBL
+//     invoice and CII-SR-467 on a CII one, which is a distinction the caller did
+//     not ask for. A caller that does want
 //     "syntax binding" separately has the prefix, which is already disjoint from
 //     the core BR-* space.
 //
