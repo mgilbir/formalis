@@ -118,7 +118,12 @@ func parseCII(r *run, data []byte) (*ciiNode, error) {
 		}
 		tok, err := dec.Token()
 		if err != nil {
-			if err.Error() == "EOF" {
+			// errors.Is, not a comparison against the error's text: scanShape reads
+			// the same decoder and ends the same way, and TestScanMatchesTreeDetection
+			// pins the two readers to identical acceptance decisions across the whole
+			// corpus. One idiom, so a wrapped io.EOF cannot start a divergence
+			// between them that reads as a malformed document on one side only.
+			if errors.Is(err, io.EOF) {
 				break
 			}
 			return nil, err
