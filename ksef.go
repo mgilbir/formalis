@@ -43,14 +43,14 @@ func IsKSeF(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateKSeF(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateKSeF(r, xmlData))
-}
-
-func validateKSeF(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateKSeF(r, root))
+}
+
+func validateKSeF(r *run, root *ciiNode) []Violation {
 	if root.name != "Faktura" {
 		return []Violation{{Rule: "KS-root", Message: "the document root shall be Faktura"}}
 	}

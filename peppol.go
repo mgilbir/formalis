@@ -45,17 +45,16 @@ var peppolVATEX = map[string]struct {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidatePeppol(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validatePeppol(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validatePeppol(r, p))
 }
 
-func validatePeppol(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
-	out := validateEN16931(r, inv, ProfileEN16931)
-	out = append(out, validatePeppolRules(inv)...)
-	return out
+func validatePeppol(r *run, p *parsed) []Violation {
+	out := validateEN16931(r, p.inv, ProfileEN16931)
+	return append(out, validatePeppolRules(p.inv)...)
 }
 
 func validatePeppolRules(inv *en16931Invoice) []Violation {

@@ -39,17 +39,16 @@ var nlciusTypeCodes = map[string]bool{"380": true, "381": true, "384": true, "38
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateNLCIUS(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateNLCIUS(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateNLCIUS(r, p))
 }
 
-func validateNLCIUS(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
-	out := validateEN16931(r, inv, ProfileEN16931)
-	out = append(out, validateNLCIUSRules(inv)...)
-	return out
+func validateNLCIUS(r *run, p *parsed) []Violation {
+	out := validateEN16931(r, p.inv, ProfileEN16931)
+	return append(out, validateNLCIUSRules(p.inv)...)
 }
 
 // validateNLCIUSRules applies the mandatory NLCIUS rules. All are gated on the

@@ -32,14 +32,14 @@ func IsTEAPPS(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateTEAPPS(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateTEAPPS(r, xmlData))
-}
-
-func validateTEAPPS(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateTEAPPS(r, root))
+}
+
+func validateTEAPPS(r *run, root *ciiNode) []Violation {
 	if root.name != "INVOICE_CENTER" {
 		return []Violation{{Rule: "TP-root", Message: "the document root shall be INVOICE_CENTER"}}
 	}

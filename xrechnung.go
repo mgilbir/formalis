@@ -35,14 +35,15 @@ var xrExtItemSchemes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateXRechnung(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateXRechnung(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateXRechnung(r, p))
 }
 
-func validateXRechnung(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
+func validateXRechnung(r *run, p *parsed) []Violation {
+	inv := p.inv
 	ext := strings.Contains(inv.specID, "extension")
 	cvd := strings.Contains(inv.specID, "cvd")
 

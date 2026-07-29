@@ -70,17 +70,16 @@ func roValidSubdivision(s string) bool {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateCIUSRO(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateCIUSRO(r, xmlData))
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return r.finish(syntaxViolation(err))
+	}
+	return r.finish(validateCIUSRO(r, p))
 }
 
-func validateCIUSRO(r *run, xmlData []byte) []Violation {
-	inv, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return syntaxViolation(err)
-	}
-	out := validateEN16931(r, inv, ProfileEN16931)
-	out = append(out, validateCIUSRORules(inv)...)
-	return out
+func validateCIUSRO(r *run, p *parsed) []Violation {
+	out := validateEN16931(r, p.inv, ProfileEN16931)
+	return append(out, validateCIUSRORules(p.inv)...)
 }
 
 func validateCIUSRORules(inv *en16931Invoice) []Violation {

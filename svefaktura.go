@@ -37,14 +37,14 @@ func IsSvefaktura(xmlData []byte) (bool, error) {
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateSvefaktura(ctx context.Context, xmlData []byte) []Violation {
 	r := newRun(ctx)
-	return r.finish(validateSvefaktura(r, xmlData))
-}
-
-func validateSvefaktura(r *run, xmlData []byte) []Violation {
 	root, err := parseCII(r, xmlData)
 	if err != nil {
-		return syntaxViolation(err)
+		return r.finish(syntaxViolation(err))
 	}
+	return r.finish(validateSvefaktura(r, root))
+}
+
+func validateSvefaktura(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" || root.child("SellerParty") == nil {
 		return []Violation{{Rule: "SV-root", Message: "the document root shall be a Svefaktura Invoice with a SellerParty"}}
 	}
