@@ -99,6 +99,10 @@ func validateCIISyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ciiDatatypeValueRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiDatatypeGroupRules(g, add)
 	return out
 }
 
@@ -788,6 +792,70 @@ func ciiDatatypeValueRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
 	for _, d := range g.dates102 {
 		if !ciiDate102.MatchString(d.text) {
 			add("CII-DT-097", fmt.Sprintf("A date declaring format 102 shall be written YYYYMMDD, not %q", strings.TrimSpace(d.text)))
+		}
+	}
+}
+
+// ciiDatatypeGroupRules are the twenty-eight rules that close off the two CII
+// groups whose schema type is far richer than the business terms EN 16931 binds
+// to it: the invoicing period (ram:BillingSpecifiedPeriod, which carries BT-73/74
+// and BT-134/135 and nothing else) and the postal address
+// (ram:PostalTradeAddress, which carries BG-5/8/12/15 through ram:LineOne,
+// ram:LineTwo, ram:LineThree, ram:CityName, ram:PostcodeCode,
+// ram:CountrySubDivisionName and ram:CountryID, and nothing else).
+func ciiDatatypeGroupRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, p := range g.periods {
+		// CII-DT-068 and CII-DT-072 are the two that reach a level deeper: the
+		// period's start and end are dates, written as udt:DateString, and the
+		// schema's alternative udt:DateTime is what the binding excludes.
+		if len(nodesAt(p, "StartDateTime", "DateTime")) > 0 {
+			add("CII-DT-068", "An invoicing period start date (BT-73/134) shall be written as a date string, not a DateTime")
+		}
+		if len(nodesAt(p, "EndDateTime", "DateTime")) > 0 {
+			add("CII-DT-072", "An invoicing period end date (BT-74/135) shall be written as a date string, not a DateTime")
+		}
+		for _, c := range []forbiddenChild{
+			{"CII-DT-069", "DurationMeasure"},
+			{"CII-DT-070", "InclusiveIndicator"},
+			{"CII-DT-071", "Description"},
+			{"CII-DT-073", "CompleteDateTime"},
+			{"CII-DT-074", "OpenIndicator"},
+			{"CII-DT-075", "SeasonCode"},
+			{"CII-DT-076", "ID"},
+			{"CII-DT-077", "Name"},
+			{"CII-DT-078", "SequenceNumeric"},
+			{"CII-DT-079", "StartDateFlexibilityCode"},
+			{"CII-DT-080", "ContinuousIndicator"},
+			{"CII-DT-081", "PurposeCode"},
+		} {
+			if hasChild(p, c.name) {
+				add(c.rule, fmt.Sprintf("An invoicing period (BG-14/BG-26) shall not carry a %s element", c.name))
+			}
+		}
+	}
+
+	for _, a := range g.addresses {
+		// CII-DT-085 is absent from this table because CEN flags it advisory,
+		// alone among the fifteen address rules.
+		for _, c := range []forbiddenChild{
+			{"CII-DT-082", "ID"},
+			{"CII-DT-083", "PostOfficeBox"},
+			{"CII-DT-084", "BuildingName"},
+			{"CII-DT-086", "LineFour"},
+			{"CII-DT-087", "LineFive"},
+			{"CII-DT-088", "StreetName"},
+			{"CII-DT-089", "CitySubDivisionName"},
+			{"CII-DT-090", "CountryName"},
+			{"CII-DT-091", "CountrySubDivisionID"},
+			{"CII-DT-092", "AttentionOf"},
+			{"CII-DT-093", "CareOf"},
+			{"CII-DT-094", "BuildingNumber"},
+			{"CII-DT-095", "DepartmentName"},
+			{"CII-DT-096", "AdditionalStreetName"},
+		} {
+			if hasChild(a, c.name) {
+				add(c.rule, fmt.Sprintf("A postal address (BG-5/8/12/15) shall not carry a %s element", c.name))
+			}
 		}
 	}
 }

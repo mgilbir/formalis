@@ -3,6 +3,10 @@ package formalis
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -89,8 +93,42 @@ func TestCIISyntaxRules(t *testing.T) {
 	cases = append(cases, ciiQuantityCases(t)...)
 	cases = append(cases, ciiTaxTypeAndDateCases(t)...)
 	cases = append(cases, ciiRefDocCases(t)...)
+	cases = append(cases, ciiPeriodCases(t)...)
+	cases = append(cases, ciiAddressCases(t)...)
 
 	runRuleCases(t, cases)
+	ciiCheckEveryFatalRuleHasBothVerdicts(t, cases)
+}
+
+// ciiCheckEveryFatalRuleHasBothVerdicts measures the table against what CEN
+// publishes rather than against a list this package wrote down, so a rule added
+// to the binding upstream, or one dropped from this package, cannot pass
+// unnoticed.
+func ciiCheckEveryFatalRuleHasBothVerdicts(t *testing.T, cases []ruleCase) {
+	t.Helper()
+	fires := map[string]bool{}
+	silent := map[string]bool{}
+	for _, c := range cases {
+		if c.want {
+			fires[c.rule] = true
+		} else {
+			silent[c.rule] = true
+		}
+	}
+	for _, rule := range ciiFatalSyntaxRules(t) {
+		if ciiUnreachableRules[rule] {
+			if fires[rule] || silent[rule] {
+				t.Errorf("%s is named in Coverage as unreachable but this table has a case for it", rule)
+			}
+			continue
+		}
+		if !silent[rule] {
+			t.Errorf("%s has no conforming case in this table: nothing says it stays silent on a document that satisfies it", rule)
+		}
+		if !fires[rule] {
+			t.Errorf("%s has no violating case in this table: nothing says it is a rule rather than dead code", rule)
+		}
+	}
 }
 
 // ciiUnreachableRules are the fatal identifiers CEN publishes that no reference
@@ -101,6 +139,51 @@ var ciiUnreachableRules = map[string]bool{
 	"CII-DT-010": true,
 	"CII-DT-011": true,
 	"CII-DT-012": true,
+}
+
+// ciiFatalSyntaxRules reads the fatal CII-SR-* and CII-DT-* identifiers out of
+// the vendored CEN Schematron. It skips when the artefacts are absent, like
+// every other oracle here.
+func ciiFatalSyntaxRules(t *testing.T) []string {
+	t.Helper()
+	dir := en16931SuiteDir()
+	if dir == "" {
+		t.Skip("EN 16931 artefact suite not present; run `make en16931-artefacts`")
+	}
+	// The abstract pattern is where the severity lives: the CII binding file
+	// supplies each rule's XPath, the abstract file its flag and its message.
+	data, err := os.ReadFile(filepath.Join(dir, "cii", "schematron", "abstract", "EN16931-CII-syntax.sch"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := regexp.MustCompile(`\bid="(CII-(?:SR|DT)-\d+)"`)
+	fatal := regexp.MustCompile(`flag="fatal"`)
+	seen := map[string]bool{}
+	var out []string
+	for _, m := range regexp.MustCompile(`<assert[^>]*>`).FindAllString(string(data), -1) {
+		if !fatal.MatchString(m) {
+			continue
+		}
+		g := id.FindStringSubmatch(m)
+		if g == nil || seen[g[1]] {
+			continue
+		}
+		seen[g[1]] = true
+		out = append(out, g[1])
+	}
+	sort.Strings(out)
+	var sr, dt int
+	for _, r := range out {
+		if strings.HasPrefix(r, "CII-SR-") {
+			sr++
+		} else {
+			dt++
+		}
+	}
+	if sr != 42 || dt != 70 {
+		t.Fatalf("expected 42 fatal CII-SR-* and 70 fatal CII-DT-* assertions in the CEN Schematron, found %d and %d", sr, dt)
+	}
+	return out
 }
 
 // ciiDocumentCases are the rules CEN binds to the document element and to the
@@ -574,6 +657,92 @@ func ciiRefDocCases(t *testing.T) []ruleCase {
 				ciiRefDoc(t, ciiContractRef, ``), c.rule, false},
 			ruleCase{c.rule + " a contract reference carrying " + c.elem,
 				ciiRefDoc(t, ciiContractRef, child), c.rule, true})
+	}
+	return out
+}
+
+// ciiPeriodFixture is a conforming invoicing period (BG-14): two dates and
+// nothing else. The CII schema's SpecifiedPeriodType carries fourteen more
+// children and CII-DT-068..081 close every one of them off.
+const ciiPeriodFixture = `<BillingSpecifiedPeriod>` +
+	`<StartDateTime><DateString format="102">20240101</DateString></StartDateTime>` +
+	`<EndDateTime><DateString format="102">20240131</DateString></EndDateTime>`
+
+// ciiWithPeriod puts a BillingSpecifiedPeriod carrying children into the header
+// settlement.
+func ciiWithPeriod(children string) string {
+	return withCIISettlement(ciiPeriodFixture + children + `</BillingSpecifiedPeriod>`)
+}
+
+// ciiPeriodCases are the fourteen rules on an invoicing period: the two that
+// reject a DateTime where the binding wants a date, and the twelve children
+// EN 16931 binds no business term to.
+func ciiPeriodCases(t *testing.T) []ruleCase {
+	t.Helper()
+	out := []ruleCase{
+		{"CII-DT-068 a period start written as a date", ciiWithPeriod(``), "CII-DT-068", false},
+		{"CII-DT-068 a period start written as a DateTime", withCIISettlement(
+			`<BillingSpecifiedPeriod><StartDateTime><DateTime>2024-01-01T00:00:00</DateTime></StartDateTime></BillingSpecifiedPeriod>`),
+			"CII-DT-068", true},
+
+		{"CII-DT-072 a period end written as a date", ciiWithPeriod(``), "CII-DT-072", false},
+		{"CII-DT-072 a period end written as a DateTime", withCIISettlement(
+			`<BillingSpecifiedPeriod><EndDateTime><DateTime>2024-01-31T00:00:00</DateTime></EndDateTime></BillingSpecifiedPeriod>`),
+			"CII-DT-072", true},
+	}
+	for _, c := range []struct{ rule, elem, value string }{
+		{"CII-DT-069", "DurationMeasure", "30"},
+		{"CII-DT-070", "InclusiveIndicator", "<Indicator>true</Indicator>"},
+		{"CII-DT-071", "Description", "January"},
+		{"CII-DT-073", "CompleteDateTime", `<DateTimeString format="102">20240101</DateTimeString>`},
+		{"CII-DT-074", "OpenIndicator", "<Indicator>false</Indicator>"},
+		{"CII-DT-075", "SeasonCode", "1"},
+		{"CII-DT-076", "ID", "P-1"},
+		{"CII-DT-077", "Name", "January"},
+		{"CII-DT-078", "SequenceNumeric", "1"},
+		{"CII-DT-079", "StartDateFlexibilityCode", "1"},
+		{"CII-DT-080", "ContinuousIndicator", "<Indicator>true</Indicator>"},
+		{"CII-DT-081", "PurposeCode", "1"},
+	} {
+		child := fmt.Sprintf("<%s>%s</%s>", c.elem, c.value, c.elem)
+		out = append(out,
+			ruleCase{c.rule + " an invoicing period without " + c.elem, ciiWithPeriod(``), c.rule, false},
+			ruleCase{c.rule + " an invoicing period carrying " + c.elem, ciiWithPeriod(child), c.rule, true})
+	}
+	return out
+}
+
+// ciiAddressCases are the fourteen children CEN closes off on a postal address.
+// CII-DT-085 is absent because it is the one address rule CEN flags advisory.
+//
+// CII-DT-088 is the one to read twice: it forbids ram:StreetName, which sounds
+// like the street a seller lives on and is not. The CII binding puts BT-35 in
+// ram:LineOne, and the corpus bears that out — 422 addresses with a LineOne, not
+// one with a StreetName.
+func ciiAddressCases(t *testing.T) []ruleCase {
+	t.Helper()
+	var out []ruleCase
+	for _, c := range []struct{ rule, elem, value string }{
+		{"CII-DT-082", "ID", "A-1"},
+		{"CII-DT-083", "PostOfficeBox", "PO 12"},
+		{"CII-DT-084", "BuildingName", "Tower"},
+		{"CII-DT-086", "LineFour", "line four"},
+		{"CII-DT-087", "LineFive", "line five"},
+		{"CII-DT-088", "StreetName", "Rue de Rivoli"},
+		{"CII-DT-089", "CitySubDivisionName", "1er"},
+		{"CII-DT-090", "CountryName", "France"},
+		{"CII-DT-091", "CountrySubDivisionID", "75"},
+		{"CII-DT-092", "AttentionOf", "Ann"},
+		{"CII-DT-093", "CareOf", "Bob"},
+		{"CII-DT-094", "BuildingNumber", "12"},
+		{"CII-DT-095", "DepartmentName", "Sales"},
+		{"CII-DT-096", "AdditionalStreetName", "2nd floor"},
+	} {
+		child := fmt.Sprintf("<%s>%s</%s>", c.elem, c.value, c.elem)
+		out = append(out,
+			ruleCase{c.rule + " a postal address without " + c.elem, validCII, c.rule, false},
+			ruleCase{c.rule + " a postal address carrying " + c.elem,
+				ciiWith(t, ciiAtAddress, child), c.rule, true})
 	}
 	return out
 }
