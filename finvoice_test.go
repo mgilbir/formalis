@@ -18,7 +18,12 @@ func TestFinvoiceCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !IsFinvoice(data) {
+		ok, err := IsFinvoice(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as Finvoice", filepath.Base(f))
 			continue
 		}

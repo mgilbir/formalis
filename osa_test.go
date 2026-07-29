@@ -15,7 +15,12 @@ func TestOSACorpus(t *testing.T) {
 	}
 	for _, f := range files {
 		data, _ := os.ReadFile(f)
-		if !IsOSA(data) {
+		ok, err := IsOSA(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as OSA", filepath.Base(f))
 			continue
 		}

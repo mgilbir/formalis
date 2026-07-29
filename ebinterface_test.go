@@ -20,7 +20,12 @@ func TestEbInterfaceCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !IsEbInterface(data) {
+		ok, err := IsEbInterface(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as ebInterface", filepath.Base(f))
 			continue
 		}

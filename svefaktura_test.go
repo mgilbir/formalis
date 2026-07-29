@@ -18,7 +18,12 @@ func TestSvefakturaCorpus(t *testing.T) {
 	recognised := 0
 	for _, f := range files {
 		data, _ := os.ReadFile(f)
-		if !IsSvefaktura(data) {
+		ok, err := IsSvefaktura(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			continue
 		}
 		recognised++
