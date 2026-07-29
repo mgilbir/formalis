@@ -229,22 +229,64 @@ func (n *ciiNode) str(path ...string) string {
 	return ""
 }
 
-// Validate checks the CII invoice XML against the foundational
-// EN 16931 business rules shared by every profile. It is the semantic layer
-// beneath ValidateFacturX's container checks; pass the profile so profile-
-// specific expectations can be applied as the rule set grows.
-// Validate validates the embedded invoice XML against the EN 16931
-// core business rules. It accepts either syntax — a UN/CEFACT Cross Industry
-// Invoice (Factur-X/ZUGFeRD) or an OASIS UBL Invoice/CreditNote (Peppol BIS,
-// XRechnung UBL) — detecting which from the root element and mapping it onto the
-// shared semantic model before running the one rule engine (validateEN16931).
+// Validate validates an invoice XML against the EN 16931 core business rules.
+// It accepts either syntax — a UN/CEFACT Cross Industry Invoice
+// (Factur-X/ZUGFeRD) or an OASIS UBL Invoice/CreditNote (Peppol BIS, XRechnung
+// UBL) — detecting which from the root element and mapping it onto the shared
+// semantic model before running the one rule engine.
+//
+// profile is the Factur-X data-richness tier the document claims, and it does
+// exactly one thing: it excuses the rules a leaner tier is not expected to
+// satisfy. MINIMUM and BASIC WL carry no invoice lines, so the line rules are
+// not applied to them; MINIMUM also omits the buyer address, the VAT breakdown
+// and the amount-due summation; EXTENDED is exempt from the allowance/charge
+// total summations. BASIC, EN 16931 and EXTENDED are otherwise checked
+// identically, so passing one where another belongs changes nothing. Profile
+// lists the differences.
+//
+// What profile does *not* do is select a national rule set. It cannot make this
+// call check XRechnung, Peppol or any other CIUS; for those use ValidateCIUS,
+// which routes on the document's own BT-24, or the CIUS-specific validator.
+//
+// A Profile this package does not implement is refused rather than assumed:
+// the call validates nothing and returns a single RuleProfile violation, so a
+// typo cannot be read as a clean invoice.
+//
+// ctx bounds how long the call may take; the work itself is bounded by this
+// package's own limits. A cancelled run reports a RuleLimit violation and never
+// an empty slice, so it cannot be mistaken for a valid invoice.
 func Validate(ctx context.Context, xmlData []byte, profile Profile) []Violation {
+	if !knownProfile(profile) {
+		return unknownProfile(profile)
+	}
 	r := newRun(ctx)
 	p, err := parseEN16931(r, xmlData)
 	if err != nil {
 		return r.finish(syntaxViolation(err))
 	}
 	return r.finish(validateEN16931(r, p.inv, profile))
+}
+
+// unknownProfile reports a Profile this package does not implement, as the one
+// and only finding of a run that therefore examined nothing. See RuleProfile
+// for why this is neither a syntax finding nor a limit one, and why it is not
+// silence.
+//
+// The message names the accepted values because the failure this rejection
+// exists to catch is a near miss — Profile("EN16931") for ProfileEN16931 is one
+// space away, and is exactly the spelling ProfileFor takes as *input* — and it
+// names the CIUS route because the other near miss is a caller reaching for a
+// national rule set that Profile never offered.
+func unknownProfile(p Profile) []Violation {
+	names := make([]string, len(profiles))
+	for i, k := range profiles {
+		names[i] = strconv.Quote(string(k))
+	}
+	return []Violation{{
+		Source:  SourceChecker,
+		Rule:    RuleProfile,
+		Message: fmt.Sprintf("%q is not an EN 16931 conformance profile this checker implements, so no rules were run and this invoice is neither confirmed valid nor invalid; the profiles are %s, and a national CIUS is not one of them — for those use ValidateCIUS or the validator for that CIUS", string(p), strings.Join(names, ", ")),
+	}}
 }
 
 // syntaxViolation reports a parse failure as a finding about the document —

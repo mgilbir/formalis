@@ -95,25 +95,61 @@ const RuleLimit = "limit"
 // so it too carries SourceChecker.
 const RuleSyntax = "syntax"
 
-// IsCheckerViolation reports whether v describes the checker stopping early
-// rather than a way in which the invoice departs from the rules.
+// RuleProfile is the rule identifier carried by a Violation that reports the
+// caller naming a Profile this package does not implement. Like RuleLimit and
+// RuleSyntax it carries SourceChecker, because it is a statement by this
+// checker; unlike either it is a statement about the *request*, not about the
+// document, which is innocent and was not examined.
 //
-// A cancelled context and a tripped resource budget both produce one. Treat it
-// as "unknown", never as "conformant" and never as "non-conformant".
+// It exists because the alternatives are all worse. Reporting it as RuleSyntax
+// would accuse a document that may be perfectly conformant. Reporting it as
+// RuleLimit would overload an identifier documented as a resource-budget or
+// cancellation event and shared verbatim with pdf0, so a caller that routes
+// "the checker ran out of room, retry it smaller" would retry forever on input
+// no retry can fix. And returning no findings at all would be the one outcome
+// this package refuses everywhere else: a caller testing len(v) == 0 for
+// "valid" would get a clean bill of health from a run that never chose a rule
+// set. So a run that rejects the profile validates nothing and returns exactly
+// this one finding — never mixed with document findings, because there are
+// none to mix it with.
+//
+// It is a reserved word, like RuleLimit, rather than an identifier in anyone's
+// numbering scheme, and IsCheckerViolation recognises it: "I did not judge this
+// document" is exactly what that predicate exists to keep separate from
+// "conformant".
+const RuleProfile = "profile"
+
+// IsCheckerViolation reports whether v describes the checker not having judged
+// the document, rather than a way in which the invoice departs from the rules.
+//
+// A cancelled context, a tripped resource budget (both RuleLimit) and a Profile
+// this package does not implement (RuleProfile) all produce one. Treat it as
+// "unknown", never as "conformant" and never as "non-conformant".
+//
+// RuleSyntax is deliberately *not* one of them: "this file is not well-formed
+// XML" is a finding about the document, and a definite one.
 //
 // It tests Rule alone, deliberately, even though every finding this package
 // emits now carries a Source and the pair a caller should think in is
-// (SourceChecker, RuleLimit). Two reasons. RuleLimit is a reserved word rather
-// than an identifier in anyone's numbering scheme — no rule authority mints a
-// rule called "limit" — so there is nothing for the scope to disambiguate here.
-// And the constant is shared with pdf0, which constructs this same finding for
-// its own container guards and hands it back in one mixed slice; requiring
-// SourceChecker would silently reclassify every one of those as a business-rule
-// violation the moment this package added the field. A caller that wants the
-// strict pair can still write it — the Source is there — but the predicate that
-// exists to keep "unknown" from being read as "conformant" must not start
-// returning false for a finding it has always covered.
-func IsCheckerViolation(v Violation) bool { return v.Rule == RuleLimit }
+// (SourceChecker, RuleLimit). Two reasons. Both identifiers are reserved words
+// rather than identifiers in anyone's numbering scheme — no rule authority
+// mints a rule called "limit" or "profile" — so there is nothing for the scope
+// to disambiguate here. And RuleLimit is shared with pdf0, which constructs
+// that same finding for its own container guards and hands it back in one mixed
+// slice; requiring SourceChecker would silently reclassify every one of those as
+// a business-rule violation the moment this package added the field. A caller
+// that wants the strict pair can still write it — the Source is there — but the
+// predicate that exists to keep "unknown" from being read as "conformant" must
+// not start returning false for a finding it has always covered.
+//
+// Widening it to RuleProfile is safe in the direction that mattered there:
+// pdf0 never emits RuleProfile, so no finding that exists today changes
+// classification. What would not be safe is the reverse — leaving it out, so
+// that a caller filtering with this predicate to count document defects counted
+// its own bad argument as one.
+func IsCheckerViolation(v Violation) bool {
+	return v.Rule == RuleLimit || v.Rule == RuleProfile
+}
 
 // maxDepth is the deepest element nesting the parser will build.
 //
