@@ -34,8 +34,12 @@ var (
 	ErrMalformedXML = errors.New("the invoice XML is not well-formed")
 
 	// ErrUnsupportedEncoding reports a document declaring a character encoding
-	// this package does not implement. See xmlCharsetReader for why that is a
-	// refusal rather than a passthrough.
+	// this package does not implement. UTF-8, US-ASCII, ISO-8859-1/15 and
+	// Windows-1252 are read; anything else is refused rather than passed through,
+	// because the bytes of a UTF-16 or EBCDIC document read as UTF-8 are not the
+	// document — element names come out mangled, and the rules would report
+	// business-rule violations about text the sender never wrote. The wrapped
+	// detail is the encoding the document declared.
 	ErrUnsupportedEncoding = errors.New("the invoice XML declares a character encoding this package does not implement")
 )
 
