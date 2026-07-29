@@ -274,6 +274,94 @@ func TestTaxTotalDegenerateSelection(t *testing.T) {
 	}
 }
 
+// TestNormDate pins what this package will and will not read as a calendar date.
+// Both bindings' spellings normalise to the same fixed-width YYYYMMDD, a legal
+// xs:date timezone offset is read and discarded, and anything that is not a date
+// says so rather than yielding a value that would compare as if it were one.
+func TestNormDate(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want string
+		ok   bool
+	}{
+		{"2013-06-01", "20130601", true},   // UBL xs:date
+		{"20130601", "20130601", true},     // CII UDT format 102
+		{" 2013-06-01 ", "20130601", true}, // element text arrives untrimmed
+		{"2013-06-01Z", "20130601", true},  // UTC designator
+		{"2013-06-01+02:00", "20130601", true},
+		{"2013-06-01-05:00", "20130601", true},
+		{"20130601+02:00", "20130601", true},
+		{"2013-06-01T09:30:00", "20130601", true}, // xs:dateTime in an xs:date slot
+		{"", "", false},
+		{"201306", "", false},      // too short to be a date
+		{"201306011", "", false},   // a nine-digit run is not a date
+		{"13-06-01", "", false},    // two-digit year
+		{"2013/06/01", "", false},  // not a binding's separator
+		{"1 June 2013", "", false}, // free text
+		{"not-a-date", "", false},
+	} {
+		got, ok := normDate(tc.in)
+		if got != tc.want || ok != tc.ok {
+			t.Errorf("normDate(%q) = (%q, %v), want (%q, %v)", tc.in, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// TestInvoicingPeriodOrdersCalendarDays is the regression test for the period
+// ordering rules BR-29 (BG-14) and BR-30 (BG-26).
+//
+// A legal xs:date may carry a timezone offset. Reducing a date to its digits
+// turned "2024-02-01+02:00" into twelve of them, and against the eight of
+// "20240201" the shorter string is a prefix of the longer and so compares LESS —
+// so an invoicing period that starts and ends on the same calendar day was
+// reported as ending before it began. The same-day case is precisely the one
+// that must never fire.
+func TestInvoicingPeriodOrdersCalendarDays(t *testing.T) {
+	withPeriod := func(elem, start, end string) []byte {
+		p := "<" + elem + "><StartDate>" + start + "</StartDate><EndDate>" + end + "</EndDate></" + elem + ">"
+		return []byte(strings.Replace(minimalUBL,
+			"<DocumentCurrencyCode>EUR</DocumentCurrencyCode>",
+			"<DocumentCurrencyCode>EUR</DocumentCurrencyCode>"+p, 1))
+	}
+	for _, tc := range []struct {
+		name, start, end string
+		wantViolation    bool
+	}{
+		{"same day, offset on the start", "2024-02-01+02:00", "2024-02-01", false},
+		{"same day, offset on the end", "2024-02-01", "2024-02-01+02:00", false},
+		{"same day, negative offset on the start", "2024-02-01-05:00", "2024-02-01", false},
+		{"same day, UTC designator on the end", "2024-02-01", "2024-02-01Z", false},
+		{"same day, offsets on both", "2024-02-01+02:00", "2024-02-01-05:00", false},
+		{"in order", "2024-02-01", "2024-03-01", false},
+		{"in order across offsets", "2024-02-01+02:00", "2024-03-01", false},
+		{"out of order", "2024-03-01", "2024-02-01", true},
+		{"out of order across offsets", "2024-03-01+02:00", "2024-02-01", true},
+		{"out of order, end offset", "2024-03-01", "2024-02-01-05:00", true},
+		// Neither side was read as a date, so neither side may be ordered.
+		{"unreadable start", "1 February 2024", "2024-02-01", false},
+		{"unreadable end", "2024-02-01", "sometime in March", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := hasFacturXRule(Validate(context.Background(), withPeriod("InvoicePeriod", tc.start, tc.end), ProfileEN16931), "BR-29")
+			if got != tc.wantViolation {
+				t.Errorf("BR-29 for period %s..%s: got %v, want %v", tc.start, tc.end, got, tc.wantViolation)
+			}
+		})
+	}
+
+	// BR-30 is the same rule on the line period (BG-26) and takes the same path.
+	sameDay := []byte(strings.Replace(minimalUBL, "<Item>",
+		"<InvoicePeriod><StartDate>2024-02-01+02:00</StartDate><EndDate>2024-02-01</EndDate></InvoicePeriod><Item>", 1))
+	if hasFacturXRule(Validate(context.Background(), sameDay, ProfileEN16931), "BR-30") {
+		t.Error("BR-30 must not fire for a line period that starts and ends on the same calendar day")
+	}
+	outOfOrder := []byte(strings.Replace(minimalUBL, "<Item>",
+		"<InvoicePeriod><StartDate>2024-03-01+02:00</StartDate><EndDate>2024-02-01</EndDate></InvoicePeriod><Item>", 1))
+	if !hasFacturXRule(Validate(context.Background(), outOfOrder, ProfileEN16931), "BR-30") {
+		t.Error("BR-30 should still fire for a line period that genuinely ends before it starts")
+	}
+}
+
 // TestVATAmountTolerance pins the EN 16931 ±1 tolerance of the VAT-breakdown
 // amount check (BR-CO-17): per-line rounding drift within one currency unit is
 // accepted, a larger drift is flagged.
