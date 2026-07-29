@@ -476,28 +476,6 @@ func ciiHasVATReg(p *ciiNode) bool {
 	return ciiVATRegValue(p) != ""
 }
 
-// ciiVATRegCount counts a CII party's VAT registrations (scheme "VA").
-func ciiVATRegCount(p *ciiNode) int {
-	n := 0
-	for _, r := range p.all("SpecifiedTaxRegistration") {
-		if id := r.child("ID"); id != nil && strings.TrimSpace(id.text) != "" && strings.EqualFold(id.attr("schemeID"), "VA") {
-			n++
-		}
-	}
-	return n
-}
-
-// ublVATSchemeCount counts a UBL party's VAT PartyTaxScheme entries.
-func ublVATSchemeCount(p *ciiNode) int {
-	n := 0
-	for _, pts := range p.all("PartyTaxScheme") {
-		if pts.str("CompanyID") != "" && strings.EqualFold(pts.str("TaxScheme", "ID"), "VAT") {
-			n++
-		}
-	}
-	return n
-}
-
 // ciiHasOtherReg reports whether a CII party carries a non-VAT tax registration.
 func ciiHasOtherReg(p *ciiNode) bool {
 	if p == nil {
@@ -750,9 +728,6 @@ func mapCII(root *ciiNode) *en16931Invoice {
 	inv.sellerEndpointPresent = agr.str("SellerTradeParty", "URIUniversalCommunication", "URIID") != ""
 	inv.buyerEndpointPresent = agr.str("BuyerTradeParty", "URIUniversalCommunication", "URIID") != ""
 	inv.deliveryDate = tx.str("ApplicableHeaderTradeDelivery", "ActualDeliverySupplyChainEvent", "OccurrenceDateTime", "DateTimeString")
-	inv.sellerVATIDCount = ciiVATRegCount(agr.child("SellerTradeParty"))
-	inv.buyerVATIDCount = ciiVATRegCount(agr.child("BuyerTradeParty"))
-	inv.supplierSchemeCnt = len(agr.child("SellerTradeParty").all("SpecifiedTaxRegistration"))
 	inv.buyerReference = agr.str("BuyerReference")
 	inv.sellerCity = agr.str("SellerTradeParty", "PostalTradeAddress", "CityName")
 	inv.sellerStreet = agr.str("SellerTradeParty", "PostalTradeAddress", "LineOne")
@@ -1245,9 +1220,6 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	inv.buyerEndpointPresent = buyer.str("EndpointID") != ""
 	inv.vatPointDate = root.str("TaxPointDate")
 	inv.deliveryDate = root.str("Delivery", "ActualDeliveryDate")
-	inv.sellerVATIDCount = ublVATSchemeCount(seller)
-	inv.buyerVATIDCount = ublVATSchemeCount(buyer)
-	inv.supplierSchemeCnt = len(seller.all("PartyTaxScheme"))
 	inv.profileID = root.str("ProfileID")
 	inv.isCreditNote = root.name == "CreditNote"
 	inv.orderRef = root.str("OrderReference", "ID")

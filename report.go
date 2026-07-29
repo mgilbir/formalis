@@ -189,7 +189,7 @@ var notEvaluated = map[Source][]string{
 	SourceEN16931: {
 		"BR-51 other than in the CII binding: EN16931-CII-model.sch flags it fatal and this package evaluates it there, while EN16931-UBL-model.sch flags it warning, so a UBL invoice carrying a full card PAN (BT-87) is not reported",
 		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145) — CEN binds all four to true() in both syntaxes, so they are unenforceable rather than unimplemented",
-		"UBL-SR-06/07, 09..11, 13..17, 19..23, 25..28, 30..37, 40, 43, 48, 50..53 (34 of the 54 fatal UBL cardinality rules)",
+		"UBL-SR-06/07, 26..28, 30..37, 43, 48, 50 and 52 (17 of the 54 fatal UBL cardinality rules)",
 		"UBL-DT-* other than UBL-DT-01/06/07 (the 21 advisory UBL datatype rules)",
 		"UBL-CR-* (678 rules, all but two advisory: UBL elements outside the EN 16931 core)",
 		"CII-SR-* other than CII-SR-467/469 (40 of the 42 fatal CII syntax rules, and 440 advisory ones)",

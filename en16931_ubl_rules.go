@@ -60,6 +60,10 @@ func validateUBLSyntaxRules(r *run, root *ciiNode) []Violation {
 	g := gatherUBLSyntaxNodes(root)
 
 	ublSyntaxDocumentRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ublSyntaxPartyRules(g, add)
 	return out
 }
 
@@ -197,6 +201,44 @@ func countAt(n *ciiNode, path ...string) int { return len(nodesAt(n, path...)) }
 // and does not.
 func atMostOnce(n *ciiNode, path ...string) bool { return countAt(n, path...) > 1 }
 
+// countPartyTaxSchemeIDs is `count(<party>/cac:PartyTaxScheme[cac:TaxScheme/
+// upper-case(cbc:ID)='VAT']/cbc:CompanyID)` when vat is true, and the same
+// predicate negated to `!='VAT'` when it is false. It is how the binding tells
+// the VAT identifier (BT-31/48/63) apart from any other tax registration
+// (BT-32), which share the one UBL element.
+//
+// The predicate is a general comparison over `cac:TaxScheme/upper-case(cbc:ID)`,
+// which has three outcomes rather than two, and the third is why this is not
+// simply `isVAT` and its negation:
+//
+//   - a cac:TaxScheme naming VAT satisfies the first predicate and not the
+//     second;
+//   - a cac:TaxScheme naming anything else, including one with no cbc:ID at all
+//     (upper-case(()) is the empty string, which is not 'VAT'), satisfies the
+//     second and not the first;
+//   - a cac:PartyTaxScheme with no cac:TaxScheme at all yields an empty sequence
+//     and satisfies *neither*, so it is counted by neither rule. UBL-SR-53 is
+//     the rule that has something to say about that group.
+func countPartyTaxSchemeIDs(party *ciiNode, vat bool) int {
+	n := 0
+	for _, pts := range party.all("PartyTaxScheme") {
+		schemes := pts.all("TaxScheme")
+		if len(schemes) == 0 {
+			continue
+		}
+		isVAT := false
+		for _, ts := range schemes {
+			if strings.EqualFold(strings.TrimSpace(ts.str("ID")), "VAT") {
+				isVAT = true
+			}
+		}
+		if isVAT == vat {
+			n += countAt(pts, "CompanyID")
+		}
+	}
+	return n
+}
+
 // distinctValues counts how many distinct strings a slice holds. It is
 // `count(//x[not(preceding::x/. = .)])` — the number of distinct string values
 // of an element, which is what UBL-SR-44 and UBL-SR-47 bound rather than the
@@ -315,4 +357,162 @@ func ublDocRefHasTypeCode(d *ciiNode, code string) bool {
 		}
 	}
 	return false
+}
+
+// ublSyntaxPartyRules are the rules about the parties: the seller and buyer
+// terms CEN counts from the document element, and the rules whose context is a
+// party element in its own right — cac:AccountingSupplierParty/cac:Party,
+// cac:PartyTaxScheme, cac:TaxRepresentativeParty, cac:PayeeParty, cac:Delivery
+// and every cac:PostalAddress or cac:Address.
+func ublSyntaxPartyRules(g *ublSyntaxNodes, add func(rule, msg string)) {
+	root := g.root
+	for _, c := range []struct {
+		rule string
+		term string
+		path []string
+	}{
+		// count(cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) <= 1
+		{"UBL-SR-09", "The Seller name (BT-27)", []string{"AccountingSupplierParty", "Party", "PartyLegalEntity", "RegistrationName"}},
+		// count(cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name) <= 1
+		{"UBL-SR-10", "The Seller trading name (BT-28)", []string{"AccountingSupplierParty", "Party", "PartyName", "Name"}},
+		// count(cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID) <= 1
+		{"UBL-SR-11", "The Seller legal registration identifier (BT-30)", []string{"AccountingSupplierParty", "Party", "PartyLegalEntity", "CompanyID"}},
+		// count(cac:AccountingSupplierParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyLegalForm) <= 1
+		{"UBL-SR-14", "The Seller additional legal information (BT-33)", []string{"AccountingSupplierParty", "Party", "PartyLegalEntity", "CompanyLegalForm"}},
+		// count(cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:RegistrationName) <= 1
+		{"UBL-SR-15", "The Buyer name (BT-44)", []string{"AccountingCustomerParty", "Party", "PartyLegalEntity", "RegistrationName"}},
+		// count(cac:AccountingCustomerParty/cac:Party/cac:PartyIdentification/cbc:ID) <= 1
+		{"UBL-SR-16", "The Buyer identifier (BT-46)", []string{"AccountingCustomerParty", "Party", "PartyIdentification", "ID"}},
+		// count(cac:AccountingCustomerParty/cac:Party/cac:PartyLegalEntity/cbc:CompanyID) <= 1
+		{"UBL-SR-17", "The Buyer legal registration identifier (BT-47)", []string{"AccountingCustomerParty", "Party", "PartyLegalEntity", "CompanyID"}},
+		// count(cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name) <= 1
+		{"UBL-SR-40", "The Buyer trading name (BT-45)", []string{"AccountingCustomerParty", "Party", "PartyName", "Name"}},
+	} {
+		if atMostOnce(root, c.path...) {
+			add(c.rule, c.term+" shall occur at most once")
+		}
+	}
+
+	// UBL-SR-12/13/18: the VAT identifier and the other tax registration are the
+	// same UBL element (cac:PartyTaxScheme/cbc:CompanyID) told apart by the tax
+	// scheme name, so each is counted under its own predicate.
+	seller := root.child("AccountingSupplierParty", "Party")
+	buyer := root.child("AccountingCustomerParty", "Party")
+	if countPartyTaxSchemeIDs(seller, true) > 1 {
+		add("UBL-SR-12", "The Seller VAT identifier (BT-31) shall occur at most once")
+	}
+	if countPartyTaxSchemeIDs(seller, false) > 1 {
+		add("UBL-SR-13", "The Seller tax registration identifier (BT-32) shall occur at most once")
+	}
+	if countPartyTaxSchemeIDs(buyer, true) > 1 {
+		add("UBL-SR-18", "The Buyer VAT identifier (BT-48) shall occur at most once")
+	}
+
+	// UBL-SR-42: count(cac:PartyTaxScheme) <= 2, on cac:AccountingSupplierParty/
+	// cac:Party. Two, not one: the seller may carry a VAT identifier (BT-31) and
+	// one other tax registration (BT-32), and each is its own cac:PartyTaxScheme.
+	for _, p := range g.supplierParties {
+		if countAt(p, "PartyTaxScheme") > 2 {
+			add("UBL-SR-42", "The Seller shall carry at most two party tax schemes (BT-31 and BT-32)")
+		}
+	}
+
+	// UBL-SR-53: exists(cac:TaxScheme/cbc:ID) and exists(cbc:CompanyID), on every
+	// cac:PartyTaxScheme. A tax scheme group says "this party is registered under
+	// this scheme with this identifier"; either half alone says nothing. The test
+	// is existence, not content, so an empty element satisfies it — the rule is
+	// about the shape of the group and BR-CO-09 is about the value.
+	for _, pts := range g.partyTaxSchemes {
+		if countAt(pts, "TaxScheme", "ID") == 0 || countAt(pts, "CompanyID") == 0 {
+			add("UBL-SR-53", "A party tax scheme shall carry both a tax scheme identifier and a company identifier (BT-31/32/48/63)")
+		}
+	}
+
+	// UBL-SR-22/23, on cac:TaxRepresentativeParty.
+	for _, tr := range g.taxReps {
+		if atMostOnce(tr, "PartyName", "Name") {
+			add("UBL-SR-22", "The Seller tax representative name (BT-62) shall occur at most once")
+		}
+		if atMostOnce(tr, "PartyTaxScheme", "CompanyID") {
+			add("UBL-SR-23", "The Seller tax representative VAT identifier (BT-63) shall occur at most once")
+		}
+	}
+
+	// UBL-SR-25, on cac:Delivery.
+	for _, d := range g.deliveries {
+		if atMostOnce(d, "DeliveryParty", "PartyName", "Name") {
+			add("UBL-SR-25", "The Deliver to party name (BT-70) shall occur at most once")
+		}
+	}
+
+	// UBL-SR-51: not(cac:AddressLine) or count(cac:AddressLine) = 1, on every
+	// cac:PostalAddress and cac:Address in the document. EN 16931 gives an
+	// address three lines; UBL spends the first two on cbc:StreetName and
+	// cbc:AdditionalStreetName, which leaves one cac:AddressLine for the third.
+	for _, a := range g.addresses {
+		if countAt(a, "AddressLine") > 1 {
+			add("UBL-SR-51", "An address shall carry at most one additional address line (BT-163/165/168/172)")
+		}
+	}
+
+	// UBL-SR-19/20/21, on cac:PayeeParty. These three carry a second conjunct
+	// that the other fifty-one do not:
+	//
+	//   (cac:PartyName/cbc:Name) != (../cac:AccountingSupplierParty/cac:Party/
+	//                                cac:PartyLegalEntity/cbc:RegistrationName)
+	//
+	// EN 16931 admits the Payee group (BG-10) only when the payee is someone
+	// other than the seller, and CEN enforces that here rather than as a BR-*
+	// rule. The XPath is a general comparison over two node sequences, so it is
+	// true when some payee name differs from some seller name — and false, which
+	// fails the assertion, when either sequence is empty. That is deliberate on
+	// the seller side (BR-06 makes the seller name mandatory) and on the payee
+	// side (BR-17 makes the payee name mandatory once the group is present), so
+	// an empty operand is already a defect the core reports; this rule adds its
+	// own finding rather than staying silent, exactly as the reference validator
+	// does.
+	for _, p := range g.payees {
+		differs := ublPayeeDiffersFromSeller(p)
+		if atMostOnce(p.node, "PartyName", "Name") || !differs {
+			add("UBL-SR-19", "The Payee name (BT-59) shall occur at most once, and the Payee group (BG-10) shall only be used when the payee differs from the seller")
+		}
+		if ublCountPayeeIdentifiers(p.node) > 1 || !differs {
+			add("UBL-SR-20", "The Payee identifier (BT-60) shall occur at most once, and the Payee group (BG-10) shall only be used when the payee differs from the seller")
+		}
+		if atMostOnce(p.node, "PartyLegalEntity", "CompanyID") || !differs {
+			add("UBL-SR-21", "The Payee legal registration identifier (BT-61) shall occur at most once, and the Payee group (BG-10) shall only be used when the payee differs from the seller")
+		}
+	}
+}
+
+// ublPayeeDiffersFromSeller evaluates
+// `(cac:PartyName/cbc:Name) != (../cac:AccountingSupplierParty/cac:Party/
+// cac:PartyLegalEntity/cbc:RegistrationName)` for one cac:PayeeParty: a general
+// comparison, true when some payee name differs from some seller name and false
+// when either side is empty.
+func ublPayeeDiffersFromSeller(p ublParented) bool {
+	payee := nodesAt(p.node, "PartyName", "Name")
+	seller := nodesAt(p.parent, "AccountingSupplierParty", "Party", "PartyLegalEntity", "RegistrationName")
+	for _, a := range payee {
+		for _, b := range seller {
+			if strings.TrimSpace(a.text) != strings.TrimSpace(b.text) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// ublCountPayeeIdentifiers is `count(cac:PartyIdentification/cbc:ID[
+// upper-case(@schemeID) != 'SEPA'])`. The SEPA-tagged identifier is BT-90, the
+// bank assigned creditor identifier, which UBL-SR-29 bounds separately; what is
+// counted here is BT-60.
+func ublCountPayeeIdentifiers(payee *ciiNode) int {
+	n := 0
+	for _, id := range nodesAt(payee, "PartyIdentification", "ID") {
+		if !strings.EqualFold(id.attr("schemeID"), "SEPA") {
+			n++
+		}
+	}
+	return n
 }
