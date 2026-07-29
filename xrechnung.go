@@ -56,7 +56,7 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	// which is what the removed ProfileXRechnung constant did anyway: it matched
 	// none of the three profile predicates in validateEN16931, and produced an
 	// identical finding set on every EN 16931 document in testdata.
-	for _, v := range validateEN16931(r, inv, ProfileEN16931) {
+	for _, v := range validateEN16931(r, p, ProfileEN16931) {
 		switch {
 		// The EXTENSION and CVD sub-profiles extend the item identifier code lists;
 		// re-checked below against the XRechnung-extended sets.

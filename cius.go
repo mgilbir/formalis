@@ -346,5 +346,5 @@ func validateCIUS(r *run, p *parsed) ([]Violation, []Source) {
 	// SourceEN16931 — a document declaring no profile — and, unreachably from
 	// here, SourceNone: parseEN16931 accepts three roots and route answers one
 	// of the two maps above for every profile they can declare.
-	return validateEN16931(r, p.inv, ProfileEN16931), []Source{SourceEN16931}
+	return validateEN16931(r, p, ProfileEN16931), []Source{SourceEN16931}
 }
