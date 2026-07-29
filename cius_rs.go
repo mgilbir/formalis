@@ -50,7 +50,7 @@ func validateSRBDT(r *run, p *parsed) []Violation {
 
 func validateSRBDTRules(inv *en16931Invoice) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceSRBDT)
 
 	// RSR-03: the invoice type code (BT-3) shall be 380, 381, 383 or 386.
 	if inv.typeCode != "" && !rsTypeCodes[inv.typeCode] {

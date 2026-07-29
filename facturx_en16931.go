@@ -255,7 +255,7 @@ func syntaxViolation(err error) []Violation {
 	if errors.Is(err, errStopped) {
 		return nil
 	}
-	return []Violation{{Rule: RuleSyntax, Message: err.Error()}}
+	return []Violation{{Source: SourceChecker, Rule: RuleSyntax, Message: err.Error()}}
 }
 
 // parsed is one document, read once: the element tree and, when the document is

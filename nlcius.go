@@ -58,7 +58,7 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 		return nil
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceNLCIUS)
 
 	// BR-NL-1: the supplier must identify its legal entity with a KVK (scheme
 	// 0106) or OIN (scheme 0190) number.

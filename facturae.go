@@ -55,10 +55,10 @@ func ValidateFacturae(ctx context.Context, xmlData []byte) []Violation {
 
 func validateFacturae(r *run, root *ciiNode) []Violation {
 	if root.name != "Facturae" {
-		return []Violation{{Rule: "FE-root", Message: "the document root shall be Facturae"}}
+		return []Violation{{Source: SourceFacturae, Rule: "FE-root", Message: "the document root shall be Facturae"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceFacturae)
 
 	// File header: schema version, modality, issuer type and batch currency.
 	fh := root.child("FileHeader").orNil()

@@ -41,10 +41,10 @@ func ValidateTEAPPS(ctx context.Context, xmlData []byte) []Violation {
 
 func validateTEAPPS(r *run, root *ciiNode) []Violation {
 	if root.name != "INVOICE_CENTER" {
-		return []Violation{{Rule: "TP-root", Message: "the document root shall be INVOICE_CENTER"}}
+		return []Violation{{Source: SourceTEAPPS, Rule: "TP-root", Message: "the document root shall be INVOICE_CENTER"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceTEAPPS)
 
 	invoices := root.findAll("INVOICE")
 	if len(invoices) == 0 {

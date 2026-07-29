@@ -52,10 +52,10 @@ func ValidateKSeF(ctx context.Context, xmlData []byte) []Violation {
 
 func validateKSeF(r *run, root *ciiNode) []Violation {
 	if root.name != "Faktura" {
-		return []Violation{{Rule: "KS-root", Message: "the document root shall be Faktura"}}
+		return []Violation{{Source: SourceKSeF, Rule: "KS-root", Message: "the document root shall be Faktura"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceKSeF)
 
 	// KS-header: the form code (Naglowek/KodFormularza) is mandatory.
 	if strings.TrimSpace(root.str("Naglowek", "KodFormularza")) == "" {

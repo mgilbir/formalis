@@ -46,10 +46,10 @@ func ValidateOIOUBL(ctx context.Context, xmlData []byte) []Violation {
 
 func validateOIOUBL(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" {
-		return []Violation{{Rule: "OIO-root", Message: "the document root shall be an Invoice"}}
+		return []Violation{{Source: SourceOIOUBL, Rule: "OIO-root", Message: "the document root shall be an Invoice"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceOIOUBL)
 
 	if !strings.Contains(root.str("CustomizationID"), "OIOUBL") {
 		add("OIO-customization", "the CustomizationID shall declare an OIOUBL profile")

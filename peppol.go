@@ -59,7 +59,7 @@ func validatePeppol(r *run, p *parsed) []Violation {
 
 func validatePeppolRules(inv *en16931Invoice) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourcePeppol)
 
 	// Business process (BT-23) and specification identifier (BT-24).
 	if inv.profileID == "" {

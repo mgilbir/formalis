@@ -84,7 +84,7 @@ func validateCIUSRO(r *run, p *parsed) []Violation {
 
 func validateCIUSRORules(inv *en16931Invoice) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceCIUSRO)
 
 	// BR-RO-010: the invoice number (BT-1) shall contain at least one digit.
 	if inv.number != "" && !roDigit.MatchString(inv.number) {

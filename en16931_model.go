@@ -217,7 +217,7 @@ const vatAmountTolerance = 1.0
 // the EN 16931 Schematron report, so the same output holds for either syntax.
 func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceEN16931)
 	req := func(rule, msg, val string) {
 		if val == "" {
 			add(rule, msg)

@@ -71,10 +71,10 @@ func ValidateFatturaPA(ctx context.Context, xmlData []byte) []Violation {
 
 func validateFatturaPA(r *run, root *ciiNode) []Violation {
 	if root.name != "FatturaElettronica" {
-		return []Violation{{Rule: "FPA-root", Message: "the document root shall be FatturaElettronica"}}
+		return []Violation{{Source: SourceFatturaPA, Rule: "FPA-root", Message: "the document root shall be FatturaElettronica"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceFatturaPA)
 
 	// FPA-format: FormatoTrasmissione shall be a valid value and match the
 	// document's versione attribute.

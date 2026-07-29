@@ -39,7 +39,7 @@ func validateCIUSPT(r *run, p *parsed) []Violation {
 
 func validateCIUSPTRules(inv *en16931Invoice) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceCIUSPT)
 
 	// BR-CIUS-PT-01/03: the Seller (BT-31) and Buyer (BT-48) VAT identifiers are
 	// mandatory.
