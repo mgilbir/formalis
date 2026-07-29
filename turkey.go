@@ -38,21 +38,18 @@ func IsTurkishInvoice(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateTurkishInvoice(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateTurkishInvoice(r, root))
+	return turkishValidator.validate(ctx, xmlData)
 }
 
-func validateTurkishInvoice(r *run, root *ciiNode) []Violation {
-	if root.name != "Invoice" {
-		return []Violation{{Source: SourceUBLTR, Rule: "TR-root", Message: "the document root shall be an Invoice"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceUBLTR)
+var turkishValidator = treeValidator{
+	source:   SourceUBLTR,
+	rootRule: "TR-root",
+	rootMsg:  "the document root shall be an Invoice",
+	accepts:  rootNamed("Invoice"),
+	check:    checkTurkishInvoice,
+}
 
+func checkTurkishInvoice(root *ciiNode, add func(rule, msg string)) {
 	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(root.str("CustomizationID"))), "TR") {
 		add("TR-customization", "the CustomizationID shall declare a UBL-TR profile (TR1.x)")
 	}
@@ -81,6 +78,4 @@ func validateTurkishInvoice(r *run, root *ciiNode) []Violation {
 	if strings.TrimSpace(seller.str("PartyIdentification", "ID")) == "" {
 		add("TR-seller-id", "the Seller (AccountingSupplierParty) shall contain a tax identifier (VKN/TCKN)")
 	}
-
-	return out
 }

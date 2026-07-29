@@ -36,21 +36,18 @@ func IsSvefaktura(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateSvefaktura(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateSvefaktura(r, root))
+	return svefakturaValidator.validate(ctx, xmlData)
 }
 
-func validateSvefaktura(r *run, root *ciiNode) []Violation {
-	if root.name != "Invoice" || root.child("SellerParty") == nil {
-		return []Violation{{Source: SourceSvefaktura, Rule: "SV-root", Message: "the document root shall be a Svefaktura Invoice with a SellerParty"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceSvefaktura)
+var svefakturaValidator = treeValidator{
+	source:   SourceSvefaktura,
+	rootRule: "SV-root",
+	rootMsg:  "the document root shall be a Svefaktura Invoice with a SellerParty",
+	accepts:  rootNamedWith("Invoice", "SellerParty"),
+	check:    checkSvefaktura,
+}
 
+func checkSvefaktura(root *ciiNode, add func(rule, msg string)) {
 	if strings.TrimSpace(root.str("ID")) == "" {
 		add("SV-number", "the invoice shall contain an ID")
 	}
@@ -66,6 +63,4 @@ func validateSvefaktura(r *run, root *ciiNode) []Violation {
 	if strings.TrimSpace(root.str("BuyerParty", "Party", "PartyName", "Name")) == "" {
 		add("SV-buyer", "the BuyerParty shall contain a party name")
 	}
-
-	return out
 }

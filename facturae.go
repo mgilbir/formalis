@@ -45,21 +45,18 @@ func IsFacturae(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateFacturae(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateFacturae(r, root))
+	return facturaeValidator.validate(ctx, xmlData)
 }
 
-func validateFacturae(r *run, root *ciiNode) []Violation {
-	if root.name != "Facturae" {
-		return []Violation{{Source: SourceFacturae, Rule: "FE-root", Message: "the document root shall be Facturae"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceFacturae)
+var facturaeValidator = treeValidator{
+	source:   SourceFacturae,
+	rootRule: "FE-root",
+	rootMsg:  "the document root shall be Facturae",
+	accepts:  rootNamed("Facturae"),
+	check:    checkFacturae,
+}
 
+func checkFacturae(root *ciiNode, add func(rule, msg string)) {
 	// File header: schema version, modality, issuer type and batch currency.
 	fh := root.child("FileHeader").orNil()
 	if strings.TrimSpace(fh.str("SchemaVersion")) == "" {
@@ -100,8 +97,6 @@ func validateFacturae(r *run, root *ciiNode) []Violation {
 			add("FE-invoice-date", "each Invoice shall have an IssueDate")
 		}
 	}
-
-	return out
 }
 
 // validateFacturaeParty checks a Facturae party's tax identity, name and address.

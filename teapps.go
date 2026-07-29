@@ -31,21 +31,18 @@ func IsTEAPPS(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateTEAPPS(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateTEAPPS(r, root))
+	return teappsValidator.validate(ctx, xmlData)
 }
 
-func validateTEAPPS(r *run, root *ciiNode) []Violation {
-	if root.name != "INVOICE_CENTER" {
-		return []Violation{{Source: SourceTEAPPS, Rule: "TP-root", Message: "the document root shall be INVOICE_CENTER"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceTEAPPS)
+var teappsValidator = treeValidator{
+	source:   SourceTEAPPS,
+	rootRule: "TP-root",
+	rootMsg:  "the document root shall be INVOICE_CENTER",
+	accepts:  rootNamed("INVOICE_CENTER"),
+	check:    checkTEAPPS,
+}
 
+func checkTEAPPS(root *ciiNode, add func(rule, msg string)) {
 	invoices := root.findAll("INVOICE")
 	if len(invoices) == 0 {
 		add("TP-invoice", "the batch shall contain at least one INVOICE")
@@ -58,6 +55,4 @@ func validateTEAPPS(r *run, root *ciiNode) []Violation {
 			add("TP-customer", "each INVOICE shall contain CUSTOMER_INFORMATION")
 		}
 	}
-
-	return out
 }

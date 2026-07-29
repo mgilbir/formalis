@@ -1,0 +1,106 @@
+package formalis
+
+import "context"
+
+// The validators in this package come in two shapes. The EN 16931 half — the
+// core rule engine and the CIUS layered on it — parses a document onto the
+// syntax-neutral semantic model and runs one rule engine over it, so UBL and CII
+// are read by the same rules. The national formats below it have no such model:
+// FatturaPA, Facturae, ebInterface, KSeF, Finvoice, TEAPPS, OIOUBL, Svefaktura,
+// ZATCA, NAV OSA, UBL-TR, PINT and Order-X are each their own vocabulary, and
+// each is checked by walking the parsed element tree directly.
+//
+// This file is the harness for that second half. Thirteen files were writing out
+// the same five steps — parse, route a parse failure, check the root, build the
+// finding sink, wrap the result — and one of the thirteen drifted off the
+// contract limits.go states as a property of the whole package. ValidateOrderXML
+// answered a parse error with a finding of its own rather than with
+// syntaxViolation, so malformed XML, empty input and a perfectly well-formed
+// CrossIndustryInvoice all came back as the single claim "the order XML is not a
+// well-formed Cross Industry Order": false about the third document, silent
+// about *where* the first one broke, and invisible to a caller filtering on
+// RuleSyntax to tell a bad file from a bad invoice.
+//
+// The point of the harness is therefore not brevity but that there is now one
+// path from bytes to findings for every one of these validators, and it goes
+// through syntaxViolation. A national file can no longer express the divergence,
+// because it no longer contains the code that diverged.
+
+// treeValidator is one format's tree-reading validator: the roots it accepts,
+// what it says about a document whose root it does not accept, and its rule
+// body. Every field is required.
+type treeValidator struct {
+	// source is the authority stamped on every finding this validator emits,
+	// including the wrong-root one.
+	source Source
+
+	// rootRule and rootMsg are the finding for a well-formed document that is not
+	// of this format. It is deliberately not RuleSyntax: such a document may be
+	// impeccable XML and a valid invoice in some other format, so reporting it as
+	// malformed would be an accusation the parser never made. Each format names
+	// it in its own space (FPA-root, FE-root, ZA-root, ...) so that a caller can
+	// tell "I was handed the wrong document" apart from "this document is
+	// broken", which is the distinction C5 collapsed.
+	rootRule string
+	rootMsg  string
+
+	// accepts reports whether root is a document of this format. Formats
+	// genuinely differ here and so keep their own predicates: several share UBL's
+	// Invoice root and are told apart by a child only they have (ebInterface's
+	// Biller, Svefaktura's UBL-1.0 SellerParty), and two accept a second root
+	// (ZATCA and PINT also read a CreditNote).
+	accepts func(root *ciiNode) bool
+
+	// check is the rule body — everything this format has to say about a document
+	// it accepts. It is reached only with a root that accepts returned true for,
+	// so it never has to restate the root check, and it emits through add so the
+	// Source is fixed at the point of emission.
+	check func(root *ciiNode, add func(rule, msg string))
+}
+
+// validate is the whole body of the exported entry point: parse the document
+// once, route a parse failure through syntaxViolation, refuse a root this format
+// does not describe, then run the rule body.
+//
+// Every exit is wrapped in r.finish, so the invariant that a stopped run never
+// returns an empty slice holds on all four of them, and the single parse per
+// exported call that makes maxNodes a property of the document rather than of
+// the entry point is preserved: nothing below here reads the bytes again.
+func (t treeValidator) validate(ctx context.Context, xmlData []byte) []Violation {
+	r := newRun(ctx)
+	root, err := parseCII(r, xmlData)
+	if err != nil {
+		// syntaxViolation returns nothing when the parse was stopped rather than
+		// broken; the RuleLimit trip r.finish appends is then the whole answer.
+		return r.finish(syntaxViolation(err))
+	}
+	if !t.accepts(root) {
+		return r.finish([]Violation{{Source: t.source, Rule: t.rootRule, Message: t.rootMsg}})
+	}
+	var out []Violation
+	t.check(root, adder(&out, t.source))
+	return r.finish(out)
+}
+
+// rootNamed accepts a document whose root element carries one of the given local
+// names. parseCII keys on local names throughout, so no namespace appears here.
+func rootNamed(names ...string) func(*ciiNode) bool {
+	return func(root *ciiNode) bool {
+		for _, n := range names {
+			if root.name == n {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+// rootNamedWith accepts a root named name that carries the direct child child.
+// It is the disambiguator for the formats that share UBL's Invoice root: an
+// ebInterface invoice has a Biller, a Svefaktura has the UBL 1.0 SellerParty
+// that UBL 2.1 renamed AccountingSupplierParty.
+func rootNamedWith(name, child string) func(*ciiNode) bool {
+	return func(root *ciiNode) bool {
+		return root.name == name && root.child(child) != nil
+	}
+}

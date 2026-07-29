@@ -36,21 +36,18 @@ func IsOIOUBL(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateOIOUBL(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateOIOUBL(r, root))
+	return oioublValidator.validate(ctx, xmlData)
 }
 
-func validateOIOUBL(r *run, root *ciiNode) []Violation {
-	if root.name != "Invoice" {
-		return []Violation{{Source: SourceOIOUBL, Rule: "OIO-root", Message: "the document root shall be an Invoice"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceOIOUBL)
+var oioublValidator = treeValidator{
+	source:   SourceOIOUBL,
+	rootRule: "OIO-root",
+	rootMsg:  "the document root shall be an Invoice",
+	accepts:  rootNamed("Invoice"),
+	check:    checkOIOUBL,
+}
 
+func checkOIOUBL(root *ciiNode, add func(rule, msg string)) {
 	if !strings.Contains(root.str("CustomizationID"), "OIOUBL") {
 		add("OIO-customization", "the CustomizationID shall declare an OIOUBL profile")
 	}
@@ -80,6 +77,4 @@ func validateOIOUBL(r *run, root *ciiNode) []Violation {
 		strings.TrimSpace(seller.str("PartyLegalEntity", "RegistrationName")) == "" {
 		add("OIO-seller-name", "the Seller shall contain a party name")
 	}
-
-	return out
 }

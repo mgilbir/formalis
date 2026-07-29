@@ -34,21 +34,18 @@ func IsFinvoice(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateFinvoice(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateFinvoice(r, root))
+	return finvoiceValidator.validate(ctx, xmlData)
 }
 
-func validateFinvoice(r *run, root *ciiNode) []Violation {
-	if root.name != "Finvoice" {
-		return []Violation{{Source: SourceFinvoice, Rule: "FI-root", Message: "the document root shall be Finvoice"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceFinvoice)
+var finvoiceValidator = treeValidator{
+	source:   SourceFinvoice,
+	rootRule: "FI-root",
+	rootMsg:  "the document root shall be Finvoice",
+	accepts:  rootNamed("Finvoice"),
+	check:    checkFinvoice,
+}
 
+func checkFinvoice(root *ciiNode, add func(rule, msg string)) {
 	// FI-seller: the seller party has an organisation name and a postal address.
 	sp := root.child("SellerPartyDetails").orNil()
 	if strings.TrimSpace(sp.str("SellerOrganisationName")) == "" {
@@ -76,6 +73,4 @@ func validateFinvoice(r *run, root *ciiNode) []Violation {
 	if strings.TrimSpace(id.str("InvoiceDate")) == "" {
 		add("FI-date", "the InvoiceDetails shall contain an InvoiceDate")
 	}
-
-	return out
 }
