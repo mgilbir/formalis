@@ -38,21 +38,18 @@ func IsEbInterface(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateEbInterface(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateEbInterface(r, root))
+	return ebInterfaceValidator.validate(ctx, xmlData)
 }
 
-func validateEbInterface(r *run, root *ciiNode) []Violation {
-	if root.name != "Invoice" || root.child("Biller") == nil {
-		return []Violation{{Source: SourceEbInterface, Rule: "EB-root", Message: "the document root shall be an ebInterface Invoice with a Biller"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceEbInterface)
+var ebInterfaceValidator = treeValidator{
+	source:   SourceEbInterface,
+	rootRule: "EB-root",
+	rootMsg:  "the document root shall be an ebInterface Invoice with a Biller",
+	accepts:  rootNamedWith("Invoice", "Biller"),
+	check:    checkEbInterface,
+}
 
+func checkEbInterface(root *ciiNode, add func(rule, msg string)) {
 	// EB-number/EB-date: the invoice number and date elements are mandatory. The
 	// number is checked for presence only (the ebInterface XSD, and thus the
 	// official validation, accepts an empty element).
@@ -79,6 +76,4 @@ func validateEbInterface(r *run, root *ciiNode) []Violation {
 	} else if strings.TrimSpace(rec.str("Address", "Name")) == "" {
 		add("EB-recipient-name", "the InvoiceRecipient address shall contain a Name")
 	}
-
-	return out
 }

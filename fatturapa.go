@@ -61,21 +61,18 @@ func IsFatturaPA(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateFatturaPA(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateFatturaPA(r, root))
+	return fatturaPAValidator.validate(ctx, xmlData)
 }
 
-func validateFatturaPA(r *run, root *ciiNode) []Violation {
-	if root.name != "FatturaElettronica" {
-		return []Violation{{Source: SourceFatturaPA, Rule: "FPA-root", Message: "the document root shall be FatturaElettronica"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceFatturaPA)
+var fatturaPAValidator = treeValidator{
+	source:   SourceFatturaPA,
+	rootRule: "FPA-root",
+	rootMsg:  "the document root shall be FatturaElettronica",
+	accepts:  rootNamed("FatturaElettronica"),
+	check:    checkFatturaPA,
+}
 
+func checkFatturaPA(root *ciiNode, add func(rule, msg string)) {
 	// FPA-format: FormatoTrasmissione shall be a valid value and match the
 	// document's versione attribute.
 	hdr := root.child("FatturaElettronicaHeader").orNil()
@@ -128,8 +125,6 @@ func validateFatturaPA(r *run, root *ciiNode) []Violation {
 			add("FPA-summary", "the invoice body shall contain at least one VAT summary (DatiRiepilogo)")
 		}
 	}
-
-	return out
 }
 
 // validateFPAParty checks a FatturaPA party's tax identity, name and address.

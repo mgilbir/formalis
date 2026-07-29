@@ -42,21 +42,18 @@ func IsKSeF(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateKSeF(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateKSeF(r, root))
+	return ksefValidator.validate(ctx, xmlData)
 }
 
-func validateKSeF(r *run, root *ciiNode) []Violation {
-	if root.name != "Faktura" {
-		return []Violation{{Source: SourceKSeF, Rule: "KS-root", Message: "the document root shall be Faktura"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceKSeF)
+var ksefValidator = treeValidator{
+	source:   SourceKSeF,
+	rootRule: "KS-root",
+	rootMsg:  "the document root shall be Faktura",
+	accepts:  rootNamed("Faktura"),
+	check:    checkKSeF,
+}
 
+func checkKSeF(root *ciiNode, add func(rule, msg string)) {
 	// KS-header: the form code (Naglowek/KodFormularza) is mandatory.
 	if strings.TrimSpace(root.str("Naglowek", "KodFormularza")) == "" {
 		add("KS-header", "the header (Naglowek) shall contain a KodFormularza")
@@ -97,6 +94,4 @@ func validateKSeF(r *run, root *ciiNode) []Violation {
 	if rf := strings.TrimSpace(fa.str("RodzajFaktury")); !ksefRodzajFaktury[rf] {
 		add("KS-type", fmt.Sprintf("the invoice kind (RodzajFaktury=%q) shall be a valid code (VAT, KOR, ZAL, ROZ, UPR, KOR_ZAL, KOR_ROZ)", rf))
 	}
-
-	return out
 }

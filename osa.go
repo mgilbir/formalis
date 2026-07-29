@@ -44,21 +44,18 @@ func IsOSA(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateOSA(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateOSA(r, root))
+	return osaValidator.validate(ctx, xmlData)
 }
 
-func validateOSA(r *run, root *ciiNode) []Violation {
-	if root.name != "InvoiceData" {
-		return []Violation{{Source: SourceOSA, Rule: "HU-root", Message: "the document root shall be InvoiceData"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceOSA)
+var osaValidator = treeValidator{
+	source:   SourceOSA,
+	rootRule: "HU-root",
+	rootMsg:  "the document root shall be InvoiceData",
+	accepts:  rootNamed("InvoiceData"),
+	check:    checkOSA,
+}
 
+func checkOSA(root *ciiNode, add func(rule, msg string)) {
 	if strings.TrimSpace(root.str("invoiceNumber")) == "" {
 		add("HU-number", "the document shall contain an invoiceNumber")
 	}
@@ -74,6 +71,4 @@ func validateOSA(r *run, root *ciiNode) []Violation {
 	if len(root.findAll("customerInfo")) == 0 {
 		add("HU-customer", "the invoice shall contain customerInfo")
 	}
-
-	return out
 }

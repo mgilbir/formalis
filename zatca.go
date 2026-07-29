@@ -55,21 +55,18 @@ func IsZATCA(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateZATCA(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateZATCA(r, root))
+	return zatcaValidator.validate(ctx, xmlData)
 }
 
-func validateZATCA(r *run, root *ciiNode) []Violation {
-	if root.name != "Invoice" && root.name != "CreditNote" {
-		return []Violation{{Source: SourceZATCA, Rule: "ZA-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}
-	}
-	var out []Violation
-	add := adder(&out, SourceZATCA)
+var zatcaValidator = treeValidator{
+	source:   SourceZATCA,
+	rootRule: "ZA-root",
+	rootMsg:  "the document root shall be a UBL Invoice or CreditNote",
+	accepts:  rootNamed("Invoice", "CreditNote"),
+	check:    checkZATCA,
+}
 
+func checkZATCA(root *ciiNode, add func(rule, msg string)) {
 	// ZA-number/date/uuid: the document id, issue date and UUID are mandatory.
 	if strings.TrimSpace(root.str("ID")) == "" {
 		add("ZA-number", "the invoice shall contain an ID")
@@ -107,6 +104,4 @@ func validateZATCA(r *run, root *ciiNode) []Violation {
 	if strings.TrimSpace(seller.str("PartyTaxScheme", "CompanyID")) == "" {
 		add("ZA-seller-vat", "the Seller shall contain a VAT registration (PartyTaxScheme/CompanyID)")
 	}
-
-	return out
 }

@@ -54,21 +54,18 @@ func IsPINT(xmlData []byte) (bool, error) {
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidatePINT(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validatePINT(r, root))
+	return pintValidator.validate(ctx, xmlData)
 }
 
-func validatePINT(r *run, root *ciiNode) []Violation {
-	if root.name != "Invoice" && root.name != "CreditNote" {
-		return []Violation{{Source: SourcePINT, Rule: "PINT-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}
-	}
-	var out []Violation
-	add := adder(&out, SourcePINT)
+var pintValidator = treeValidator{
+	source:   SourcePINT,
+	rootRule: "PINT-root",
+	rootMsg:  "the document root shall be a UBL Invoice or CreditNote",
+	accepts:  rootNamed("Invoice", "CreditNote"),
+	check:    checkPINT,
+}
 
+func checkPINT(root *ciiNode, add func(rule, msg string)) {
 	if !strings.Contains(root.str("CustomizationID"), "peppol:pint") {
 		add("PINT-customization", "the CustomizationID shall declare a Peppol PINT profile")
 	}
@@ -102,6 +99,4 @@ func validatePINT(r *run, root *ciiNode) []Violation {
 		strings.TrimSpace(seller.str("PartyName", "Name")) == "" {
 		add("PINT-seller-name", "the Seller shall contain a name")
 	}
-
-	return out
 }
