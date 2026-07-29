@@ -78,6 +78,8 @@ func TestCIISyntaxRules(t *testing.T) {
 
 	var cases []ruleCase
 	cases = append(cases, ciiDocumentCases(t)...)
+	cases = append(cases, ciiLineCases(t)...)
+	cases = append(cases, ciiAllowanceCases(t)...)
 
 	runRuleCases(t, cases)
 }
@@ -136,6 +138,100 @@ func ciiDocumentCases(t *testing.T) []ruleCase {
 		{"CII-DT-014 no languageLocaleID on the document element", validCII, "CII-DT-014", false},
 		{"CII-DT-014 languageLocaleID on the document element", mutate(t, validCII,
 			`<CrossIndustryInvoice>`, `<CrossIndustryInvoice languageLocaleID="en-GB">`), "CII-DT-014", true},
+	}
+}
+
+// ciiLineCases are the rules whose context is an invoice line or a group inside
+// one: the product, its attributes, and the line's price agreement.
+func ciiLineCases(t *testing.T) []ruleCase {
+	t.Helper()
+	return []ruleCase{
+		{"CII-SR-046 item standard identifier with a scheme", ciiWith(t, ciiAtProduct,
+			`<GlobalID schemeID="0160">04012345678901</GlobalID>`), "CII-SR-046", false},
+		{"CII-SR-046 item standard identifier without a scheme", ciiWith(t, ciiAtProduct,
+			`<GlobalID>04012345678901</GlobalID>`), "CII-SR-046", true},
+
+		{"CII-SR-090 one country of origin", ciiWith(t, ciiAtProduct,
+			`<OriginTradeCountry><ID>FR</ID></OriginTradeCountry>`), "CII-SR-090", false},
+		{"CII-SR-090 two countries of origin", ciiWith(t, ciiAtProduct,
+			`<OriginTradeCountry><ID>FR</ID><ID>DE</ID></OriginTradeCountry>`), "CII-SR-090", true},
+
+		{"CII-SR-069 one item attribute name", ciiWith(t, ciiAtProduct,
+			`<ApplicableProductCharacteristic><Description>Colour</Description><Value>Red</Value></ApplicableProductCharacteristic>`),
+			"CII-SR-069", false},
+		{"CII-SR-069 two item attribute names", ciiWith(t, ciiAtProduct,
+			`<ApplicableProductCharacteristic><Description>Colour</Description><Description>Farbe</Description><Value>Red</Value></ApplicableProductCharacteristic>`),
+			"CII-SR-069", true},
+
+		{"CII-SR-072 one item attribute value", ciiWith(t, ciiAtProduct,
+			`<ApplicableProductCharacteristic><Description>Colour</Description><Value>Red</Value></ApplicableProductCharacteristic>`),
+			"CII-SR-072", false},
+		{"CII-SR-072 no item attribute value", ciiWith(t, ciiAtProduct,
+			`<ApplicableProductCharacteristic><Description>Colour</Description></ApplicableProductCharacteristic>`),
+			"CII-SR-072", true},
+
+		{"CII-SR-439 one item net price", validCII, "CII-SR-439", false},
+		{"CII-SR-439 no item net price", mutate(t, validCII,
+			`<NetPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount></NetPriceProductTradePrice>`,
+			`<NetPriceProductTradePrice></NetPriceProductTradePrice>`), "CII-SR-439", true},
+
+		{"CII-SR-441 one item net price", validCII, "CII-SR-441", false},
+		{"CII-SR-441 two item net prices", mutate(t, validCII,
+			`<ChargeAmount>100.00</ChargeAmount>`,
+			`<ChargeAmount>100.00</ChargeAmount><ChargeAmount>100.00</ChargeAmount>`), "CII-SR-441", true},
+	}
+}
+
+// ciiAllowance wraps an allowance/charge group's children. Its amount is zero so
+// the invoice totals stay consistent and the VAT rules stay quiet.
+func ciiAllowance(children string) string {
+	return withCIISettlement(`<SpecifiedTradeAllowanceCharge>` + children + `</SpecifiedTradeAllowanceCharge>`)
+}
+
+// ciiAllowanceCases are the rules whose context is an allowance or charge group,
+// at document level or on a line, plus the item price discount.
+func ciiAllowanceCases(t *testing.T) []ruleCase {
+	t.Helper()
+	const indicator = `<ChargeIndicator><Indicator>false</Indicator></ChargeIndicator>`
+	return []ruleCase{
+		{"CII-SR-463 allowance with a charge indicator", ciiAllowance(
+			indicator + `<ActualAmount>0.00</ActualAmount>`), "CII-SR-463", false},
+		{"CII-SR-463 allowance without a charge indicator", ciiAllowance(
+			`<ActualAmount>0.00</ActualAmount>`), "CII-SR-463", true},
+
+		// CII-SR-471 counts ram:RateApplicablePercent as a direct child of the
+		// allowance group. The CII D16B schema's TradeAllowanceChargeType has no
+		// such child — the percentage lives in ram:CategoryTradeTax, and across the
+		// 181 CII documents in the corpus it is never anywhere else — so on a
+		// schema-valid document this assertion cannot fail. It is transcribed
+		// because CEN publishes it fatal, and the violating case below is
+		// schema-invalid by necessity: no other document trips it.
+		{"CII-SR-471 one applicable rate percentage", ciiAllowance(
+			indicator + `<RateApplicablePercent>20.00</RateApplicablePercent>`), "CII-SR-471", false},
+		{"CII-SR-471 two applicable rate percentages", ciiAllowance(
+			indicator + `<RateApplicablePercent>20.00</RateApplicablePercent><RateApplicablePercent>10.00</RateApplicablePercent>`),
+			"CII-SR-471", true},
+
+		{"CII-SR-472 one VAT category group", ciiAllowance(
+			indicator + `<CategoryTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode></CategoryTradeTax>`),
+			"CII-SR-472", false},
+		{"CII-SR-472 two VAT category groups", ciiAllowance(
+			indicator + `<CategoryTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode></CategoryTradeTax>` +
+				`<CategoryTradeTax><TypeCode>VAT</TypeCode><CategoryCode>Z</CategoryCode></CategoryTradeTax>`),
+			"CII-SR-472", true},
+
+		{"CII-SR-473 one allowance amount", ciiAllowance(
+			indicator + `<ActualAmount>0.00</ActualAmount>`), "CII-SR-473", false},
+		{"CII-SR-473 two allowance amounts", ciiAllowance(
+			indicator + `<ActualAmount>0.00</ActualAmount><ActualAmount>0.00</ActualAmount>`),
+			"CII-SR-473", true},
+
+		{"CII-SR-440 one item price discount", ciiWith(t, ciiAtLineAgreement,
+			`<GrossPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount><AppliedTradeAllowanceCharge><ActualAmount>0.00</ActualAmount></AppliedTradeAllowanceCharge></GrossPriceProductTradePrice>`),
+			"CII-SR-440", false},
+		{"CII-SR-440 two item price discounts", ciiWith(t, ciiAtLineAgreement,
+			`<GrossPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount><AppliedTradeAllowanceCharge><ActualAmount>0.00</ActualAmount><ActualAmount>0.00</ActualAmount></AppliedTradeAllowanceCharge></GrossPriceProductTradePrice>`),
+			"CII-SR-440", true},
 	}
 }
 
