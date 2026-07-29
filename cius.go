@@ -28,6 +28,13 @@ const (
 // DetectCIUS reports the CIUS that a Specification identifier (BT-24) declares, or
 // CIUSNone when it names no recognised national CIUS. XRechnung is checked before
 // Peppol because an XRechnung identifier may also reference the Peppol base.
+//
+// It takes the identifier, not the document. To ask the question of XML, call
+// Detect: Detection.SpecID is this identifier, extracted from either syntax in
+// one streaming pass, and Detection.CIUS is this function applied to it. Detect
+// is also the one that arbitrates — a PINT identifier contains the substring
+// "peppol" and is read here as CIUSPeppol, while Detection.Source reports
+// SourcePINT.
 func DetectCIUS(specID string) CIUS {
 	id := strings.ToLower(specID)
 	switch {

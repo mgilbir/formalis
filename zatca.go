@@ -35,6 +35,15 @@ func zatcaDocRef(root *ciiNode, id string) bool {
 // unsupported character encoding, or a guard that tripped — and the bool is
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
+//
+// The Is* predicates are independent tests, not a partition. This one reads a
+// ProfileID and a document reference rather than the Specification identifier,
+// on a root four national formats, seven CIUS and the EN 16931 UBL binding all
+// share, so more than one can report true about the same document: an invoice
+// declaring "urn:peppol:pint:x" and ProfileID "reporting:1.0" satisfies this
+// predicate and IsPINT both. Detect applies a documented precedence — BT-24 is a
+// claim about the rule set and a profile identifier is not, so that document is
+// PINT — and returns a single answer; route with it.
 func IsZATCA(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {
