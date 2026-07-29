@@ -808,7 +808,12 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 		if p.start == "" && p.end == "" && p.desc == "" {
 			add(present, "if an invoicing period (BG-14/BG-26) is used, its start or end date shall be present")
 		}
-		if p.start != "" && p.end != "" && normDate(p.end) < normDate(p.start) {
+		// Only order two dates this package could actually read as dates. A value
+		// it cannot parse says nothing about the period's order, and reporting an
+		// ordering violation from it would be an accusation built on a guess.
+		start, okStart := normDate(p.start)
+		end, okEnd := normDate(p.end)
+		if okStart && okEnd && end < start {
 			add(order, "the invoicing period end date shall not precede its start date")
 		}
 	}

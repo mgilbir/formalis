@@ -79,6 +79,67 @@ func TestValidatePeppolRules(t *testing.T) {
 	}
 }
 
+// TestPeppolLinePeriodOrdersCalendarDays is the regression test for
+// PEPPOL-EN16931-R110/R111, which contain the Invoice line period (BG-26) within
+// the Invoicing period (BG-14).
+//
+// A legal xs:date may carry a timezone offset, and the old digit-stripping
+// normalisation made "2024-02-01+02:00" — twelve digits — compare less than
+// "2024-02-01" — eight — so a line period starting on the very same calendar day
+// as the invoicing period was reported as falling outside it.
+func TestPeppolLinePeriodOrdersCalendarDays(t *testing.T) {
+	build := func(docStart, docEnd, lineStart, lineEnd string) []byte {
+		doc := "<cac:InvoicePeriod><cbc:StartDate>" + docStart + "</cbc:StartDate>" +
+			"<cbc:EndDate>" + docEnd + "</cbc:EndDate></cac:InvoicePeriod>"
+		line := "<cac:InvoicePeriod><cbc:StartDate>" + lineStart + "</cbc:StartDate>" +
+			"<cbc:EndDate>" + lineEnd + "</cbc:EndDate></cac:InvoicePeriod>"
+		x := strings.Replace(minimalPeppolUBL,
+			"<cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>",
+			"<cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>"+doc, 1)
+		x = strings.Replace(x, "<cac:Item>", line+"<cac:Item>", 1)
+		return []byte(x)
+	}
+	for _, tc := range []struct {
+		name               string
+		docStart, docEnd   string
+		lineStart, lineEnd string
+		wantR110, wantR111 bool
+	}{
+		{
+			name:     "line period on the same calendar days, offset on the document period",
+			docStart: "2024-02-01+02:00", docEnd: "2024-02-29+02:00",
+			lineStart: "2024-02-01", lineEnd: "2024-02-29",
+		},
+		{
+			name:     "line period on the same calendar days, offset on the line period",
+			docStart: "2024-02-01", docEnd: "2024-02-29",
+			lineStart: "2024-02-01-05:00", lineEnd: "2024-02-29Z",
+		},
+		{
+			name:     "line period genuinely starts before the invoicing period",
+			docStart: "2024-02-01+02:00", docEnd: "2024-02-29",
+			lineStart: "2024-01-15", lineEnd: "2024-02-29",
+			wantR110: true,
+		},
+		{
+			name:     "line period genuinely ends after the invoicing period",
+			docStart: "2024-02-01", docEnd: "2024-02-29+02:00",
+			lineStart: "2024-02-01", lineEnd: "2024-03-15",
+			wantR111: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v := ValidatePeppol(context.Background(), build(tc.docStart, tc.docEnd, tc.lineStart, tc.lineEnd))
+			if got := hasFacturXRule(v, "PEPPOL-EN16931-R110"); got != tc.wantR110 {
+				t.Errorf("R110: got %v, want %v (violations: %v)", got, tc.wantR110, v)
+			}
+			if got := hasFacturXRule(v, "PEPPOL-EN16931-R111"); got != tc.wantR111 {
+				t.Errorf("R111: got %v, want %v (violations: %v)", got, tc.wantR111, v)
+			}
+		})
+	}
+}
+
 // TestValidatePeppolCorpus is the FP=0 oracle: every OpenPEPPOL example invoice
 // must validate with no violations. The oracle is not vendored; the test skips
 // when it is absent (run `make cius-oracles`).

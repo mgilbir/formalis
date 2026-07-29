@@ -710,16 +710,74 @@ func allEqual(s []string) bool {
 	return true
 }
 
-// normDate reduces a date to its digits (YYYYMMDD) so CII (20130601) and UBL
-// (2013-06-01) forms compare lexically.
-func normDate(s string) string {
-	var b strings.Builder
-	for _, r := range s {
-		if r >= '0' && r <= '9' {
-			b.WriteRune(r)
+// normDate reduces a date to a fixed-width comparable calendar date (YYYYMMDD)
+// and reports whether it could read one, so the CII and UBL forms compare
+// lexically and an unreadable value is told apart from a readable one.
+//
+// Accepted, in either binding's spelling:
+//
+//	2013-06-01              UBL xs:date
+//	20130601                CII UDT DateTimeString, format 102
+//	2013-06-01Z             either, with a UTC designator
+//	2013-06-01+02:00        either, with a timezone offset
+//	2013-06-01T09:30:00     either, with a time of day
+//
+// Anything else — an empty value, a two-digit year, "1 June 2013", a nine-digit
+// run — is not a date this package will order, and yields false.
+//
+// The width is the whole point. The previous form kept only the digits, so a
+// legal xs:date carrying a timezone reduced to twelve of them: "2024-02-01+02:00"
+// became "202402010200", and against the eight of "20240201" the shorter string
+// is a prefix of the longer and so compares LESS. Two values naming the same
+// calendar day therefore ordered as if one preceded the other, which fired BR-29,
+// BR-30 and PEPPOL-EN16931-R110/R111 on the one case that must never fire.
+//
+// The timezone is read and discarded rather than applied. BT-73/74 and
+// BT-134/135 are calendar dates in the EN 16931 semantic model — the day a
+// billing period starts, not an instant — so an invoicing period that starts and
+// ends on 2024-02-01 is one day long however either end is offset, and no
+// ordering rule may say otherwise. (XPath's xs:date comparison, which the
+// Schematron uses, does apply the offset and would order these two apart. That
+// is a defensible reading of the datatype and an indefensible reading of the
+// business term, so this package takes the business term's.)
+//
+// A caller must skip its ordering check when either side yields false, rather
+// than compare a value it could not read: accusing an invoice of an out-of-order
+// period on the strength of a date neither side understood is a false accusation
+// dressed as a business-rule finding.
+func normDate(s string) (string, bool) {
+	s = strings.TrimSpace(s)
+	digits := func(sub string) bool {
+		for i := 0; i < len(sub); i++ {
+			if sub[i] < '0' || sub[i] > '9' {
+				return false
+			}
 		}
+		return true
 	}
-	return b.String()
+	// Whatever follows the date part must open a timezone or a time of day; a
+	// further digit means the leading run was never a date to begin with.
+	tail := func(rest string) bool {
+		switch {
+		case rest == "":
+			return true
+		case rest[0] == 'T', rest[0] == 'Z', rest[0] == '+', rest[0] == '-':
+			return true
+		}
+		return false
+	}
+	// Extended form, YYYY-MM-DD.
+	if len(s) >= 10 && s[4] == '-' && s[7] == '-' && digits(s[:4]) && digits(s[5:7]) && digits(s[8:10]) {
+		if tail(s[10:]) {
+			return s[:4] + s[5:7] + s[8:10], true
+		}
+		return "", false
+	}
+	// Basic form, YYYYMMDD.
+	if len(s) >= 8 && digits(s[:8]) && tail(s[8:]) {
+		return s[:8], true
+	}
+	return "", false
 }
 
 // decimalCount returns the number of digits after the decimal point in s.

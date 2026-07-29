@@ -107,11 +107,19 @@ func validatePeppolRules(inv *en16931Invoice) []Violation {
 		if li.baseQtyUnit != "" && li.unitCode != "" && li.baseQtyUnit != li.unitCode {
 			add("PEPPOL-EN16931-R130", "The price base quantity unit (BT-150) MUST equal the invoiced quantity unit (BT-130)")
 		}
+		// R110/R111 contain the line period within the invoicing period. Both ends
+		// are ordered only when both parse as calendar dates; an unreadable date
+		// cannot place the line inside or outside the period, so it is not
+		// reported either way.
 		if li.period.present && inv.period.present {
-			if s, e := li.period.start, inv.period.start; s != "" && e != "" && normDate(s) < normDate(e) {
+			lineStart, okLine := normDate(li.period.start)
+			invStart, okInv := normDate(inv.period.start)
+			if okLine && okInv && lineStart < invStart {
 				add("PEPPOL-EN16931-R110", "The Invoice line period start date MUST be within the Invoicing period")
 			}
-			if s, e := li.period.end, inv.period.end; s != "" && e != "" && normDate(s) > normDate(e) {
+			lineEnd, okLine := normDate(li.period.end)
+			invEnd, okInv := normDate(inv.period.end)
+			if okLine && okInv && lineEnd > invEnd {
 				add("PEPPOL-EN16931-R111", "The Invoice line period end date MUST be within the Invoicing period")
 			}
 		}
