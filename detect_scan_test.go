@@ -26,18 +26,24 @@ var treeDetectors = map[string]func(*ciiNode) bool{
 	"IsKSeF":        func(r *ciiNode) bool { return r.name == "Faktura" && r.child("Naglowek") != nil },
 	"IsEbInterface": func(r *ciiNode) bool { return r.name == "Invoice" && r.child("Biller") != nil },
 	"IsSvefaktura":  func(r *ciiNode) bool { return r.name == "Invoice" && r.child("SellerParty") != nil },
+	// The three identifier tests are written out here rather than calling
+	// declaresSpecID, so that this stays a reference the implementation is
+	// checked against rather than a copy of it. They are the marks of the
+	// OIOUBL, PINT and UBL-TR entries of specIDRules, matched the way that table
+	// says: lower-cased and trimmed.
 	"IsOIOUBL": func(r *ciiNode) bool {
-		return r.name == "Invoice" && strings.Contains(r.str("CustomizationID"), "OIOUBL")
+		return r.name == "Invoice" && strings.Contains(strings.ToLower(r.str("CustomizationID")), "oioubl")
 	},
 	"IsPINT": func(r *ciiNode) bool {
 		if r.name != "Invoice" && r.name != "CreditNote" {
 			return false
 		}
-		return strings.Contains(r.str("CustomizationID"), "peppol:pint")
+		id := strings.ToLower(r.str("CustomizationID"))
+		return strings.Contains(id, "peppol:pint") || strings.Contains(id, "fdc:peppol:jp:billing")
 	},
 	"IsTurkishInvoice": func(r *ciiNode) bool {
 		return r.name == "Invoice" &&
-			strings.HasPrefix(strings.ToUpper(strings.TrimSpace(r.str("CustomizationID"))), "TR")
+			strings.HasPrefix(strings.ToLower(strings.TrimSpace(r.str("CustomizationID"))), "tr")
 	},
 	"IsZATCA": func(r *ciiNode) bool {
 		if r.name != "Invoice" && r.name != "CreditNote" {
@@ -536,16 +542,19 @@ func TestDetectionHasNoBudgetToTrip(t *testing.T) {
 // corpusFormat maps a testdata corpus to the Source every document in it that
 // Detect recognises must come back as.
 //
-// Four corpora are deliberately absent because they are mixed by construction
+// Three corpora are deliberately absent because they are mixed by construction
 // and a single expected answer would be wrong for them: en16931-artefacts and
 // en16931-ubl carry both plain EN 16931 and Peppol instances (and, in the CEN
 // artefacts, several hundred Schematron and build files that are not invoices);
-// nlcius ships two error samples whose whole defect is a missing or
+// and nlcius ships two error samples whose whole defect is a missing or
 // whitespace-only BT-24, which is exactly the document that has no CIUS to
-// declare; and the pint corpus includes the pre-release Japanese samples, whose
-// identifier reads "urn:fdc:peppol:jp:billing:3.0" and never says "pint" — a
-// document IsPINT also reports false for, so Detect agreeing with the predicate
-// is the property worth keeping there.
+// declare.
+//
+// The pint corpus was the fourth until C24 was fixed. It was excluded because
+// its eight pre-release Japanese samples declare "urn:fdc:peppol:jp:billing:3.0"
+// and never say "pint" — but the other 56 were not routing to PINT either, and
+// the exclusion is what kept that from being visible here. All 64 now route to
+// SourcePINT: the pre-release identifier is a documented entry of specIDRules.
 var corpusFormat = map[string]Source{
 	"cius-be":     SourceUBLBE,
 	"cius-pt":     SourceCIUSPT,
@@ -558,6 +567,7 @@ var corpusFormat = map[string]Source{
 	"ksef":        SourceKSeF,
 	"oioubl":      SourceOIOUBL,
 	"osa":         SourceOSA,
+	"pint":        SourcePINT,
 	"svefaktura":  SourceSvefaktura,
 	"teapps":      SourceTEAPPS,
 	"turkey":      SourceUBLTR,
@@ -571,7 +581,7 @@ var corpusFormat = map[string]Source{
 // only asserted "every document I saw routed correctly" would pass loudly on
 // three files. The number is what the corpora contained when this was written;
 // it may grow.
-const minRoutedDocuments = 754
+const minRoutedDocuments = 818
 
 // TestDetectRoutesTheCorpus is the evidence that the precedence is right about
 // documents rather than only about the constructed overlaps.

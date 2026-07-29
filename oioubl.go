@@ -29,12 +29,16 @@ import (
 // same document: "TR-OIOUBL-2.02" satisfies this predicate and IsTurkishInvoice
 // both. Detect applies a documented precedence — this one wins that pair — and
 // returns a single answer; route with it.
+//
+// The identifier test is the OIOUBL entry of specIDRules, the same one the
+// routing reads, so the predicate and the route cannot disagree about which
+// identifiers name OIOUBL.
 func IsOIOUBL(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return d.root == "Invoice" && strings.Contains(d.str("CustomizationID"), "OIOUBL"), nil
+	return d.root == "Invoice" && declaresSpecID(SourceOIOUBL, d.str("CustomizationID")), nil
 }
 
 // ValidateOIOUBL validates a Danish OIOUBL Invoice against its mandatory structure.

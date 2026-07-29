@@ -216,12 +216,17 @@ func TestDetectArbitratesWhereThePredicatesOverlap(t *testing.T) {
 	}
 }
 
-// TestDetectSourceAndCIUSDisagreeOnPINT pins the one place Detection's two
-// answers differ, so the divergence is a documented property rather than a
-// surprise. A PINT identifier contains "peppol", so the BT-24 dispatch
-// ValidateCIUS performs reads it as the Peppol CIUS while Detect, which owns the
-// precedence, reports PINT — a different rule set with a validator of its own.
-func TestDetectSourceAndCIUSDisagreeOnPINT(t *testing.T) {
+// TestDetectSourceAndCIUSAgreeOnPINT is C24 pinned at the smallest scale.
+//
+// This test used to assert the opposite of its second claim — that a PINT
+// invoice reports CIUSPeppol — and recorded the disagreement between Detect and
+// the BT-24 dispatch as a documented property. It was not a property. A PINT
+// identifier contains the substring "peppol", the CIUS dispatch had no case for
+// PINT, and so every PINT document reaching ValidateCIUS was validated against
+// Peppol BIS Billing 3.0: a different rule set, whose first rule requires the
+// BT-24 a PINT invoice by definition does not carry. The two answers are one
+// answer now, and the assertion says so.
+func TestDetectSourceAndCIUSAgreeOnPINT(t *testing.T) {
 	const doc = `<Invoice><CustomizationID>urn:peppol:pint:billing-1@my-1</CustomizationID></Invoice>`
 	det, err := Detect([]byte(doc))
 	if err != nil {
@@ -230,12 +235,16 @@ func TestDetectSourceAndCIUSDisagreeOnPINT(t *testing.T) {
 	if det.Source != SourcePINT {
 		t.Errorf("Source = %q, want %q", det.Source, SourcePINT)
 	}
-	if det.CIUS != CIUSPeppol {
-		t.Errorf("CIUS = %q, want %q: it is DetectCIUS(SpecID) and nothing else", det.CIUS, CIUSPeppol)
+	if det.CIUS != CIUSPINT {
+		t.Errorf("CIUS = %q, want %q: an identifier that names PINT must not report the CIUS of a rule set it does not follow",
+			det.CIUS, CIUSPINT)
 	}
 	if det.CIUS != DetectCIUS(det.SpecID) {
 		t.Errorf("CIUS = %q but DetectCIUS(SpecID) = %q; the field is documented as the second",
 			det.CIUS, DetectCIUS(det.SpecID))
+	}
+	if got := ciusSource(det.CIUS); got != det.Source {
+		t.Errorf("ciusSource(CIUS) = %q but Source = %q; the CIUS and the rule set must name the same authority", got, det.Source)
 	}
 }
 

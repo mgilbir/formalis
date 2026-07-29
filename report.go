@@ -286,8 +286,10 @@ var notEvaluated = map[Source][]string{
 // sources is the authorities whose rules were applied, in the order they were
 // applied, and it is what makes the coverage claim follow the call rather than
 // the entry point: ValidateCIUSPT passes SourceEN16931 and SourceCIUSPT because
-// it runs both, and ValidateCIUS passes whichever pair the document's BT-24
-// routed it to. Passing none says no rule set was chosen — the unknown-Profile
+// it runs both, and ValidateCIUS passes whatever the arbitration routed the
+// document to — a pair for a CIUS layered on the core, one Source for a national
+// format with a rule set of its own. Passing none says no rule set was chosen —
+// the unknown-Profile
 // case — and yields an empty NotEvaluated with Complete still false, because
 // the RuleProfile finding is a checker violation.
 func newReport(vs []Violation, sources ...Source) Report {

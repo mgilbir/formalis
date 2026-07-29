@@ -35,8 +35,7 @@ func IsTurkishInvoice(xmlData []byte) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return d.root == "Invoice" &&
-		strings.HasPrefix(strings.ToUpper(strings.TrimSpace(d.str("CustomizationID"))), "TR"), nil
+	return d.root == "Invoice" && declaresSpecID(SourceUBLTR, d.str("CustomizationID")), nil
 }
 
 // ValidateTurkishInvoice validates a Turkish UBL-TR Invoice against its mandatory

@@ -20,6 +20,18 @@ func TestDetectCIUS(t *testing.T) {
 		{"urn:cen.eu:en16931:2017#conformant#urn:UBL.BE:1.0.0.20180214", CIUSBelgium},
 		{"urn:cen.eu:en16931:2017#compliant#urn:mfin.gov.rs:srbdt:2022", CIUSSerbia},
 		{"", CIUSNone},
+
+		// C24: a PINT identifier contains "peppol" and is not Peppol BIS
+		// Billing 3.0. Every one of these answered CIUSPeppol before.
+		{"urn:peppol:pint:billing-1@my-1", CIUSPINT},
+		{"urn:peppol:pint:billing-1@eu-1", CIUSPINT},
+		{"urn:peppol:pint:nontaxinvoice-1@jp-1", CIUSPINT},
+		{"urn:fdc:peppol:jp:billing:3.0", CIUSPINT},
+
+		// Named by BT-24, but not CIUS: DetectCIUS answers the CIUS question
+		// only, and Detect answers with SourceOIOUBL and SourceUBLTR.
+		{"OIOUBL-2.1", CIUSNone},
+		{"TR1.2", CIUSNone},
 	}
 	for _, tc := range cases {
 		if got := DetectCIUS(tc.specID); got != tc.want {
