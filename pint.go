@@ -31,13 +31,20 @@ func DetectPINTJurisdiction(customizationID string) string {
 }
 
 // IsPINT reports whether the XML is a Peppol PINT invoice or credit note.
-func IsPINT(xmlData []byte) bool {
-	r := newRun(nil)
-	root, err := parseCII(r, xmlData)
-	if err != nil || (root.name != "Invoice" && root.name != "CreditNote") {
-		return false
+//
+// A non-nil error means the document could not be read — malformed XML, an
+// unsupported character encoding, or a guard that tripped — and the bool is
+// meaningless. It is distinct from (false, nil), which says the document was
+// read and is some other format.
+func IsPINT(xmlData []byte) (bool, error) {
+	root, err := detectRoot(xmlData)
+	if err != nil {
+		return false, err
 	}
-	return strings.Contains(root.str("CustomizationID"), "peppol:pint")
+	if root.name != "Invoice" && root.name != "CreditNote" {
+		return false, nil
+	}
+	return strings.Contains(root.str("CustomizationID"), "peppol:pint"), nil
 }
 
 // ValidatePINT validates a Peppol PINT document against the mandatory structure

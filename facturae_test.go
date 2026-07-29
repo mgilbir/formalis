@@ -20,7 +20,12 @@ func TestFacturaeCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !IsFacturae(data) {
+		ok, err := IsFacturae(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as Facturae", filepath.Base(f))
 			continue
 		}

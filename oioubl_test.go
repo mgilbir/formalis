@@ -15,7 +15,12 @@ func TestOIOUBLCorpus(t *testing.T) {
 	}
 	for _, f := range files {
 		data, _ := os.ReadFile(f)
-		if !IsOIOUBL(data) {
+		ok, err := IsOIOUBL(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			continue
 		}
 		if v := ValidateOIOUBL(context.Background(), data); len(v) != 0 {

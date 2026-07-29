@@ -18,7 +18,12 @@ func TestPINTCorpus(t *testing.T) {
 	seen := map[string]bool{}
 	for _, f := range files {
 		data, _ := os.ReadFile(f)
-		if !IsPINT(data) {
+		ok, err := IsPINT(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			continue
 		}
 		root, _ := parseCII(newRun(nil), data)

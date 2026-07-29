@@ -21,7 +21,12 @@ func TestFatturaPACorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !IsFatturaPA(data) {
+		ok, err := IsFatturaPA(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as a FatturaPA document", filepath.Base(f))
 			continue
 		}

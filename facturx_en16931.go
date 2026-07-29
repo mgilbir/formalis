@@ -15,10 +15,19 @@ import (
 // xmlCharsetReader lets the XML decoder read the non-UTF-8 encodings some
 // national e-invoice formats declare (ISO-8859-1 / Windows-1252 are common in
 // Austrian ebInterface). It stays dependency-free: ISO-8859-1 maps each byte to
-// the same Unicode code point; other declared charsets are passed through as-is
-// (best effort for UTF-8-compatible ones).
+// the same Unicode code point.
+//
+// An encoding it does not implement is an error rather than a passthrough. The
+// bytes of, say, a UTF-16 or EBCDIC document read as UTF-8 are not the document:
+// element names come out mangled, so the rules run against text the sender never
+// wrote and report business-rule violations that say nothing about the invoice.
+// Refusing to read it is the honest answer, and the caller gets it as a parse
+// error rather than as a list of false accusations.
 func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
 	switch strings.ToLower(strings.TrimSpace(charset)) {
+	case "utf-8", "utf8", "us-ascii", "ascii":
+		// What the decoder already expects; ASCII is a subset of UTF-8.
+		return input, nil
 	case "iso-8859-1", "iso8859-1", "iso-8859-15", "iso8859-15", "latin1", "latin-1", "latin9", "windows-1252", "cp1252":
 		b, err := io.ReadAll(input)
 		if err != nil {
@@ -31,7 +40,7 @@ func xmlCharsetReader(charset string, input io.Reader) (io.Reader, error) {
 		}
 		return strings.NewReader(sb.String()), nil
 	}
-	return input, nil
+	return nil, fmt.Errorf("unsupported XML character encoding %q", charset)
 }
 
 // This file begins the EN 16931 semantic validation of the invoice XML embedded

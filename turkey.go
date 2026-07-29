@@ -17,10 +17,18 @@ import (
 // instances (phax/phive-rules) are used only as the oracle.
 
 // IsTurkishInvoice reports whether the XML is a UBL-TR Invoice.
-func IsTurkishInvoice(xmlData []byte) bool {
-	r := newRun(nil)
-	root, err := parseCII(r, xmlData)
-	return err == nil && root.name == "Invoice" && strings.HasPrefix(strings.ToUpper(strings.TrimSpace(root.str("CustomizationID"))), "TR")
+//
+// A non-nil error means the document could not be read — malformed XML, an
+// unsupported character encoding, or a guard that tripped — and the bool is
+// meaningless. It is distinct from (false, nil), which says the document was
+// read and is some other format.
+func IsTurkishInvoice(xmlData []byte) (bool, error) {
+	root, err := detectRoot(xmlData)
+	if err != nil {
+		return false, err
+	}
+	return root.name == "Invoice" &&
+		strings.HasPrefix(strings.ToUpper(strings.TrimSpace(root.str("CustomizationID"))), "TR"), nil
 }
 
 // ValidateTurkishInvoice validates a Turkish UBL-TR Invoice against its mandatory

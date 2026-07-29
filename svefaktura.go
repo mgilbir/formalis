@@ -16,10 +16,17 @@ import (
 // sample instances (phax/phive-rules) are used only as the oracle.
 
 // IsSvefaktura reports whether the XML is an SFTI Svefaktura invoice.
-func IsSvefaktura(xmlData []byte) bool {
-	r := newRun(nil)
-	root, err := parseCII(r, xmlData)
-	return err == nil && root.name == "Invoice" && root.child("SellerParty") != nil
+//
+// A non-nil error means the document could not be read — malformed XML, an
+// unsupported character encoding, or a guard that tripped — and the bool is
+// meaningless. It is distinct from (false, nil), which says the document was
+// read and is some other format.
+func IsSvefaktura(xmlData []byte) (bool, error) {
+	root, err := detectRoot(xmlData)
+	if err != nil {
+		return false, err
+	}
+	return root.name == "Invoice" && root.child("SellerParty") != nil, nil
 }
 
 // ValidateSvefaktura validates a Swedish Svefaktura document against its

@@ -95,6 +95,25 @@ const RuleSyntax = "syntax"
 // as "unknown", never as "conformant" and never as "non-conformant".
 func IsCheckerViolation(v Violation) bool { return v.Rule == RuleLimit }
 
+// detectRoot reads xmlData far enough to identify what kind of document it is,
+// returning the root element.
+//
+// It exists so the Is* predicates share one answer to "could I read this at
+// all". They report three outcomes between them — yes, definitively not, and
+// could not tell — and the third is what the error carries: XML that is not
+// well-formed, an encoding this package does not implement, or a guard that
+// tripped before the document was identified. Folding any of those into a
+// plain false would tell a caller that a truncated Facturae invoice is not a
+// Facturae invoice, which is not the same statement and misroutes anything
+// dispatching on the answer.
+func detectRoot(xmlData []byte) (*ciiNode, error) {
+	root, err := parseCII(newRun(nil), xmlData)
+	if err != nil {
+		return nil, fmt.Errorf("the XML could not be read: %w", err)
+	}
+	return root, nil
+}
+
 // maxDepth is the deepest element nesting the parser will build.
 //
 // Real invoices in every syntax this package reads nest around a dozen levels;
