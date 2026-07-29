@@ -525,11 +525,18 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 	if inv.supplierSchemeCnt > 2 {
 		binding("UBL-SR-42", "", "The supplier party tax scheme shall occur at most twice")
 	}
-	if distinct(inv.paymentIDs) > 1 {
-		binding("UBL-SR-44", "CII-SR-469", "The Payment reference (BT-83) shall occur at most once")
-	}
-	if !allEqual(inv.paymentMeans) {
-		binding("UBL-SR-47", "CII-SR-467", "All Payment means type codes (BT-81) shall have the same value")
+	// The two CII syntax-binding rules this package evaluates. Their UBL
+	// counterparts — UBL-SR-44 and UBL-SR-47 — say the same thing about the same
+	// business terms, but they are counted over the UBL tree rather than over the
+	// model, so they live with the rest of the UBL binding and only the CII half
+	// is stated here.
+	if inv.syntax == "CII" {
+		if distinct(inv.paymentIDs) > 1 {
+			add("CII-SR-469", "The Payment reference (BT-83) shall occur at most once")
+		}
+		if !allEqual(inv.paymentMeans) {
+			add("CII-SR-467", "All Payment means type codes (BT-81) shall have the same value")
+		}
 	}
 
 	// Full-invoice profiles carry lines and a line-net total; the head-only
@@ -929,6 +936,11 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 			add("BR-CO-16", fmt.Sprintf("Amount due for payment (BT-115=%.2f) shall equal total with VAT (BT-112=%.2f) - paid (BT-113=%.2f) + rounding (BT-114=%.2f)", due, grand, paid, rounding))
 		}
 	}
+
+	// The UBL syntax binding. It reads the tree, is a no-op on a CII document,
+	// and is stamped with this same Source because CEN publishes the binding as
+	// a normative part of EN 16931.
+	out = append(out, validateUBLSyntaxRules(r, p.root)...)
 
 	return out
 }

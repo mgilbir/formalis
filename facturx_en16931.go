@@ -89,6 +89,18 @@ func (n *ciiNode) attr(name string) string {
 	return n.attrs[name]
 }
 
+// hasAttr reports whether the named attribute is present, whatever its value.
+// It is the distinction attr cannot make: several CEN binding rules are written
+// as existence tests on an attribute node (`not(cbc:ID/@schemeID)`,
+// `count(...@name)`), for which an attribute written empty is present.
+func (n *ciiNode) hasAttr(name string) bool {
+	if n == nil {
+		return false
+	}
+	_, ok := n.attrs[name]
+	return ok
+}
+
 // errStopped reports that the run ended before the document was fully parsed —
 // the caller's context was cancelled, or the nesting cap tripped. It is distinct
 // from a parse error because it says nothing about the document: a caller must
