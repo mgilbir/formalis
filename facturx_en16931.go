@@ -135,6 +135,14 @@ func parseCII(r *run, data []byte) (*ciiNode, error) {
 				r.note("xml-depth", fmt.Sprintf("the invoice XML nests deeper than %d elements", maxDepth))
 				return nil, errStopped
 			}
+			// The tree is the largest thing this package allocates, and its size
+			// is set by the element count rather than the nesting, so the two
+			// guards are independent: a document of millions of shallow siblings
+			// passes the depth check and still exhausts memory. Stopping here
+			// rather than truncating, for the same reason as above.
+			if !r.spendNode() {
+				return nil, errStopped
+			}
 			n := &ciiNode{name: t.Name.Local}
 			if len(t.Attr) > 0 {
 				n.attrs = make(map[string]string, len(t.Attr))

@@ -31,11 +31,11 @@ var (
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsFacturae(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "Facturae", nil
+	return d.root == "Facturae", nil
 }
 
 // ValidateFacturae validates a Spanish Facturae document against its mandatory

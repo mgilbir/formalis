@@ -23,11 +23,11 @@ import (
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsOIOUBL(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "Invoice" && strings.Contains(root.str("CustomizationID"), "OIOUBL"), nil
+	return d.root == "Invoice" && strings.Contains(d.str("CustomizationID"), "OIOUBL"), nil
 }
 
 // ValidateOIOUBL validates a Danish OIOUBL Invoice against its mandatory structure.

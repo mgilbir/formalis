@@ -36,14 +36,16 @@ func zatcaDocRef(root *ciiNode, id string) bool {
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsZATCA(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	if root.name != "Invoice" && root.name != "CreditNote" {
+	if d.root != "Invoice" && d.root != "CreditNote" {
 		return false, nil
 	}
-	return strings.Contains(strings.ToLower(root.str("ProfileID")), "reporting") || zatcaDocRef(root, "ICV"), nil
+	// d.icvDocRef is the scan's equivalent of zatcaDocRef(root, "ICV"), which
+	// the validator still uses against the parsed tree.
+	return strings.Contains(strings.ToLower(d.str("ProfileID")), "reporting") || d.icvDocRef, nil
 }
 
 // ValidateZATCA validates a Saudi ZATCA UBL invoice against its KSA-mandatory

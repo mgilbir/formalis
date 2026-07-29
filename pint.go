@@ -37,14 +37,14 @@ func DetectPINTJurisdiction(customizationID string) string {
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsPINT(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	if root.name != "Invoice" && root.name != "CreditNote" {
+	if d.root != "Invoice" && d.root != "CreditNote" {
 		return false, nil
 	}
-	return strings.Contains(root.str("CustomizationID"), "peppol:pint"), nil
+	return strings.Contains(d.str("CustomizationID"), "peppol:pint"), nil
 }
 
 // ValidatePINT validates a Peppol PINT document against the mandatory structure

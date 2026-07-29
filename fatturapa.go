@@ -47,11 +47,11 @@ func buildRange(prefix string, lo, hi int) map[string]bool {
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsFatturaPA(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "FatturaElettronica", nil
+	return d.root == "FatturaElettronica", nil
 }
 
 // ValidateFatturaPA validates an Italian FatturaPA / FatturaElettronica document

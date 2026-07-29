@@ -24,11 +24,11 @@ import (
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsEbInterface(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "Invoice" && root.child("Biller") != nil, nil
+	return d.root == "Invoice" && d.hasBiller, nil
 }
 
 // ValidateEbInterface validates an Austrian ebInterface document against its

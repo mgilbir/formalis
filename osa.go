@@ -30,11 +30,11 @@ func firstNonEmptyText(ns []*ciiNode) string {
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsOSA(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "InvoiceData", nil
+	return d.root == "InvoiceData", nil
 }
 
 // ValidateOSA validates a Hungarian OSA invoice-data document against its

@@ -18,11 +18,11 @@ import "context"
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsTEAPPS(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "INVOICE_CENTER", nil
+	return d.root == "INVOICE_CENTER", nil
 }
 
 // ValidateTEAPPS validates a Finnish TEAPPS batch against its mandatory structure.
