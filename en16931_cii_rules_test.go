@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -80,6 +81,8 @@ func TestCIISyntaxRules(t *testing.T) {
 	cases = append(cases, ciiDocumentCases(t)...)
 	cases = append(cases, ciiLineCases(t)...)
 	cases = append(cases, ciiAllowanceCases(t)...)
+	cases = append(cases, ciiHeaderCases(t)...)
+	cases = append(cases, ciiTotalsCases(t)...)
 
 	runRuleCases(t, cases)
 }
@@ -233,6 +236,107 @@ func ciiAllowanceCases(t *testing.T) []ruleCase {
 			`<GrossPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount><AppliedTradeAllowanceCharge><ActualAmount>0.00</ActualAmount><ActualAmount>0.00</ActualAmount></AppliedTradeAllowanceCharge></GrossPriceProductTradePrice>`),
 			"CII-SR-440", true},
 	}
+}
+
+// ciiHeaderCases are the rules whose context is one of the two header groups.
+func ciiHeaderCases(t *testing.T) []ruleCase {
+	t.Helper()
+	contact := func(n string) string {
+		return `<DefinedTradeContact><PersonName>` + n + `</PersonName></DefinedTradeContact>`
+	}
+	email := func(a string) string {
+		return `<URIUniversalCommunication><URIID schemeID="EM">` + a + `</URIID></URIUniversalCommunication>`
+	}
+	return []ruleCase{
+		{"CII-SR-455 one seller contact", ciiWith(t, ciiAtSeller, contact("Ann")), "CII-SR-455", false},
+		{"CII-SR-455 two seller contacts", ciiWith(t, ciiAtSeller, contact("Ann")+contact("Bob")), "CII-SR-455", true},
+
+		{"CII-SR-456 one buyer contact", ciiWith(t, ciiAtBuyer, contact("Ann")), "CII-SR-456", false},
+		{"CII-SR-456 two buyer contacts", ciiWith(t, ciiAtBuyer, contact("Ann")+contact("Bob")), "CII-SR-456", true},
+
+		{"CII-SR-459 one seller electronic address", ciiWith(t, ciiAtSeller,
+			email("s@example.com")), "CII-SR-459", false},
+		{"CII-SR-459 two seller electronic addresses", ciiWith(t, ciiAtSeller,
+			email("s@example.com")+email("t@example.com")), "CII-SR-459", true},
+
+		{"CII-SR-460 one buyer electronic address", ciiWith(t, ciiAtBuyer,
+			email("b@example.com")), "CII-SR-460", false},
+		{"CII-SR-460 two buyer electronic addresses", ciiWith(t, ciiAtBuyer,
+			email("b@example.com")+email("c@example.com")), "CII-SR-460", true},
+
+		{"CII-SR-461 one tax point date", mutate(t, validCII,
+			`<RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
+      <SpecifiedTradeSettlementHeaderMonetarySummation>`,
+			`<RateApplicablePercent>20.00</RateApplicablePercent><TaxPointDate><DateString format="102">20240101</DateString></TaxPointDate></ApplicableTradeTax>
+      <SpecifiedTradeSettlementHeaderMonetarySummation>`), "CII-SR-461", false},
+		{"CII-SR-461 a tax point date in each VAT breakdown", withCIISettlement(
+			`<ApplicableTradeTax><TaxPointDate><DateString format="102">20240101</DateString></TaxPointDate></ApplicableTradeTax>` +
+				`<ApplicableTradeTax><TaxPointDate><DateString format="102">20240101</DateString></TaxPointDate></ApplicableTradeTax>`),
+			"CII-SR-461", true},
+
+		{"CII-SR-462 the same tax point date code twice", withCIISettlement(
+			`<ApplicableTradeTax><DueDateTypeCode>5</DueDateTypeCode></ApplicableTradeTax>` +
+				`<ApplicableTradeTax><DueDateTypeCode>5</DueDateTypeCode></ApplicableTradeTax>`),
+			"CII-SR-462", false},
+		{"CII-SR-462 two different tax point date codes", withCIISettlement(
+			`<ApplicableTradeTax><DueDateTypeCode>5</DueDateTypeCode></ApplicableTradeTax>` +
+				`<ApplicableTradeTax><DueDateTypeCode>72</DueDateTypeCode></ApplicableTradeTax>`),
+			"CII-SR-462", true},
+
+		{"CII-SR-470 credit transfer with an IBAN", withCIISettlement(
+			`<SpecifiedTradeSettlementPaymentMeans><TypeCode>30</TypeCode><PayeePartyCreditorFinancialAccount><IBANID>FR7630006000011234567890189</IBANID></PayeePartyCreditorFinancialAccount></SpecifiedTradeSettlementPaymentMeans>`),
+			"CII-SR-470", false},
+		{"CII-SR-470 credit transfer with no account", withCIISettlement(
+			`<SpecifiedTradeSettlementPaymentMeans><TypeCode>30</TypeCode></SpecifiedTradeSettlementPaymentMeans>`),
+			"CII-SR-470", true},
+	}
+}
+
+// ciiTotalsCases are the eighteen document-total cardinality rules. Each gets an
+// invoice carrying the amount once and an invoice carrying it twice, which is
+// the whole content of the rule.
+//
+// Four of the eighteen amounts are in the baseline already — EN 16931 makes
+// BT-106, BT-109, BT-112 and BT-115 mandatory — so for those the conforming case
+// is the baseline and one insertion is the violation. For the other fourteen the
+// conforming case has to insert the amount, or it would only be saying that an
+// absent element occurs at most once.
+func ciiTotalsCases(t *testing.T) []ruleCase {
+	t.Helper()
+	var out []ruleCase
+	for _, c := range []struct {
+		rule, elem string
+		mandatory  bool
+	}{
+		{"CII-SR-477", "LineTotalAmount", true},
+		{"CII-SR-478", "ChargeTotalAmount", false},
+		{"CII-SR-479", "AllowanceTotalAmount", false},
+		{"CII-SR-480", "TaxBasisTotalAmount", true},
+		{"CII-SR-481", "RoundingAmount", false},
+		{"CII-SR-482", "GrandTotalAmount", true},
+		{"CII-SR-483", "InformationAmount", false},
+		{"CII-SR-484", "TotalPrepaidAmount", false},
+		{"CII-SR-485", "TotalDiscountAmount", false},
+		{"CII-SR-486", "TotalAllowanceChargeAmount", false},
+		{"CII-SR-487", "DuePayableAmount", true},
+		{"CII-SR-488", "RetailValueExcludingTaxInformationAmount", false},
+		{"CII-SR-489", "TotalDepositFeeInformationAmount", false},
+		{"CII-SR-490", "ProductValueExcludingTobaccoTaxInformationAmount", false},
+		{"CII-SR-491", "TotalRetailValueInformationAmount", false},
+		{"CII-SR-492", "GrossLineTotalAmount", false},
+		{"CII-SR-493", "NetLineTotalAmount", false},
+		{"CII-SR-494", "NetIncludingTaxesLineTotalAmount", false},
+	} {
+		one := fmt.Sprintf("<%s>0.00</%s>", c.elem, c.elem)
+		clean, broken := ciiWith(t, ciiAtSummation, one), ciiWith(t, ciiAtSummation, one+one)
+		if c.mandatory {
+			clean, broken = validCII, ciiWith(t, ciiAtSummation, one)
+		}
+		out = append(out,
+			ruleCase{c.rule + " one " + c.elem, clean, c.rule, false},
+			ruleCase{c.rule + " two " + c.elem, broken, c.rule, true})
+	}
+	return out
 }
 
 // TestCIISyntaxRulesAreNotAskedOfUBL pins the half of the design the file

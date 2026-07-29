@@ -61,6 +61,14 @@ func validateCIISyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ciiSyntaxAllowanceRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiSyntaxHeaderRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiSyntaxTotalsRules(g, add)
 	return out
 }
 
@@ -421,6 +429,130 @@ func ciiSyntaxAllowanceRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
 		// count(ram:ActualAmount) <= 1
 		if atMostOnce(ap, "ActualAmount") {
 			add("CII-SR-440", "The Item price discount (BT-147) shall occur at most once")
+		}
+	}
+}
+
+// ciiSyntaxHeaderRules are the rules whose context is one of the two header
+// groups — ram:ApplicableHeaderTradeAgreement and
+// ram:ApplicableHeaderTradeSettlement — reached by their absolute path from the
+// document element.
+func ciiSyntaxHeaderRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, ag := range g.agreements {
+		for _, c := range []struct {
+			rule string
+			term string
+			path []string
+		}{
+			// count(ram:SellerTradeParty/ram:DefinedTradeContact) <= 1
+			{"CII-SR-455", "The Seller contact group (BG-6)", []string{"SellerTradeParty", "DefinedTradeContact"}},
+			// count(ram:BuyerTradeParty/ram:DefinedTradeContact) <= 1
+			{"CII-SR-456", "The Buyer contact group (BG-9)", []string{"BuyerTradeParty", "DefinedTradeContact"}},
+			// count(ram:SellerTradeParty/ram:URIUniversalCommunication) <= 1
+			{"CII-SR-459", "The Seller electronic address (BT-34)", []string{"SellerTradeParty", "URIUniversalCommunication"}},
+			// count(ram:BuyerTradeParty/ram:URIUniversalCommunication) <= 1
+			{"CII-SR-460", "The Buyer electronic address (BT-49)", []string{"BuyerTradeParty", "URIUniversalCommunication"}},
+		} {
+			if atMostOnce(ag, c.path...) {
+				add(c.rule, c.term+" shall occur at most once")
+			}
+		}
+	}
+
+	for _, st := range g.settlements {
+		// count(ram:ApplicableTradeTax/ram:TaxPointDate) <= 1. BT-7 is one
+		// document-level term, and the CII binding writes it inside a VAT breakdown
+		// group; an invoice with several breakdowns therefore has to choose one to
+		// carry it rather than repeating it in each.
+		if n := countAt(st, "ApplicableTradeTax", "TaxPointDate"); n > 1 {
+			add("CII-SR-461", fmt.Sprintf("The Value added tax point date (BT-7) shall occur at most once, not %d times", n))
+		}
+		// count(//ram:ApplicableTradeTax/ram:DueDateTypeCode) = 0 or
+		// count(distinct-values(//ram:ApplicableTradeTax/ram:DueDateTypeCode)) = 1.
+		// The counterpart of CII-SR-461 for BT-8, and CEN bounds it differently:
+		// the code may be repeated on every breakdown as long as they agree.
+		if len(g.dueDateTypeCodes) > 0 && distinctValues(g.dueDateTypeCodes) > 1 {
+			add("CII-SR-462", "All Value added tax point date codes (BT-8) shall have the same value")
+		}
+		// count(ram:SpecifiedTradeSettlementPaymentMeans[(normalize-space(
+		// ram:TypeCode) = '30' or normalize-space(ram:TypeCode) = '58') and
+		// not(ram:PayeePartyCreditorFinancialAccount/ram:IBANID or
+		// ram:PayeePartyCreditorFinancialAccount/ram:ProprietaryID)]) = 0.
+		//
+		// The count is of offending groups and the bound is zero, so the finding is
+		// one per settlement however many payment instructions offend.
+		for _, pm := range st.all("SpecifiedTradeSettlementPaymentMeans") {
+			if !ciiIsCreditTransfer(pm) || ciiHasAccountIdentifier(pm) {
+				continue
+			}
+			add("CII-SR-470", "A credit transfer (BG-16, BT-81 = 30 or 58) shall carry a Payment account identifier (BT-84) as an IBAN or a proprietary identifier")
+			break
+		}
+	}
+}
+
+// ciiIsCreditTransfer is `normalize-space(ram:TypeCode) = '30' or
+// normalize-space(ram:TypeCode) = '58'` — a general comparison over the
+// children, so a group with several codes matches if any of them is a credit
+// transfer.
+func ciiIsCreditTransfer(pm *ciiNode) bool {
+	for _, tc := range pm.all("TypeCode") {
+		switch normalizeSpace(tc.text) {
+		case "30", "58":
+			return true
+		}
+	}
+	return false
+}
+
+// ciiHasAccountIdentifier is `ram:PayeePartyCreditorFinancialAccount/ram:IBANID
+// or ram:PayeePartyCreditorFinancialAccount/ram:ProprietaryID` — an existence
+// test, so an empty element satisfies it. BR-50 is the rule about the value.
+func ciiHasAccountIdentifier(pm *ciiNode) bool {
+	for _, acc := range pm.all("PayeePartyCreditorFinancialAccount") {
+		if hasChild(acc, "IBANID") || hasChild(acc, "ProprietaryID") {
+			return true
+		}
+	}
+	return false
+}
+
+// ciiSyntaxTotalsRules are the eighteen rules whose context is
+// ram:SpecifiedTradeSettlementHeaderMonetarySummation. They bound every amount
+// the CII summation group can carry at one occurrence each, including the eleven
+// the EN 16931 core does not model — a document total this package has no
+// business term for is still a document total, and two of them is still
+// ambiguous.
+func ciiSyntaxTotalsRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, ms := range g.summations {
+		for _, c := range []struct {
+			rule string
+			elem string
+			term string
+		}{
+			{"CII-SR-477", "LineTotalAmount", "The Sum of Invoice line net amount (BT-106)"},
+			{"CII-SR-478", "ChargeTotalAmount", "The Sum of charges on document level (BT-108)"},
+			{"CII-SR-479", "AllowanceTotalAmount", "The Sum of allowances on document level (BT-107)"},
+			{"CII-SR-480", "TaxBasisTotalAmount", "The Invoice total amount without VAT (BT-109)"},
+			{"CII-SR-481", "RoundingAmount", "The Rounding amount (BT-114)"},
+			{"CII-SR-482", "GrandTotalAmount", "The Invoice total amount with VAT (BT-112)"},
+			{"CII-SR-483", "InformationAmount", "The information amount"},
+			{"CII-SR-484", "TotalPrepaidAmount", "The Paid amount (BT-113)"},
+			{"CII-SR-485", "TotalDiscountAmount", "The total discount amount"},
+			{"CII-SR-486", "TotalAllowanceChargeAmount", "The total allowance/charge amount"},
+			{"CII-SR-487", "DuePayableAmount", "The Amount due for payment (BT-115)"},
+			{"CII-SR-488", "RetailValueExcludingTaxInformationAmount", "The retail value excluding tax"},
+			{"CII-SR-489", "TotalDepositFeeInformationAmount", "The total deposit fee"},
+			{"CII-SR-490", "ProductValueExcludingTobaccoTaxInformationAmount", "The product value excluding tobacco tax"},
+			{"CII-SR-491", "TotalRetailValueInformationAmount", "The total retail value"},
+			{"CII-SR-492", "GrossLineTotalAmount", "The gross line total"},
+			{"CII-SR-493", "NetLineTotalAmount", "The net line total"},
+			{"CII-SR-494", "NetIncludingTaxesLineTotalAmount", "The net line total including taxes"},
+		} {
+			// count(ram:X) <= 1
+			if atMostOnce(ms, c.elem) {
+				add(c.rule, c.term+" shall occur at most once in the document totals (BG-22)")
+			}
 		}
 	}
 }
