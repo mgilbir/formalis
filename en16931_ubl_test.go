@@ -362,6 +362,49 @@ func TestInvoicingPeriodOrdersCalendarDays(t *testing.T) {
 	}
 }
 
+// TestVATIdentifierCountryPrefix pins BR-CO-09 across the lengths a VAT
+// identifier can have.
+//
+// The country-prefix extraction was guarded by len(v) >= 2, so a one-character
+// identifier produced no finding at all while "XX123", "123456789" and "de123"
+// were all correctly reported. A single character is not a country-prefixed VAT
+// identifier under any reading of the rule; an absent one is other rules'
+// business and stays a no-op here.
+func TestVATIdentifierCountryPrefix(t *testing.T) {
+	withSellerVATID := func(id string) []byte {
+		return []byte(strings.Replace(minimalUBL,
+			"<CompanyID>DE123456789</CompanyID>", "<CompanyID>"+id+"</CompanyID>", 1))
+	}
+	for _, tc := range []struct {
+		id            string
+		wantViolation bool
+	}{
+		{"DE123456789", false}, // an ISO 3166-1 alpha-2 prefix
+		{"EL123456789", false}, // Greece's VAT prefix, which is not its country code
+		{"D", true},            // too short to carry a prefix
+		{"X", true},
+		{"1", true},
+		{"XX123", true},     // two characters, but not a country
+		{"123456789", true}, // no prefix at all
+		{"de123", true},     // lowercase is not the code
+	} {
+		t.Run(tc.id, func(t *testing.T) {
+			got := hasFacturXRule(Validate(context.Background(), withSellerVATID(tc.id), ProfileEN16931), "BR-CO-09")
+			if got != tc.wantViolation {
+				t.Errorf("BR-CO-09 for seller VAT identifier %q: got %v, want %v", tc.id, got, tc.wantViolation)
+			}
+		})
+	}
+
+	// An absent identifier is not this rule's concern: BR-CO-26 reports that the
+	// seller cannot be identified, and BR-CO-09 says nothing.
+	noVATID := []byte(strings.Replace(minimalUBL,
+		"<PartyTaxScheme><CompanyID>DE123456789</CompanyID><TaxScheme><ID>VAT</ID></TaxScheme></PartyTaxScheme>", "", 1))
+	if hasFacturXRule(Validate(context.Background(), noVATID, ProfileEN16931), "BR-CO-09") {
+		t.Error("BR-CO-09 must not fire when there is no VAT identifier to prefix")
+	}
+}
+
 // TestVATAmountTolerance pins the EN 16931 ±1 tolerance of the VAT-breakdown
 // amount check (BR-CO-17): per-line rounding drift within one currency unit is
 // accepted, a larger drift is flagged.
