@@ -33,14 +33,12 @@ var rsPIB = regexp.MustCompile(`^RS(\d{9}|\d{13})$`)
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateSRBDT(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateSRBDT(r, p))
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the rule families neither rule set evaluates — the union of
+// Coverage(SourceEN16931) and Coverage(SourceSRBDT).
+func ValidateSRBDT(ctx context.Context, xmlData []byte) Report {
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceSRBDT}, validateSRBDT)
 }
 
 func validateSRBDT(r *run, p *parsed) []Violation {

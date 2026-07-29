@@ -22,14 +22,15 @@ import "context"
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateCIUSPT(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateCIUSPT(r, p))
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the rule families neither rule set evaluates — the union of
+// Coverage(SourceEN16931) and Coverage(SourceCIUSPT). This is the call the
+// coverage machinery was built for: a document with no findings is not a
+// document that passed CIUS-PT, because BR-CIUS-PT-13/15/17/18 and 24..63 were
+// never run, and Report.Conformant says so.
+func ValidateCIUSPT(ctx context.Context, xmlData []byte) Report {
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceCIUSPT}, validateCIUSPT)
 }
 
 func validateCIUSPT(r *run, p *parsed) []Violation {

@@ -66,20 +66,26 @@ type treeValidator struct {
 // returns an empty slice holds on all four of them, and the single parse per
 // exported call that makes maxNodes a property of the document rather than of
 // the entry point is preserved: nothing below here reads the bytes again.
-func (t treeValidator) validate(ctx context.Context, xmlData []byte) []Violation {
+//
+// Every exit is also wrapped in newReport under this format's own Source, so
+// the coverage claim is the same on all four: these validators check the
+// mandatory structure and code lists rather than the whole XSD their authority
+// publishes, and that is true of a document they refused as much as of one they
+// read to the end.
+func (t treeValidator) validate(ctx context.Context, xmlData []byte) Report {
 	r := newRun(ctx)
 	root, err := parseCII(r, xmlData)
 	if err != nil {
 		// syntaxViolation returns nothing when the parse was stopped rather than
 		// broken; the RuleLimit trip r.finish appends is then the whole answer.
-		return r.finish(syntaxViolation(err))
+		return newReport(r.finish(syntaxViolation(err)), t.source)
 	}
 	if !t.accepts(root) {
-		return r.finish([]Violation{{Source: t.source, Rule: t.rootRule, Message: t.rootMsg}})
+		return newReport(r.finish([]Violation{{Source: t.source, Rule: t.rootRule, Message: t.rootMsg}}), t.source)
 	}
 	var out []Violation
 	t.check(root, adder(&out, t.source))
-	return r.finish(out)
+	return newReport(r.finish(out), t.source)
 }
 
 // rootNamed accepts a document whose root element carries one of the given local

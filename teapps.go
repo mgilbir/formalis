@@ -29,8 +29,13 @@ func IsTEAPPS(xmlData []byte) (bool, error) {
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateTEAPPS(ctx context.Context, xmlData []byte) []Violation {
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// This validator checks the mandatory structure and code lists rather than the
+// whole schema its authority publishes, so the Report is never Conformant even
+// for a document with no findings: Report.NotEvaluated, from Coverage(SourceTEAPPS),
+// says what was not checked.
+func ValidateTEAPPS(ctx context.Context, xmlData []byte) Report {
 	return teappsValidator.validate(ctx, xmlData)
 }
 

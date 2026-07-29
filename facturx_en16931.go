@@ -254,17 +254,21 @@ func (n *ciiNode) str(path ...string) string {
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func Validate(ctx context.Context, xmlData []byte, profile Profile) []Violation {
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the EN 16931 rule families this package does not evaluate —
+// see Coverage(SourceEN16931), which is not empty — so Report.Conformant is
+// false even for a document with no findings. Report says why.
+func Validate(ctx context.Context, xmlData []byte, profile Profile) Report {
 	if !knownProfile(profile) {
-		return unknownProfile(profile)
+		// No Source: a rejected Profile chose no rule set, so there is no
+		// coverage to report. The RuleProfile finding is what makes the Report
+		// incomplete.
+		return newReport(unknownProfile(profile))
 	}
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateEN16931(r, p.inv, profile))
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931}, func(r *run, p *parsed) []Violation {
+		return validateEN16931(r, p.inv, profile)
+	})
 }
 
 // unknownProfile reports a Profile this package does not implement, as the one
@@ -335,6 +339,27 @@ func parseEN16931(r *run, xmlData []byte) (*parsed, error) {
 		return &parsed{root: root, inv: inv}, nil
 	}
 	return nil, fmt.Errorf("the invoice XML root %q is neither a CrossIndustryInvoice (CII) nor a UBL Invoice/CreditNote", root.name)
+}
+
+// modelValidate is the whole body of every exported entry point that validates
+// against the syntax-neutral model: parse once, route a parse failure through
+// syntaxViolation, run the rule body, and report the coverage of the rule sets
+// it ran.
+//
+// It is to the EN 16931 half what treeValidator is to the national half, and it
+// exists for the same reason: nine entry points were writing out the same four
+// lines, and the coverage claim is now one of them. A validator that named its
+// own sources at the exit it happens to take could name a different set on the
+// parse-failure path than on the success path, and Report.NotEvaluated would
+// then depend on whether the document parsed. Here both paths pass the same
+// sources.
+func modelValidate(ctx context.Context, xmlData []byte, sources []Source, check func(*run, *parsed) []Violation) Report {
+	r := newRun(ctx)
+	p, err := parseEN16931(r, xmlData)
+	if err != nil {
+		return newReport(r.finish(syntaxViolation(err)), sources...)
+	}
+	return newReport(r.finish(check(r, p)), sources...)
 }
 
 // findAll returns every descendant (self included) with the given local name.

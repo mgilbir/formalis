@@ -36,14 +36,14 @@ var nlciusTypeCodes = map[string]bool{"380": true, "381": true, "384": true, "38
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateNLCIUS(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateNLCIUS(r, p))
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the rule families neither rule set evaluates. NLCIUS is the
+// one CIUS here whose fatal rules are implemented in full; its entry in the
+// coverage table is the advisory BR-NL-19..35 alone. The EN 16931 core it runs
+// on is another matter — see Coverage(SourceEN16931).
+func ValidateNLCIUS(ctx context.Context, xmlData []byte) Report {
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceNLCIUS}, validateNLCIUS)
 }
 
 func validateNLCIUS(r *run, p *parsed) []Violation {

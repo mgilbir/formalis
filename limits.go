@@ -53,10 +53,18 @@ import (
 // — so that a caller draining ValidateFacturX's mixed slice of container and
 // invoice findings has one rule to look for and not two.
 //
-// The property that matters: a stopped run never returns an empty slice. A
-// caller testing len(v) == 0 for "valid" gets "not valid"; a caller filtering
-// with IsCheckerViolation gets "unknown". Neither gets a clean bill of health
-// from a run that did not look.
+// The property that matters: a stopped run never returns an empty Violations
+// slice. A caller testing len(r.Violations) == 0 for "valid" gets "not valid";
+// a caller filtering with IsCheckerViolation gets "unknown". Neither gets a
+// clean bill of health from a run that did not look.
+//
+// Report.Complete is where this generalises. A stopped run is one of two ways a
+// validator can fail to have seen everything — the other is a rule set that
+// does not implement every rule its authority publishes — and Complete is false
+// for both, so Report.Conformant is the one predicate that is safe to key on.
+// The RuleLimit finding stays exactly as it is: Complete reads it, rather than
+// replacing it, so a caller that already routes on RuleLimit keeps working and
+// pdf0's own container guards keep the same meaning inside a mixed slice.
 //
 // This is also why a parse failure has to be told apart from a stopped parse.
 // Returning RuleSyntax ("not well-formed") when the run was merely cancelled

@@ -49,14 +49,12 @@ var beExemptionReasonCodes = map[string]bool{
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateUBLBE(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateUBLBE(r, p))
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the rule families neither rule set evaluates — the union of
+// Coverage(SourceEN16931) and Coverage(SourceUBLBE).
+func ValidateUBLBE(ctx context.Context, xmlData []byte) Report {
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceUBLBE}, validateUBLBE)
 }
 
 func validateUBLBE(r *run, p *parsed) []Violation {
