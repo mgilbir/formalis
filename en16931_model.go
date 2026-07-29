@@ -380,12 +380,22 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 	if inv.vatPointDate != "" && inv.period.desc != "" {
 		add("BR-CO-03", "the Value added tax point date (BT-7) and code (BT-8) are mutually exclusive")
 	}
-	// BR-CO-09: each VAT identifier (BT-31/63/48) shall carry a country-code prefix.
+	// BR-CO-09: each VAT identifier (BT-31/63/48) shall carry a country-code
+	// prefix — an ISO 3166-1 alpha-2 code, plus "EL" for Greece, which uses a VAT
+	// prefix that is not its country code.
+	//
+	// An identifier too short to hold a two-character prefix is a violation, not a
+	// reason to look away: "D" is not a country-prefixed VAT identifier under any
+	// reading of the rule, and the guard that skipped it reported nothing while
+	// "XX123", "123456789" and "de123" were all correctly reported. An absent
+	// identifier stays a no-op — presence is BR-CO-26's and the CIUS layer's
+	// business, not this rule's.
 	for _, v := range []string{inv.sellerVATIDValue, inv.taxRepVATIDValue, inv.buyerVATIDValue} {
-		if len(v) >= 2 {
-			if p := v[:2]; !en16931Countries[p] && p != "EL" {
-				add("BR-CO-09", fmt.Sprintf("VAT identifier (%q) shall have a country-code prefix", v))
-			}
+		if v == "" {
+			continue
+		}
+		if len(v) < 2 || (!en16931Countries[v[:2]] && v[:2] != "EL") {
+			add("BR-CO-09", fmt.Sprintf("VAT identifier (%q) shall have a country-code prefix", v))
 		}
 	}
 	// BR-CO-26: the buyer must be able to identify the seller (BT-29/30/31).
@@ -607,11 +617,15 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 		// BR-CO-17: BT-117 = BT-116 x (BT-119 / 100), rounded to two decimals. The
 		// EN 16931 tolerance is ±1 (vatAmountTolerance), not exact, because per-line
 		// VAT rounding accumulates into the breakdown amount.
+		// Named pct, not r: r is the *run in this scope, and every other
+		// per-collection loop in this function polls r.stopped(). Shadowing it with
+		// a float64 makes adding that poll here — the natural next change — a
+		// compile error at best, and go vet does not flag the shadow.
 		b, okB := parseAmount(tt.basis)
 		c, okC := parseAmount(tt.calc)
-		r, okR := parseAmount(tt.rate)
-		if okB && okC && okR && math.Abs(round2(b*r/100)-c) >= vatAmountTolerance {
-			add("BR-CO-17", fmt.Sprintf("VAT category tax amount (BT-117=%.2f) shall equal taxable amount (BT-116=%.2f) x rate (BT-119=%.2f%%)", c, b, r))
+		pct, okR := parseAmount(tt.rate)
+		if okB && okC && okR && math.Abs(round2(b*pct/100)-c) >= vatAmountTolerance {
+			add("BR-CO-17", fmt.Sprintf("VAT category tax amount (BT-117=%.2f) shall equal taxable amount (BT-116=%.2f) x rate (BT-119=%.2f%%)", c, b, pct))
 		}
 		if okC {
 			vatTotal += c
