@@ -258,8 +258,9 @@ func TestWrongRootIsNotReportedAsMalformed(t *testing.T) {
 // TestCancelledRunReportsOnlyLimit pins case (d) over the whole exported
 // surface, where TestStoppedRunIsNotReportedAsBadSyntax walks a sample. A run
 // that stopped has read nothing it can testify about, so RuleLimit is the whole
-// answer: not empty (which reads as valid), not RuleSyntax (which accuses a
-// document the checker never finished reading), and nothing from any rule set.
+// answer: not empty (which reads as valid), not an error and not RuleRoot (either
+// of which says something about a document the checker never finished reading),
+// and nothing from any rule set.
 func TestCancelledRunReportsOnlyLimit(t *testing.T) {
 	for name, fn := range allValidators {
 		t.Run(name, func(t *testing.T) {

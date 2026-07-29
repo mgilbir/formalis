@@ -37,8 +37,8 @@ var allSources = []Source{
 
 // completeSources are the Sources whose rule sets this package does not claim
 // to have gaps in. SourceChecker is the only one, and only because it publishes
-// no rules at all: RuleLimit, RuleSyntax and RuleProfile are this package's
-// statements about its own run.
+// no rules at all: RuleLimit, RuleProfile and RuleRoot are this package's
+// statements about its own run and about the file it was handed.
 //
 // If a Source is ever moved here it means someone finished implementing an
 // authority's rule set, which is exactly the change that should be hard to make
@@ -866,4 +866,36 @@ func coverageText(src Source) string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// TestEveryValidatorNamesAFatalGap is why Conformant is false for every document
+// today, stated as the property rather than as the consequence.
+//
+// Complete being false everywhere follows from the table being non-empty, which
+// TestNoRuleSetIsCompleteToday records. Conformant needs more than that, because
+// it passes over advisory gaps: it is false only because every validator's report
+// names a gap its authority flags fatal. NLCIUS is the one rule set whose own gap
+// is purely advisory, and it reaches the same answer because every CIUS validator
+// also runs the EN 16931 core, whose two unimplemented fatal UBL-CR-* rules are a
+// fatal gap.
+//
+// When that stops being true — when a rule set's last fatal gap closes — this
+// test fails and says so, which is the moment Conformant starts returning true
+// for documents and therefore the moment that deserves a deliberate change.
+func TestEveryValidatorNamesAFatalGap(t *testing.T) {
+	ctx := context.Background()
+	for name, fn := range allValidators {
+		t.Run(name, func(t *testing.T) {
+			var fatal []string
+			for _, g := range mustReport(t, ctx, fn, []byte(unknownRoot)).NotEvaluated {
+				if g.Severity == SeverityFatal {
+					fatal = append(fatal, g.Rules)
+				}
+			}
+			if len(fatal) == 0 {
+				t.Errorf("%s names no fatal coverage gap, so Conformant now depends only on the findings. "+
+					"If a rule set's fatal half is finished, say so in the commit", name)
+			}
+		})
+	}
 }
