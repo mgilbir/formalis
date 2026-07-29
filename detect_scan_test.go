@@ -647,3 +647,71 @@ func TestDetectRoutesTheCorpus(t *testing.T) {
 	t.Logf("routed %d corpus documents to the format their corpus publishes (%d other document types skipped)",
 		routed, unrecognised)
 }
+
+// TestScanRetainsOnlyWhatItCaptures is the precise version of the claim
+// detect.go opens with.
+//
+// The scan's saving is that nothing accumulates *per element*: a document of
+// millions of siblings costs it nothing, which is what
+// TestDetectionMemoryDoesNotScaleWithInput measures. What it is not is free of
+// the document's size, because the handful of elements whose text it does keep
+// are kept whole — and detect.go used to claim otherwise ("the cost is set by
+// the nesting rather than by the size", "a few short strings"). Nothing makes
+// those strings short.
+//
+// So both halves are pinned here: an element the scan ignores costs it nothing
+// however large, and an element it captures costs about one copy. If a cap on
+// the capture is ever added, the second half is where that decision surfaces —
+// and it must be weighed against TestScanMatchesTreeDetection, since the
+// predicates match substrings and a truncated capture could route a document
+// differently from the tree.
+func TestScanRetainsOnlyWhatItCaptures(t *testing.T) {
+	if testing.Short() {
+		t.Skip("allocates ~40 MB per case")
+	}
+	const size = 20 << 20
+	doc := func(elem string) []byte {
+		var b strings.Builder
+		b.Grow(size + 128)
+		b.WriteString(`<Invoice><` + elem + `>`)
+		b.WriteString(strings.Repeat("x", size))
+		b.WriteString(`</` + elem + `></Invoice>`)
+		return []byte(b.String())
+	}
+
+	// An element no predicate consults. The text streams past and is dropped.
+	ignored := doc("Note")
+	_, retained := scanCost(t, ignored)
+	t.Logf("uncaptured element, %d bytes of text: scan retains %.3fx the input", size, retained)
+	if retained > 0.01 {
+		t.Errorf("the scan retained %.3fx the input from an element it does not capture; "+
+			"nothing accumulates for an element whose text is discarded", retained)
+	}
+
+	// A captured one. This is the part of the claim that was wrong.
+	captured := doc("CustomizationID")
+	allocated, retained := scanCost(t, captured)
+	t.Logf("captured element, %d bytes of text: scan retains %.2fx the input, allocates %.2fx", size, retained, allocated)
+	if retained < 0.9 {
+		t.Errorf("the scan retained only %.2fx the input from a captured element; it keeps the text whole, "+
+			"and a test that stops seeing that means the capture was silently bounded", retained)
+	}
+	if retained > 1.5 {
+		t.Errorf("the scan retained %.2fx the input from one captured element; it keeps one copy, not more", retained)
+	}
+
+	// And the answer still has to be the one the tree gives, which is the
+	// property any future cap would have to preserve.
+	d, err := scanShape(captured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := parseCII(newRun(context.Background()), captured)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.str("CustomizationID") != root.str("CustomizationID") {
+		t.Errorf("the scan captured %d bytes and the tree %d; they must agree",
+			len(d.str("CustomizationID")), len(root.str("CustomizationID")))
+	}
+}

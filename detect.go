@@ -27,8 +27,27 @@ import (
 // docShape is what the predicates actually consult, and scanShape fills it in a
 // single pass that retains only the open elements — bounded by maxDepth — and
 // the few strings below. Nothing accumulates per element, so the cost is set by
-// the nesting rather than by the size, and detection no longer needs a node
-// budget at all: there is no tree to bound.
+// the nesting rather than by the element count, and detection no longer needs a
+// node budget at all: there is no tree to bound.
+//
+// "Rather than by the element count" is the exact claim, and the qualifier
+// matters. The scan is not free of the document's *size*: the strings below are
+// short in every document anyone has written, but nothing makes them short, and
+// a CustomizationID carrying 40 MB of character data is accumulated and retained
+// in full — measured at 1.0x the input retained and 5.2x allocated, the same
+// figures parseCII pays for the same bytes, because most of both is
+// encoding/xml's own buffering of a contiguous run. limits.go argues why that is
+// acceptable unbounded for the tree; it is acceptable here for the same reason
+// and one more: text cannot exceed the input, whereas the per-element cost the
+// scan exists to remove multiplies it by twenty-six.
+//
+// Capping the capture was considered and rejected. The predicates match
+// substrings of these strings (IsOIOUBL and IsPINT both use strings.Contains),
+// so a truncated capture could answer differently from the tree that
+// TestScanMatchesTreeDetection holds it identical to — which would mean one
+// document routed two ways, the single failure this scan's parity contract
+// exists to make impossible. TestScanRetainsOnlyWhatItCaptures pins what is and
+// is not retained.
 //
 // Note what does *not* work: parsing into a tree but capping it at depth 2. In
 // the document that motivates this, the millions of siblings *are* the root's

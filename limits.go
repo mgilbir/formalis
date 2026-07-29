@@ -40,6 +40,68 @@ import (
 // A caller with no deadline at all still pays those costs, which is what makes
 // them limits rather than latency.
 //
+// # What the budgets bound, and what they deliberately do not
+//
+// maxDepth bounds how deep a document nests and maxNodes bounds how many
+// elements it has. Neither bounds the character data *inside* an element, and
+// nothing else does either: a document of two elements whose inner one holds
+// 40 MB of text parses cleanly, spending 2 of the 1,000,000-element budget. That
+// is a deliberate gap rather than an oversight, and the measurement is why.
+//
+// Cost is stated as a multiple of the input, because the input is the one thing
+// a caller can bound before the call. Measured with runtime.MemStats around
+// parseCII, at 10 MB and again at 40 MB, the multiple is the same at both sizes
+// — it is a constant, not a growth rate:
+//
+//	shape of the character data          allocated   retained
+//	one contiguous run                      5.2x       1.00x
+//	one run split into 4-byte tokens        6.7x       0.36x
+//	many 4 KB text nodes                    2.1x       1.02x
+//	900 nested elements, all open at once   2.1x       1.06x
+//
+// Retained never exceeds about 1x, whatever the shape, because every string in
+// the finished tree is a copy of a stretch of the input and closeNode releases
+// each accumulator as its element ends. Allocated is higher because the run is
+// buffered on the way in, appended to a second time, and copied once at the end,
+// and because append grows by doubling.
+//
+// Most of that is not this package's to bound. scanShape reads the same 40 MB
+// document building no tree and capturing nothing, and still allocates 3.2x it:
+// that is encoding/xml's own buffer, which materialises a whole contiguous
+// character-data run before parseCII is ever handed the token. parseCII adds
+// 2.0x on top of that — the textBuf and the string() copy — and no budget here
+// can reach the rest.
+//
+// Set that against the element cost maxNodes exists for. The same measurement
+// over a document of `<a/>` siblings gives 83x allocated and 26x retained, 105
+// bytes per element. Character data is between twelve and forty times cheaper
+// per input byte than markup, and — this is the part that decides it — it cannot
+// exceed the input, while the element count can multiply it. At the practical
+// 100 MB ceiling cited above, all-text is roughly 110 MB retained and under
+// 700 MB allocated across the parse; all-markup was the multi-gigabyte case
+// maxNodes was written to stop.
+//
+// So there is no text budget, for three reasons rather than only the size:
+//
+//   - A cap could not recover most of the cost. The decoder has already
+//     materialised the run before parseCII sees the token, so bounding textBuf
+//     removes the 2.0x this package adds and leaves the 3.2x it does not own.
+//   - It would have to stop the parse rather than truncate, because every other
+//     guard here stops rather than hand the rule engine a partial document — and
+//     stopping means refusing a document outright.
+//   - The number could not be justified the way maxDepth and maxNodes are, which
+//     is by sitting a hundredfold above the largest real document. A text cap has
+//     no such headroom, because one legitimate business term genuinely does carry
+//     megabytes in a single element: BT-125, the attached document, embedded as
+//     base64. Across the 1613 documents in testdata the largest text node is
+//     3,285,640 bytes of EmbeddedDocumentBinaryObject — and it is 99.8% of the
+//     largest document in the corpus, a Romanian B2G invoice that must validate.
+//     A cap tight enough to be worth having would refuse it.
+//
+// TestElementTextIsBoundedOnlyByTheInput pins the table above, so it is checked
+// rather than asserted, and TestBigTextDoesNotSpendTheNodeBudget pins the
+// property that motivates it.
+//
 // # What a stopped run reports
 //
 // A cancelled run, and a run that trips a budget, have the same problem: the
@@ -78,9 +140,17 @@ import (
 // they could read the document, but take no context. There is nothing to
 // cancel: they do not build a tree, so there is no budget for them to trip and
 // no long-running phase for a deadline to interrupt. scanShape reads the
-// document once, retaining only the open elements and a few short strings, so
-// their cost is a single linear pass in memory set by the nesting rather than
-// by the size. See detect.go.
+// document once and retains only the open elements — bounded by maxDepth — and
+// the text of the handful of elements it captures, so its cost is a single
+// linear pass whose memory is set by the nesting and not by the element count.
+//
+// It is not independent of the document's size, and the section above is why:
+// a CustomizationID holding 40 MB of text is retained in full, at the same 1x
+// and 5.2x the tree pays for the same bytes. What the scan removes is the
+// per-element amplification, which is the term that made detection the cheapest
+// way to reach a gigabyte; capturing less is not on offer, because the
+// predicates match substrings of those strings and a truncated capture would let
+// the scan and the tree route one document two ways. See detect.go.
 //
 // Their error therefore reports what the document is — malformed XML, an
 // encoding this package does not implement, nesting past the cap — and never
