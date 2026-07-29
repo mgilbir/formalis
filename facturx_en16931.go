@@ -758,6 +758,21 @@ func mapCII(root *ciiNode) *en16931Invoice {
 	inv.buyerSubentity = agr.str("BuyerTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
 	inv.deliverToSubentity = tx.str("ApplicableHeaderTradeDelivery", "ShipToTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
 	inv.taxRepSubentity = agr.str("SellerTaxRepresentativeTradeParty", "PostalTradeAddress", "CountrySubDivisionName")
+	// BT-21, the Invoice note subject code (BR-CL-08). CII gives it an element of
+	// its own, and the CEN rule's context is every ram:SubjectCode in the document
+	// — a note on a line carries the same code list as one on the head.
+	for _, sc := range root.findAll("SubjectCode") {
+		if v := strings.TrimSpace(sc.text); v != "" {
+			inv.noteSubjectCodes = append(inv.noteSubjectCodes, v)
+		}
+	}
+	// BT-71, the Deliver-to location identifier (BR-CL-26). In CII it is the
+	// ship-to party's ram:GlobalID; the scheme is what the rule constrains.
+	for _, g := range tx.child("ApplicableHeaderTradeDelivery", "ShipToTradeParty").all("GlobalID") {
+		if s := g.attr("schemeID"); s != "" {
+			inv.deliverToLocSchemes = append(inv.deliverToLocSchemes, s)
+		}
+	}
 	return inv
 }
 func round2(f float64) float64 { return math.Round(f*100) / 100 }
@@ -987,6 +1002,30 @@ func ublDocumentTaxTotal(root *ciiNode, currency string) *ciiNode {
 	return candidates[0]
 }
 
+// ublNoteSubjectCode reads the Invoice note subject code (BT-21) out of a UBL
+// note, or returns "" when the note carries none.
+//
+// The UBL binding has no element for BT-21. It writes the code into the note
+// text as a "#CODE#" prefix, and the CEN rule reproduces that convention
+// exactly: the note carries a subject code only when it contains a '#' *and*
+// the text between the first two '#' characters is exactly three characters
+// long. Anything else — a note with no '#', a note that mentions "#" in prose,
+// a prefix of some other length — is a note with no subject code, not a note
+// with an invalid one. Reading it any more liberally would turn "see #1 above"
+// into a code-list violation.
+func ublNoteSubjectCode(note string) string {
+	i := strings.IndexByte(note, '#')
+	if i < 0 {
+		return ""
+	}
+	rest := note[i+1:]
+	j := strings.IndexByte(rest, '#')
+	if j != 3 {
+		return ""
+	}
+	return rest[:3]
+}
+
 // mapUBL extracts the EN 16931 business terms from an OASIS UBL Invoice or
 // CreditNote. The tree is parsed namespace-agnostically (parseCII), so the cbc:/
 // cac: prefixes are already stripped to local names. The document-type element
@@ -1212,6 +1251,23 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	for _, pm := range root.all("PaymentMeans") {
 		if id := pm.str("PaymentID"); id != "" {
 			inv.paymentIDs = append(inv.paymentIDs, id)
+		}
+	}
+	// BT-21, the Invoice note subject code (BR-CL-08). UBL has no element for it:
+	// the binding prefixes the note text with "#CODE#", and the CEN rule reads the
+	// code back out of cbc:Note on the document element only — a note on an
+	// invoice line (BT-127) carries no subject code.
+	for _, n := range root.all("Note") {
+		if c := ublNoteSubjectCode(n.text); c != "" {
+			inv.noteSubjectCodes = append(inv.noteSubjectCodes, c)
+		}
+	}
+	// BT-71, the Deliver-to location identifier (BR-CL-26).
+	for _, loc := range root.findAll("DeliveryLocation") {
+		for _, id := range loc.all("ID") {
+			if s := id.attr("schemeID"); s != "" {
+				inv.deliverToLocSchemes = append(inv.deliverToLocSchemes, s)
+			}
 		}
 	}
 	return inv

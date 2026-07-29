@@ -61,6 +61,15 @@ type en16931Invoice struct {
 	currencyIDs   []string // amount @currencyID values (BR-CL-03)
 	objectSchemes []string // invoiced object identifier schemes (BR-CL-07)
 
+	// noteSubjectCodes is BT-21, the Invoice note subject code, once per note that
+	// carries one (BR-CL-08). The two syntaxes spell it very differently — CII has
+	// an element for it, UBL encodes it as a "#CODE#" prefix on the note text — so
+	// the mappers, not the rule, are where that difference is resolved.
+	noteSubjectCodes []string
+	// deliverToLocSchemes is the scheme identifier of each Deliver-to location
+	// identifier (BT-71) that carries one (BR-CL-26).
+	deliverToLocSchemes []string
+
 	// Address/contact detail (optional in EN 16931; several are mandatory in the
 	// XRechnung CIUS).
 	buyerReference       string // BT-10 Buyer reference
@@ -366,6 +375,28 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 	for _, s := range inv.objectSchemes {
 		if !en16931RefTypeCodes[s] {
 			add("BR-CL-07", fmt.Sprintf("Object identifier scheme (%q) shall be a restriction of UNTDID 1153", s))
+		}
+	}
+	// BR-CL-08: the Invoice note subject code (BT-21) against UNTDID 4451. Both
+	// bindings carry the same code list; the mappers already resolved the very
+	// different ways they spell the term.
+	//
+	// The list is the CEN genericode, which is what the CII binding embeds. The
+	// UBL binding embeds a copy that is eighteen codes short of it (BAT..BBB,
+	// BMF..BMH, CCJ..CCO), so a UBL invoice using one of those newer UNTDID 4451
+	// codes is reported by the published UBL Schematron and not here. Following
+	// the stale copy would mean this package minting a finding against a code the
+	// authority's own code list says is valid.
+	for _, c := range inv.noteSubjectCodes {
+		if !en16931TextSubjectCodes[c] {
+			add("BR-CL-08", fmt.Sprintf("Invoice note subject code (BT-21=%q) shall be coded using UNTDID 4451", c))
+		}
+	}
+	// BR-CL-26: the Deliver-to location identifier scheme (BT-71) against the
+	// ISO 6523 ICD list — the same list BR-CL-10/11/21 use.
+	for _, s := range inv.deliverToLocSchemes {
+		if !en16931ICD[s] {
+			add("BR-CL-26", fmt.Sprintf("Deliver to location identifier scheme (BT-71=%q) shall belong to the ISO 6523 ICD list", s))
 		}
 	}
 	for _, c := range inv.currencyIDs {
