@@ -14,13 +14,43 @@ XRechnung, NLCIUS) — and each CIUS adds its own rule layer.
 import "github.com/mgilbir/formalis"
 
 // Validate against a specific profile:
-v := formalis.Validate(xml, formalis.ProfileEN16931)
+v := formalis.Validate(ctx, xml, formalis.ProfileEN16931)
 
 // Or let the invoice route itself by its CustomizationID (BT-24):
-v := formalis.ValidateCIUS(xml)
+v := formalis.ValidateCIUS(ctx, xml)
 
 for _, x := range v {
     fmt.Printf("%s: %s\n", x.Rule, x.Message)
+}
+```
+
+Validation is bounded and honours `ctx`. A run that stops early — a cancelled
+context, or a guard tripped by a hostile document — reports a `formalis.RuleLimit`
+violation rather than returning what it happened to collect, so an empty result
+always means "read in full, nothing to report":
+
+```go
+for _, x := range v {
+    if formalis.IsCheckerViolation(x) {
+        // The checker stopped. The invoice is neither valid nor invalid.
+    }
+}
+```
+
+The `Is*` predicates identify a document's format. They answer three ways, not
+two: `(true, nil)` yes, `(false, nil)` read it and it is some other format, and a
+non-nil error for input that could not be read at all — malformed XML, an
+encoding this package does not implement, or a tripped guard. A truncated
+Facturae invoice is not the same thing as "not a Facturae invoice", and routing
+on the difference is the point:
+
+```go
+ok, err := formalis.IsFacturae(xml)
+switch {
+case err != nil:
+    // Could not tell. Do not dispatch on this.
+case ok:
+    v = formalis.ValidateFacturae(ctx, xml)
 }
 ```
 

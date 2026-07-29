@@ -20,7 +20,12 @@ func TestKSeFCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !IsKSeF(data) {
+		ok, err := IsKSeF(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as KSeF", filepath.Base(f))
 			continue
 		}

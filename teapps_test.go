@@ -15,7 +15,12 @@ func TestTEAPPSCorpus(t *testing.T) {
 	}
 	for _, f := range files {
 		data, _ := os.ReadFile(f)
-		if !IsTEAPPS(data) {
+		ok, err := IsTEAPPS(data)
+		if err != nil {
+			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
+			continue
+		}
+		if !ok {
 			t.Errorf("%s: not recognised as TEAPPS", filepath.Base(f))
 			continue
 		}

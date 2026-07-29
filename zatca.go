@@ -30,13 +30,20 @@ func zatcaDocRef(root *ciiNode, id string) bool {
 
 // IsZATCA reports whether the XML is a ZATCA (Fatoora) UBL invoice, identified by
 // its reporting/clearance ProfileID.
-func IsZATCA(xmlData []byte) bool {
-	r := newRun(nil)
-	root, err := parseCII(r, xmlData)
-	if err != nil || (root.name != "Invoice" && root.name != "CreditNote") {
-		return false
+//
+// A non-nil error means the document could not be read — malformed XML, an
+// unsupported character encoding, or a guard that tripped — and the bool is
+// meaningless. It is distinct from (false, nil), which says the document was
+// read and is some other format.
+func IsZATCA(xmlData []byte) (bool, error) {
+	root, err := detectRoot(xmlData)
+	if err != nil {
+		return false, err
 	}
-	return strings.Contains(strings.ToLower(root.str("ProfileID")), "reporting") || zatcaDocRef(root, "ICV")
+	if root.name != "Invoice" && root.name != "CreditNote" {
+		return false, nil
+	}
+	return strings.Contains(strings.ToLower(root.str("ProfileID")), "reporting") || zatcaDocRef(root, "ICV"), nil
 }
 
 // ValidateZATCA validates a Saudi ZATCA UBL invoice against its KSA-mandatory
