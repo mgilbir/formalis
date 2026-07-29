@@ -13,10 +13,10 @@ import (
 // allValidators is every exported entry point that reports a Report, keyed by
 // the name it is called by. It is the surface the Source invariants below are
 // checked over — and, since the return type became Report, the surface the
-// coverage invariants in report_test.go are checked over too; a new validator
-// belongs here.
-var allValidators = map[string]func(context.Context, []byte) Report{
-	"Validate":               func(c context.Context, b []byte) Report { return Validate(c, b, ProfileEN16931) },
+// coverage invariants in report_test.go and the error contract in
+// error_contract_test.go are checked over too; a new validator belongs here.
+var allValidators = map[string]validator{
+	"Validate":               withProfile(ProfileEN16931),
 	"ValidateCIUS":           ValidateCIUS,
 	"ValidateXRechnung":      ValidateXRechnung,
 	"ValidatePeppol":         ValidatePeppol,
@@ -111,26 +111,40 @@ var corpusSweep = sync.OnceValue(func() *sweep {
 	}
 	ctx := context.Background()
 
-	add := func(vname string, r Report) {
-		s.defects = append(s.defects, s.claims.record(vname, r.Violations)...)
-		for _, v := range r.Violations {
-			if s.byRule[v.Source] == nil {
-				s.byRule[v.Source] = map[string]bool{}
+	// Curried, so the (Report, error) pair of one validator call can be passed
+	// straight in: Go allows a multi-value call as an argument list only when it
+	// is the whole argument list, and the validator's name has to arrive too.
+	add := func(vname string) func(Report, error) {
+		return func(r Report, err error) {
+			if err != nil {
+				// Every document this sweep reads is readable — the fixtures are
+				// written below and TestDetectRoutesTheCorpus asserts it of the
+				// whole corpus — so an error is a defect, and defects is already
+				// how this sweep reports one. t.Fatalf is not available: the sweep
+				// runs outside any single test.
+				s.defects = append(s.defects, vname+" could not read a document this suite expects to be readable: "+err.Error())
+				return
 			}
-			s.byRule[v.Source][v.Rule] = true
-			if s.bySeverity[v.Source] == nil {
-				s.bySeverity[v.Source] = map[string]map[Severity]bool{}
+			s.defects = append(s.defects, s.claims.record(vname, r.Violations)...)
+			for _, v := range r.Violations {
+				if s.byRule[v.Source] == nil {
+					s.byRule[v.Source] = map[string]bool{}
+				}
+				s.byRule[v.Source][v.Rule] = true
+				if s.bySeverity[v.Source] == nil {
+					s.bySeverity[v.Source] = map[string]map[Severity]bool{}
+				}
+				if s.bySeverity[v.Source][v.Rule] == nil {
+					s.bySeverity[v.Source][v.Rule] = map[Severity]bool{}
+				}
+				s.bySeverity[v.Source][v.Rule][v.Severity] = true
 			}
-			if s.bySeverity[v.Source][v.Rule] == nil {
-				s.bySeverity[v.Source][v.Rule] = map[Severity]bool{}
-			}
-			s.bySeverity[v.Source][v.Rule][v.Severity] = true
 		}
 	}
 
 	for _, doc := range collidingDocs {
 		for vname, fn := range allValidators {
-			add(vname, fn(ctx, []byte(doc)))
+			add(vname)(fn(ctx, []byte(doc)))
 		}
 	}
 	_ = filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
@@ -148,7 +162,7 @@ var corpusSweep = sync.OnceValue(func() *sweep {
 		}
 		s.files++
 		for vname, fn := range allValidators {
-			add(vname, fn(ctx, data))
+			add(vname)(fn(ctx, data))
 		}
 		return nil
 	})
@@ -250,7 +264,7 @@ func countSources(c claims) int {
 func TestOrderXAndVATCategoryOAreDistinguishable(t *testing.T) {
 	ctx := context.Background()
 
-	order := ValidateOrderXML(ctx, []byte(`<SCRDMCCBDACIOMessageStructure/>`)).Violations
+	order := findings(t, ctx, ValidateOrderXML, []byte(`<SCRDMCCBDACIOMessageStructure/>`))
 	orderRules := map[string]bool{}
 	for _, v := range order {
 		if v.Source != SourceOrderX {
@@ -270,7 +284,7 @@ func TestOrderXAndVATCategoryOAreDistinguishable(t *testing.T) {
 
 	// An O line whose only breakdown group is categorised E: BR-O-01 fires.
 	oInvoice := strings.Replace(notSubjectToVATUBL, "<TaxCategory><ID>O</ID>", "<TaxCategory><ID>E</ID>", 1)
-	vat := Validate(ctx, []byte(oInvoice), ProfileEN16931).Violations
+	vat := findings(t, ctx, withProfile(ProfileEN16931), []byte(oInvoice))
 	foundBRO01 := false
 	for _, v := range vat {
 		if v.Rule != "BR-O-01" {
@@ -296,7 +310,7 @@ func TestOrderXAndVATCategoryOAreDistinguishable(t *testing.T) {
 func TestCheckerFindingsCarryTheCheckerSource(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	v := Validate(ctx, []byte(validCII), ProfileEN16931).Violations
+	v := findings(t, ctx, withProfile(ProfileEN16931), []byte(validCII))
 	if len(v) == 0 {
 		t.Fatal("a cancelled run returned nothing, which reads as valid")
 	}
@@ -309,19 +323,20 @@ func TestCheckerFindingsCarryTheCheckerSource(t *testing.T) {
 		}
 	}
 
-	// Malformed XML: a statement about the file, still made by the checker.
-	bad := Validate(context.Background(), []byte(`<a></b>`), ProfileEN16931).Violations
+	// A document that was read and is not an invoice: a statement about the
+	// document, still made by the checker rather than by any authority.
+	bad := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(unknownRoot))
 	if len(bad) != 1 {
-		t.Fatalf("malformed XML reported %d findings, want 1: %v", len(bad), bad)
+		t.Fatalf("a document that is not an invoice reported %d findings, want 1: %v", len(bad), bad)
 	}
-	if bad[0].Source != SourceChecker || bad[0].Rule != RuleSyntax {
-		t.Errorf("malformed XML reported %q/%q, want %q/%q",
-			bad[0].Source, bad[0].Rule, SourceChecker, RuleSyntax)
+	if bad[0].Source != SourceChecker || bad[0].Rule != RuleRoot {
+		t.Errorf("a document that is not an invoice reported %q/%q, want %q/%q",
+			bad[0].Source, bad[0].Rule, SourceChecker, RuleRoot)
 	}
-	// RuleSyntax is a defect in the document, not the checker giving up, so the
-	// predicate must not claim it.
+	// RuleRoot is a definite answer about the document, not the checker giving
+	// up, so the predicate must not claim it.
 	if IsCheckerViolation(bad[0]) {
-		t.Error("IsCheckerViolation claimed a malformed-document finding; it means 'the checker stopped'")
+		t.Error("IsCheckerViolation claimed a wrong-root finding; it means 'the checker stopped'")
 	}
 }
 

@@ -154,7 +154,12 @@ type scanFrame struct {
 // its descendants', which is what ciiNode.text held.
 func scanShape(xmlData []byte) (*docShape, error) {
 	dec := xml.NewDecoder(bytes.NewReader(xmlData))
-	dec.CharsetReader = xmlCharsetReader
+	// The same trap the tree parser uses, for the same reason and with the same
+	// result: a caller can tell "this file is corrupt" from "this producer emits
+	// an encoding we do not read" with errors.Is, and gets the same answer whether
+	// it asked a predicate or a validator.
+	var trap charsetTrap
+	dec.CharsetReader = trap.reader
 
 	var d docShape
 	var stack []scanFrame
@@ -166,11 +171,16 @@ func scanShape(xmlData []byte) (*docShape, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-			return nil, err
+			return nil, trap.classify(err)
 		}
 		switch t := tok.(type) {
 		case xml.StartElement:
 			if len(stack) >= maxDepth {
+				// Neither sentinel: a document this deep may be perfectly
+				// well-formed and in an encoding this package reads. It is refused
+				// for what it would cost the tree, which is why the validators
+				// answer the same document with a RuleLimit finding instead. See
+				// ErrMalformedXML.
 				return nil, fmt.Errorf("the XML nests deeper than %d elements", maxDepth)
 			}
 			name := t.Name.Local
@@ -253,7 +263,7 @@ func scanShape(xmlData []byte) (*docShape, error) {
 		d.close(&stack[i])
 	}
 	if !seenRoot {
-		return nil, fmt.Errorf("no root element")
+		return nil, fmt.Errorf("%w: no root element", ErrMalformedXML)
 	}
 	return &d, nil
 }
@@ -411,7 +421,13 @@ func (d Detection) Recognised() bool { return d.Source != SourceNone }
 //	if err != nil { ... }          // could not read it
 //	v := det.Validator()
 //	if v == nil { ... }            // read it, recognised nothing
-//	report := v(ctx, data)
+//	report, err := v(ctx, data)
+//
+// The validator's own error is for the same three inputs Detect's is — malformed
+// XML, an encoding this package does not implement — so a caller that got a
+// Detection has usually already ruled it out. It is returned anyway rather than
+// dropped, because the two passes read the bytes independently and nothing
+// guarantees the caller passed the same ones.
 //
 // Two of the mappings are worth stating. SourceEN16931 maps to ValidateCIUS
 // rather than to Validate: Detect has already established that the document
@@ -427,7 +443,7 @@ func (d Detection) Recognised() bool { return d.Source != SourceNone }
 // The returned function re-reads xmlData. Detection is a separate pass by
 // design — it builds no tree and spends no budget, which is what lets it run on
 // input the validator may go on to refuse.
-func (d Detection) Validator() func(context.Context, []byte) Report {
+func (d Detection) Validator() func(context.Context, []byte) (Report, error) {
 	switch d.Source {
 	case SourceEN16931:
 		return ValidateCIUS

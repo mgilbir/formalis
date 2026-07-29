@@ -29,7 +29,7 @@ func TestOSACorpus(t *testing.T) {
 			t.Errorf("%s: not recognised as OSA", filepath.Base(f))
 			continue
 		}
-		if v := ValidateOSA(context.Background(), data).Violations; len(v) != 0 {
+		if v := findings(t, context.Background(), ValidateOSA, data); len(v) != 0 {
 			t.Errorf("%s: expected 0 OSA violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -44,7 +44,7 @@ const minimalOSA = `<InvoiceData xmlns="http://schemas.nav.gov.hu/OSA/3.0/data">
 </InvoiceData>`
 
 func TestOSAMutations(t *testing.T) {
-	if v := ValidateOSA(context.Background(), []byte(minimalOSA)).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), ValidateOSA, []byte(minimalOSA)); len(v) != 0 {
 		t.Fatalf("baseline OSA not clean: %v", v)
 	}
 	cases := []struct{ name, from, want string }{
@@ -60,8 +60,8 @@ func TestOSAMutations(t *testing.T) {
 			if broken == minimalOSA {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateOSA(context.Background(), []byte(broken)).Violations, tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOSA(context.Background(), []byte(broken)).Violations)
+			if !hasFacturXRule(findings(t, context.Background(), ValidateOSA, []byte(broken)), tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, findings(t, context.Background(), ValidateOSA, []byte(broken)))
 			}
 		})
 	}

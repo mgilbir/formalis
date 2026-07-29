@@ -43,7 +43,7 @@ func IsTEAPPS(xmlData []byte) (bool, error) {
 // whole schema its authority publishes, so the Report is never Conformant even
 // for a document with no findings: Report.NotEvaluated, from Coverage(SourceTEAPPS),
 // says what was not checked.
-func ValidateTEAPPS(ctx context.Context, xmlData []byte) Report {
+func ValidateTEAPPS(ctx context.Context, xmlData []byte) (Report, error) {
 	return teappsValidator.validate(ctx, xmlData)
 }
 

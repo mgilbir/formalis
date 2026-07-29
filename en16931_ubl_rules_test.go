@@ -79,7 +79,7 @@ const (
 func TestUBLSyntaxRules(t *testing.T) {
 	// The fixture every case is built from must itself be clean, or a case that
 	// expects silence would be asserting nothing.
-	if v := Validate(context.Background(), []byte(minimalUBL), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(minimalUBL)); len(v) != 0 {
 		t.Fatalf("baseline UBL not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 
@@ -466,7 +466,7 @@ func TestUBLSyntaxRulesAreNotAskedOfCII(t *testing.T) {
 				`<SpecifiedTradeSettlementPaymentMeans><TypeCode>58</TypeCode></SpecifiedTradeSettlementPaymentMeans>`)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, v := range Validate(context.Background(), []byte(tc.doc), ProfileEN16931).Violations {
+			for _, v := range findings(t, context.Background(), withProfile(ProfileEN16931), []byte(tc.doc)) {
 				if strings.HasPrefix(v.Rule, "UBL-") {
 					t.Errorf("CII invoice reported the UBL binding rule %s: %s", v.Rule, v.Message)
 				}
@@ -483,7 +483,7 @@ func TestUBLSyntaxRulesCarryTheEN16931Source(t *testing.T) {
 		`<ContractDocumentReference><ID>C-1</ID></ContractDocumentReference>`+
 			`<ContractDocumentReference><ID>C-2</ID></ContractDocumentReference>`)
 	found := false
-	for _, v := range Validate(context.Background(), []byte(doc), ProfileEN16931).Violations {
+	for _, v := range findings(t, context.Background(), withProfile(ProfileEN16931), []byte(doc)) {
 		if v.Rule != "UBL-SR-01" {
 			continue
 		}

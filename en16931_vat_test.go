@@ -69,7 +69,7 @@ const allowChargeUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema
 // they account for BT-107/BT-108?
 func TestVATTaxableSumCoversAllowancesAndCharges(t *testing.T) {
 	// The conforming invoice is clean: 100 - 10 + 5 = 95.00 = BT-116.
-	if v := Validate(context.Background(), []byte(allowChargeUBL), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(allowChargeUBL)); len(v) != 0 {
 		t.Fatalf("baseline allowance/charge invoice not clean: %d violation(s): %v", len(v), v)
 	}
 
@@ -95,7 +95,7 @@ func TestVATTaxableSumCoversAllowancesAndCharges(t *testing.T) {
 		{"breakdown ignores the document charge", "90.00", "17.10", "112.10"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Validate(context.Background(), mutate(tc.basis, tc.tax, tc.grand), ProfileEN16931).Violations
+			v := findings(t, context.Background(), withProfile(ProfileEN16931), mutate(tc.basis, tc.tax, tc.grand))
 			if len(v) != 1 || v[0].Rule != "BR-S-08" {
 				t.Fatalf("want exactly one violation, BR-S-08; got %v", v)
 			}
@@ -135,7 +135,7 @@ func TestVATTaxableSumSkipsUnitemizedAllowances(t *testing.T) {
 	}
 	// BR-CO-11/BR-CO-12 report the unaccounted totals; BR-S-08 must not, because
 	// its operands are not all present.
-	v := Validate(context.Background(), []byte(unitemized), ProfileEN16931).Violations
+	v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(unitemized))
 	if hasFacturXRule(v, "BR-S-08") {
 		t.Errorf("BR-S-08 must not fire when BT-107/BT-108 are not itemized as BG-20/21 entries; got %v", v)
 	}
@@ -240,7 +240,7 @@ var notSubjectToVATUBL = strings.NewReplacer(
 // second finding.
 func TestNotSubjectToVATExclusivity(t *testing.T) {
 	// The all-O invoice is clean: one breakdown group, category O.
-	if v := Validate(context.Background(), []byte(notSubjectToVATUBL), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(notSubjectToVATUBL)); len(v) != 0 {
 		t.Fatalf(`baseline "Not subject to VAT" invoice not clean: %d violation(s): %v`, len(v), v)
 	}
 
@@ -249,7 +249,7 @@ func TestNotSubjectToVATExclusivity(t *testing.T) {
 		`<TaxSubtotal><TaxableAmount>0.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
       <TaxCategory><ID>Z</ID><Percent>0</Percent><TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory>
     </TaxSubtotal></TaxTotal>`, 1)
-	if !hasFacturXRule(Validate(context.Background(), []byte(withZeroRated), ProfileEN16931).Violations, "BR-O-11") {
+	if !hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(withZeroRated)), "BR-O-11") {
 		t.Error("BR-O-11 should fire for an O breakdown alongside a zero-rated one")
 	}
 
@@ -260,7 +260,7 @@ func TestNotSubjectToVATExclusivity(t *testing.T) {
 		`<TaxSubtotal><TaxableAmount>0.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
       <TaxCategory><Percent>0</Percent><TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory>
     </TaxSubtotal></TaxTotal>`, 1)
-	v := Validate(context.Background(), []byte(withUncategorised), ProfileEN16931).Violations
+	v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(withUncategorised))
 	if !hasFacturXRule(v, "BR-47") {
 		t.Errorf("BR-47 should report the breakdown group missing its VAT category code; got %v", v)
 	}
@@ -273,7 +273,7 @@ func TestNotSubjectToVATExclusivity(t *testing.T) {
 		`<TaxSubtotal><TaxableAmount>0.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
       <TaxCategory><ID>O</ID><TaxExemptionReason>Not subject to VAT</TaxExemptionReason>
         <TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory></TaxSubtotal></TaxTotal>`, 1)
-	if hasFacturXRule(Validate(context.Background(), []byte(twoO), ProfileEN16931).Violations, "BR-O-11") {
+	if hasFacturXRule(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(twoO)), "BR-O-11") {
 		t.Error("BR-O-11 must not fire when every breakdown group carries category O")
 	}
 }

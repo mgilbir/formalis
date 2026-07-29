@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -66,11 +67,16 @@ func TestUnsupportedCharsetIsNotSilentlyMisread(t *testing.T) {
 		t.Errorf("error %q does not name the offending encoding", err)
 	}
 
-	// The same document through a validator is a syntax finding about the
-	// file, not a list of business-rule violations derived from mangled text.
-	v := ValidateFacturae(context.Background(), []byte(doc)).Violations
-	if len(v) != 1 || v[0].Rule != RuleSyntax {
-		t.Fatalf("got %v, want exactly one %q violation", v, RuleSyntax)
+	// The same document through a validator is an error about the file, not a
+	// list of business-rule violations derived from mangled text — and it is the
+	// encoding sentinel rather than the malformed one, so a caller can tell "add
+	// a transcoding step" from "ask for the file again".
+	rep, verr := ValidateFacturae(context.Background(), []byte(doc))
+	if !errors.Is(verr, ErrUnsupportedEncoding) {
+		t.Fatalf("got (%+v, %v), want an error matching ErrUnsupportedEncoding", rep, verr)
+	}
+	if len(rep.Violations) != 0 {
+		t.Errorf("an unreadable document also produced findings: %v", rep.Violations)
 	}
 
 	// The encodings real invoices declare still work.
@@ -464,7 +470,7 @@ func TestDetectedValidatorRunsTheRuleSetItNamed(t *testing.T) {
 			if v == nil {
 				t.Fatalf("%q routes to no validator", det.Source)
 			}
-			rep := v(ctx, []byte(tc.doc))
+			rep := mustReport(t, ctx, v, []byte(tc.doc))
 			gaps := map[RuleFamily]bool{}
 			for _, g := range rep.NotEvaluated {
 				gaps[g] = true

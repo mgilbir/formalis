@@ -35,13 +35,19 @@ var xrExtItemSchemes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice or credit note.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // The Report names the rule families neither rule set evaluates — the union of
 // Coverage(SourceEN16931) and Coverage(SourceXRechnung). The XRechnung half is
 // not small: this package implements the BR-DE-* mandatory-term rules and
 // neither sub-profile's rules (BR-DEX-*, BR-DE-CVD-*), and an EXTENSION
 // document has BR-CO-16 suppressed in favour of a BR-DEX-09 that is not
 // evaluated.
-func ValidateXRechnung(ctx context.Context, xmlData []byte) Report {
+func ValidateXRechnung(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceXRechnung}, validateXRechnung)
 }
 
@@ -72,10 +78,10 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	// Re-apply the item identifier scheme checks with the XRechnung extensions.
 	for _, li := range inv.lines {
 		if s := li.stdIDScheme; s != "" && !en16931ICD[s] && !(ext && xrExtItemSchemes[s]) {
-			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-21", Message: fmt.Sprintf("Item standard identifier scheme (%q) is not permitted", s)})
+			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-21", Severity: SeverityFatal, Message: fmt.Sprintf("Item standard identifier scheme (%q) is not permitted", s)})
 		}
 		if l := li.classListID; l != "" && !en16931ItemClassCodes[l] && !(cvd && l == "CVD") {
-			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-13", Message: fmt.Sprintf("Item classification scheme (%q) is not permitted", l)})
+			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-13", Severity: SeverityFatal, Message: fmt.Sprintf("Item classification scheme (%q) is not permitted", l)})
 		}
 	}
 	out = append(out, validateXRechnungRules(inv, ext, cvd)...)

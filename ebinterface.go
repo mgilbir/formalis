@@ -47,11 +47,17 @@ func IsEbInterface(xmlData []byte) (bool, error) {
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // This validator checks the mandatory structure and code lists rather than the
 // whole schema its authority publishes, so the Report is never Conformant even
 // for a document with no findings: Report.NotEvaluated, from Coverage(SourceEbInterface),
 // says what was not checked.
-func ValidateEbInterface(ctx context.Context, xmlData []byte) Report {
+func ValidateEbInterface(ctx context.Context, xmlData []byte) (Report, error) {
 	return ebInterfaceValidator.validate(ctx, xmlData)
 }
 

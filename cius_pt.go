@@ -25,12 +25,18 @@ import "context"
 // than an empty Violations slice, so a run that stopped early cannot be read
 // as a clean invoice or credit note.
 //
+// The error is for input that could not be read at all — XML that is not
+// well-formed, or a character encoding this package does not implement. It is a
+// statement about the file rather than about the document, and the Report
+// returned with it is the zero Report, so a caller who ignores the error cannot
+// read the value as clean. See ErrMalformedXML.
+//
 // The Report names the rule families neither rule set evaluates — the union of
 // Coverage(SourceEN16931) and Coverage(SourceCIUSPT). This is the call the
 // coverage machinery was built for: a document with no findings is not a
 // document that passed CIUS-PT, because BR-CIUS-PT-13/15/17/18 and 24..63 were
 // never run, and Report.Conformant says so.
-func ValidateCIUSPT(ctx context.Context, xmlData []byte) Report {
+func ValidateCIUSPT(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceCIUSPT}, validateCIUSPT)
 }
 

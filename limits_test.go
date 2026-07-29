@@ -51,13 +51,13 @@ func checkerCount(v []Violation) int {
 func TestCancelledRunIsNeverClean(t *testing.T) {
 	// validCII is clean, so an uncancelled run really does return nothing —
 	// which is what makes the cancelled run's non-empty result meaningful.
-	if v := Validate(context.Background(), []byte(validCII), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII)); len(v) != 0 {
 		t.Fatalf("fixture is not clean: %v", v)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	v := Validate(ctx, []byte(validCII), ProfileEN16931).Violations
+	v := findings(t, ctx, withProfile(ProfileEN16931), []byte(validCII))
 	if len(v) == 0 {
 		t.Fatal("a cancelled run returned no violations, which is indistinguishable from a valid invoice")
 	}
@@ -89,7 +89,7 @@ func TestCancelledRunIsPrompt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), cancelAfter)
 	defer cancel()
 	t1 := time.Now()
-	v := Validate(ctx, xml, ProfileEN16931).Violations
+	v := findings(t, ctx, withProfile(ProfileEN16931), xml)
 	latency := time.Since(t1) - cancelAfter
 
 	if latency > full/4 {
@@ -118,7 +118,7 @@ func TestDeepNestingIsGuarded(t *testing.T) {
 	}
 	b.WriteString(`</CrossIndustryInvoice>`)
 
-	v := Validate(context.Background(), []byte(b.String()), ProfileEN16931).Violations
+	v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(b.String()))
 	if len(v) == 0 {
 		t.Fatal("a document nested past the cap returned no violations")
 	}
@@ -130,7 +130,7 @@ func TestDeepNestingIsGuarded(t *testing.T) {
 	}
 	// A document just inside the cap must still validate normally, or the guard
 	// would be rejecting legitimate invoices.
-	if strings.Contains(fmt.Sprint(Validate(context.Background(), []byte(validCII), ProfileEN16931).Violations), "xml-depth") {
+	if strings.Contains(fmt.Sprint(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII))), "xml-depth") {
 		t.Error("the depth guard fired on an ordinary invoice")
 	}
 }
@@ -223,7 +223,7 @@ func timeValidate(t *testing.T, xml []byte) time.Duration {
 // inside a validator running on untrusted input.
 func TestNilContextDoesNotPanic(t *testing.T) {
 	//lint:ignore SA1012 deliberately testing the nil case
-	if v := Validate(nil, []byte(validCII), ProfileEN16931).Violations; len(v) != 0 {
+	if v := findings(t, nil, withProfile(ProfileEN16931), []byte(validCII)); len(v) != 0 {
 		t.Errorf("a nil context changed the result: %v", v)
 	}
 }
@@ -304,8 +304,8 @@ func flatUBLBE(n int) []byte {
 // memory, and it was firing on a benign one because the package chose to read
 // it three times.
 func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
-	entryPoints := map[string]func(context.Context, []byte) Report{
-		"Validate":      func(c context.Context, b []byte) Report { return Validate(c, b, ProfileEN16931) },
+	entryPoints := map[string]validator{
+		"Validate":      withProfile(ProfileEN16931),
 		"ValidateUBLBE": ValidateUBLBE,
 		"ValidateCIUS":  ValidateCIUS,
 	}
@@ -314,7 +314,7 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 	// this size trips nothing when read once and trips when read three times.
 	inside := flatUBLBE(400_000)
 	for name, fn := range entryPoints {
-		v := fn(context.Background(), inside).Violations
+		v := findings(t, context.Background(), fn, inside)
 		if got := checkerCount(v); got != 0 {
 			t.Errorf("%s reported %d limit violations on a 400000-element document (budget %d): %v",
 				name, got, maxNodes, v)
@@ -328,10 +328,11 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 	}
 
 	// One element past the budget trips exactly once, through every entry
-	// point, and never as a statement about the XML — which is well-formed.
+	// point, and never as a statement about the XML — which is well-formed, so
+	// the call must not fail either.
 	over := flatUBLBE(maxNodes + 1)
 	for name, fn := range entryPoints {
-		rep := fn(context.Background(), over)
+		rep := mustReport(t, context.Background(), fn, over)
 		v := rep.Violations
 		// A tripped budget is the other stopped-run case Complete has to
 		// answer for, and the one a caller is least likely to think about.
@@ -344,21 +345,27 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 				name, got, maxNodes+1, v)
 		}
 		for _, e := range v {
-			if e.Rule == RuleSyntax {
-				t.Errorf("%s reported a well-formed over-budget document as malformed: %s", name, e.Message)
+			if e.Rule == RuleRoot {
+				t.Errorf("%s refused a well-formed over-budget UBL invoice as the wrong kind of document: %s", name, e.Message)
 			}
 		}
 	}
 }
 
 // TestStoppedRunIsNotReportedAsBadSyntax pins the other half of the honesty
-// contract: a run that stopped must not be reported as a malformed document.
-// Every exported validator routes its parse error through syntaxViolation, so
-// this walks a representative set of them rather than only the one that had the
-// bug (ValidateOrderXML reported "not a well-formed Cross Industry Order").
+// contract: a run that stopped must not be reported as a defect in the document.
+// Every exported validator routes its parse failure through readFailure, so this
+// walks a representative set of them rather than only the one that had the bug
+// (ValidateOrderXML reported "not a well-formed Cross Industry Order").
+//
+// Since D8 there are two ways to break it rather than one: reporting the document
+// as the wrong kind of document, and refusing it with an error. The second is the
+// one the error return newly makes possible, and it is the more dangerous, since
+// an error carries no findings at all — so a caller would lose the checks that
+// did complete as well as being told something false about the file.
 func TestStoppedRunIsNotReportedAsBadSyntax(t *testing.T) {
-	cases := map[string]func(ctx context.Context, b []byte) Report{
-		"Validate":          func(c context.Context, b []byte) Report { return Validate(c, b, ProfileEN16931) },
+	cases := map[string]validator{
+		"Validate":          withProfile(ProfileEN16931),
 		"ValidateOrderXML":  ValidateOrderXML,
 		"ValidateCIUS":      ValidateCIUS,
 		"ValidateXRechnung": ValidateXRechnung,
@@ -371,13 +378,13 @@ func TestStoppedRunIsNotReportedAsBadSyntax(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			v := fn(ctx, []byte(validCII)).Violations
+			v := findings(t, ctx, fn, []byte(validCII))
 			if len(v) == 0 {
 				t.Fatal("a cancelled run returned nothing, which reads as valid")
 			}
 			for _, e := range v {
-				if e.Rule == RuleSyntax {
-					t.Errorf("a cancelled run reported the document as malformed: %s", e.Message)
+				if e.Rule == RuleRoot {
+					t.Errorf("a cancelled run refused the document as the wrong kind: %s", e.Message)
 				}
 				if !IsCheckerViolation(e) {
 					t.Errorf("a cancelled run reported a document violation: %s: %s", e.Rule, e.Message)
@@ -650,7 +657,7 @@ func TestValidatorsAreSafeForConcurrentUse(t *testing.T) {
 	want := map[string][]string{}
 	for name, fn := range allValidators {
 		for _, doc := range docs {
-			want[name+string(doc)] = ruleNames(fn(context.Background(), doc).Violations)
+			want[name+string(doc)] = ruleNames(findings(t, context.Background(), fn, doc))
 		}
 	}
 
@@ -665,7 +672,18 @@ func TestValidatorsAreSafeForConcurrentUse(t *testing.T) {
 			for i := 0; i < rounds; i++ {
 				for name, fn := range allValidators {
 					for _, doc := range docs {
-						got := ruleNames(fn(context.Background(), doc).Violations)
+						// Not findings(): t.Fatalf may only be called from the
+						// goroutine running the test. Every document here is
+						// readable, so an error is recorded like any other
+						// disagreement.
+						rep, err := fn(context.Background(), doc)
+						if err != nil {
+							mu.Lock()
+							bad = append(bad, fmt.Sprintf("%s: concurrent run could not read a readable document: %v", name, err))
+							mu.Unlock()
+							continue
+						}
+						got := ruleNames(rep.Violations)
 						if !slices.Equal(got, want[name+string(doc)]) {
 							mu.Lock()
 							bad = append(bad, fmt.Sprintf("%s: concurrent run gave %v, single run gave %v",

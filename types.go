@@ -17,7 +17,7 @@
 // # Entry points
 //
 // Every exported validator takes a context and the document's bytes and returns
-// a Report. Which one to call:
+// a Report and an error. Which one to call:
 //
 //   - Detect routes. It reports which format a document is in, in one streaming
 //     pass that builds no tree, and Detection.Validator returns the entry point
@@ -35,17 +35,32 @@
 // true of the same bytes — so route with Detect, which arbitrates between them
 // in an order it documents.
 //
-// # What a Report claims, and what it does not
+// # The four answers a validator can give
+//
+// The distinctions this package exists for are all in how a call can end, so they
+// are worth reading once:
+//
+//   - An error, with the zero Report: the input could not be read at all —
+//     malformed XML, an encoding this package does not implement. A statement
+//     about the file. See ErrMalformedXML and ErrUnsupportedEncoding.
+//   - A Report holding a RuleLimit finding: the run stopped before it had seen
+//     everything, so nothing can be concluded. A statement about the run, and
+//     never an empty Violations slice. See RuleLimit and IsCheckerViolation.
+//   - A Report holding findings: the document departs from rules that were
+//     evaluated. Each carries the Severity its authority gave the rule, so
+//     Report.Fatal and Report.Warnings separate "reject this" from "note this".
+//   - A Report holding no findings: everything that was evaluated passed. What was
+//     evaluated is the other half of the answer, and Report.NotEvaluated is where
+//     it is written down.
 //
 // No rule set in this package is complete: each evaluates a documented subset of
-// what its authority publishes. Coverage names the gaps for any Source, and it
-// takes no document, so a caller can ask what a validator will not look at
-// before deciding to call it. Report.NotEvaluated repeats those gaps for the run
-// that just happened, and Report.Conformant is false whenever anything was left
-// unexamined — a stopped run, or a rule set with holes. Today that is every
-// document. A caller who wants the weaker "nothing was found" claim writes
-// len(r.Violations) == 0, and now has NotEvaluated beside it naming exactly what
-// that claim omits. See Report, Coverage and RuleLimit.
+// what its authority publishes. Coverage names the gaps for any Source, with the
+// severity of each, and it takes no document, so a caller can ask what a validator
+// will not look at before deciding to call it. Report.NotEvaluated repeats those
+// gaps for the run that just happened; Report.Conformant is false whenever a rule
+// that could have rejected this document went unevaluated, and Report.Complete
+// whenever anything did. Today Conformant is false for every document. See Report,
+// Coverage and RuleLimit.
 //
 // # Concurrency
 //
@@ -209,11 +224,14 @@ func CIUSFor(level string) (CIUS, bool) {
 //     "syntax binding" separately has the prefix, which is already disjoint from
 //     the core BR-* space.
 //
-//   - RuleLimit and RuleSyntax carry SourceChecker. They are statements by this
-//     checker — "I stopped early", "I could not read this file" — rather than by
-//     any rule authority, so attributing them to CEN would be a lie, and leaving
-//     them unattributed would make Source unusable as a filter. See
-//     IsCheckerViolation for why that predicate still tests Rule alone.
+//   - RuleLimit, RuleProfile and RuleRoot carry SourceChecker. They are statements
+//     by this checker — "I stopped early", "you named a profile I do not
+//     implement", "this is not an invoice" — rather than by any rule authority, so
+//     attributing them to CEN would be a lie, and leaving them unattributed would
+//     make Source unusable as a filter. See IsCheckerViolation for why that
+//     predicate still tests Rule alone. A document this package could not read at
+//     all produces no finding under any Source: it is an error, because there is
+//     no document to attribute anything about.
 //
 //   - Most national formats below (FatturaPA, Facturae, ebInterface, KSeF,
 //     Finvoice, TEAPPS, OIOUBL, Svefaktura, ZATCA, NAV OSA, UBL-TR, PINT,
@@ -279,8 +297,9 @@ const (
 	SourcePINT Source = "PINT"
 	// SourceOrderX is the Franco-German Order-X order document (ORDER-*).
 	SourceOrderX Source = "Order-X"
-	// SourceChecker is this package speaking about its own run rather than about
-	// any rule: RuleLimit and RuleSyntax.
+	// SourceChecker is this package speaking about its own run, or about the file
+	// it was handed, rather than about any rule: RuleLimit, RuleProfile and
+	// RuleRoot.
 	SourceChecker Source = "checker"
 )
 

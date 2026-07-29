@@ -407,29 +407,30 @@ func TestDetectionMemoryDoesNotScaleWithInput(t *testing.T) {
 func TestNodeBudgetStopsTheTree(t *testing.T) {
 	data := flatDoc(maxNodes + 1)
 
-	v := Validate(context.Background(), data, ProfileEN16931).Violations
+	v := findings(t, context.Background(), withProfile(ProfileEN16931), data)
 
 	// A stopped run never returns an empty result, or a caller keying on
 	// len(v) == 0 reads it as a clean invoice.
 	if len(v) == 0 {
 		t.Fatal("a document over the node budget returned no violations at all")
 	}
-	var limits, syntax int
+	var limits, rootRefusals int
 	for _, x := range v {
 		switch {
 		case IsCheckerViolation(x):
 			limits++
-		case x.Rule == RuleSyntax:
-			syntax++
+		case x.Rule == RuleRoot:
+			rootRefusals++
 		}
 	}
 	if limits != 1 {
 		t.Errorf("got %d %q violations, want exactly 1: %v", limits, RuleLimit, v)
 	}
-	// The document is well-formed. Reporting it as bad XML would be the false
-	// accusation syntaxViolation exists to prevent.
-	if syntax != 0 {
-		t.Errorf("a well-formed document over the budget was reported as %d syntax violations: %v", syntax, v)
+	// The document is well-formed, and it is a UBL Invoice. Refusing it as
+	// unreadable or as the wrong kind of document would be the false accusation
+	// readFailure exists to prevent.
+	if rootRefusals != 0 {
+		t.Errorf("a well-formed UBL invoice over the budget was refused as the wrong kind of document %d times: %v", rootRefusals, v)
 	}
 	found := false
 	for _, x := range v {
@@ -534,7 +535,7 @@ func TestDetectionHasNoBudgetToTrip(t *testing.T) {
 	// The same document through the validator the routing chose does trip the
 	// budget, which is the asymmetry worth having: the router answers, and the
 	// checker refuses to guess.
-	v := det.Validator()(context.Background(), data)
+	v := mustReport(t, context.Background(), det.Validator(), data)
 	if v.Conformant() {
 		t.Error("a document over the element budget came back conformant")
 	}
