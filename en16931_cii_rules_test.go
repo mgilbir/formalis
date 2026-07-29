@@ -88,6 +88,7 @@ func TestCIISyntaxRules(t *testing.T) {
 	cases = append(cases, ciiAmountAttrCases(t)...)
 	cases = append(cases, ciiQuantityCases(t)...)
 	cases = append(cases, ciiTaxTypeAndDateCases(t)...)
+	cases = append(cases, ciiRefDocCases(t)...)
 
 	runRuleCases(t, cases)
 }
@@ -485,6 +486,96 @@ func ciiTaxTypeAndDateCases(t *testing.T) []ruleCase {
 			`<DateTimeString>20240101</DateTimeString>`, `<DateTimeString format="102">2024-01-01</DateTimeString>`),
 			"CII-DT-097", true},
 	}
+}
+
+// The fragments the reference-document cases repeat. A ReferencedDocument is
+// entitled to its identifier (BT-122 and friends) and, depending on which one it
+// is and what type code it carries, to very little else.
+const (
+	ciiContractRef = `<ContractReferencedDocument><IssuerAssignedID>C-1</IssuerAssignedID>`
+	ciiAttachRef   = `<AdditionalReferencedDocument><IssuerAssignedID>A-1</IssuerAssignedID><TypeCode>916</TypeCode>`
+	ciiObjectRef   = `<AdditionalReferencedDocument><IssuerAssignedID>O-1</IssuerAssignedID><TypeCode>130</TypeCode>`
+	ciiInvoiceRef  = `<InvoiceReferencedDocument><IssuerAssignedID>P-1</IssuerAssignedID>`
+)
+
+// ciiRefDoc closes one of the fragments above around whatever children a case
+// wants to put in it, and injects it into the header trade agreement, where a
+// ContractReferencedDocument belongs and where the local-name tree reads all
+// four the same way.
+func ciiRefDoc(t *testing.T, open, children string) string {
+	t.Helper()
+	end := open[1:strings.IndexByte(open, '>')]
+	return ciiWith(t, ciiAtHeaderAgree, open+children+"</"+end+">")
+}
+
+// ciiRefDocCases are the sixteen rules on every document reference in the
+// invoice: the six whose exception is itself a business term, and the ten
+// children CEN closes off outright.
+//
+// The six conditional ones are the cases most worth having, and the corpus
+// agrees: it carries 21 references with a URIID, 100 with a TypeCode, 35 with a
+// Name, 25 with an AttachmentBinaryObject, 22 with a ReferenceTypeCode and 20
+// with a FormattedIssueDateTime — and every single one takes the exception. A
+// condition transcribed backwards would fire twenty to a hundred times there, so
+// their silence on the corpus is a verdict on data that reached the condition,
+// not an absence of data.
+func ciiRefDocCases(t *testing.T) []ruleCase {
+	t.Helper()
+	out := []ruleCase{
+		{"CII-DT-015 an external reference on a supporting document", ciiRefDoc(t, ciiAttachRef,
+			`<URIID>http://example.com/a.pdf</URIID>`), "CII-DT-015", false},
+		{"CII-DT-015 an external reference on a contract reference", ciiRefDoc(t, ciiContractRef,
+			`<URIID>http://example.com/a.pdf</URIID>`), "CII-DT-015", true},
+
+		{"CII-DT-018 a document type code of 130", ciiRefDoc(t, ciiObjectRef, ``), "CII-DT-018", false},
+		{"CII-DT-018 a document type code of 999", ciiRefDoc(t,
+			`<AdditionalReferencedDocument><IssuerAssignedID>A-1</IssuerAssignedID><TypeCode>999</TypeCode>`, ``),
+			"CII-DT-018", true},
+
+		{"CII-DT-021 a description on a supporting document", ciiRefDoc(t, ciiAttachRef,
+			`<Name>Timesheet</Name>`), "CII-DT-021", false},
+		{"CII-DT-021 a description on an invoiced object identifier", ciiRefDoc(t, ciiObjectRef,
+			`<Name>Timesheet</Name>`), "CII-DT-021", true},
+
+		{"CII-DT-022 an attachment on a supporting document", ciiRefDoc(t, ciiAttachRef,
+			`<AttachmentBinaryObject mimeCode="application/pdf" filename="a.pdf">Zm9v</AttachmentBinaryObject>`),
+			"CII-DT-022", false},
+		{"CII-DT-022 an attachment on an invoiced object identifier", ciiRefDoc(t, ciiObjectRef,
+			`<AttachmentBinaryObject mimeCode="application/pdf" filename="a.pdf">Zm9v</AttachmentBinaryObject>`),
+			"CII-DT-022", true},
+
+		{"CII-DT-024 a reference type code on an invoiced object identifier", ciiRefDoc(t, ciiObjectRef,
+			`<ReferenceTypeCode>AAB</ReferenceTypeCode>`), "CII-DT-024", false},
+		{"CII-DT-024 a reference type code on a supporting document", ciiRefDoc(t, ciiAttachRef,
+			`<ReferenceTypeCode>AAB</ReferenceTypeCode>`), "CII-DT-024", true},
+
+		{"CII-DT-027 an issue date on a preceding invoice reference", ciiRefDoc(t, ciiInvoiceRef,
+			`<FormattedIssueDateTime><DateTimeString format="102">20231201</DateTimeString></FormattedIssueDateTime>`),
+			"CII-DT-027", false},
+		{"CII-DT-027 an issue date on a contract reference", ciiRefDoc(t, ciiContractRef,
+			`<FormattedIssueDateTime><DateTimeString format="102">20231201</DateTimeString></FormattedIssueDateTime>`),
+			"CII-DT-027", true},
+	}
+	for _, c := range []struct{ rule, elem, value string }{
+		{"CII-DT-016", "StatusCode", "1"},
+		{"CII-DT-017", "CopyIndicator", "<Indicator>false</Indicator>"},
+		{"CII-DT-019", "GlobalID", "1234"},
+		{"CII-DT-020", "RevisionID", "2"},
+		{"CII-DT-023", "Information", "note"},
+		{"CII-DT-025", "SectionName", "s"},
+		{"CII-DT-026", "PreviousRevisionID", "1"},
+		{"CII-DT-028", "EffectiveSpecifiedPeriod", `<StartDateTime><DateString format="102">20240101</DateString></StartDateTime>`},
+		{"CII-DT-029", "IssuerTradeParty", "<Name>Issuer</Name>"},
+		{"CII-DT-030", "AttachedSpecifiedBinaryFile", "<IncludedBinaryObject>Zm9v</IncludedBinaryObject>"},
+	} {
+		child := fmt.Sprintf("<%s>%s</%s>", c.elem, c.value, c.elem)
+		out = append(out,
+			ruleCase{c.rule + " a contract reference without " + c.elem,
+				ciiRefDoc(t, ciiContractRef, ``), c.rule, false},
+			ruleCase{c.rule + " a contract reference carrying " + c.elem,
+				ciiRefDoc(t, ciiContractRef, child), c.rule, true})
+	}
+	return out
 }
 
 // TestCIISyntaxRulesAreNotAskedOfUBL pins the half of the design the file

@@ -94,6 +94,10 @@ func validateCIISyntaxRules(r *run, root *ciiNode) []Violation {
 	if r.stopped() {
 		return out
 	}
+	ciiDatatypeReferenceRules(g, add)
+	if r.stopped() {
+		return out
+	}
 	ciiDatatypeValueRules(g, add)
 	return out
 }
@@ -339,6 +343,13 @@ func childValueIs(n *ciiNode, name, want string) bool {
 type forbiddenAttr struct {
 	rule string
 	attr string
+}
+
+// forbiddenChild is the shape thirty-two of them share: a child element the
+// binding does not use.
+type forbiddenChild struct {
+	rule string
+	name string
 }
 
 // ciiSyntaxDocumentRules are the rules CEN binds to the document element and to
@@ -652,6 +663,69 @@ func ciiDatatypeIdentifierRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
 		}
 		if tc.hasAttr("listURI") {
 			add("CII-DT-009", "A code shall not carry a @listURI attribute")
+		}
+	}
+}
+
+// ciiDatatypeReferenceRules are the sixteen rules on
+// `//ram:*[ends-with(name(), 'ReferencedDocument')]` — every document reference
+// in the invoice, whatever it references. EN 16931 gives a reference an
+// identifier, and for a supporting document (BG-24) an attachment; the CII
+// schema's ReferencedDocument type carries a great deal more, and these rules
+// close all of it off.
+//
+// Four of the sixteen carve out an exception, and each exception is a business
+// term: ram:AdditionalReferencedDocument with type code 916 is the supporting
+// document (BG-24), which is entitled to its URI (BT-124), description (BT-123)
+// and embedded object (BT-125); type code 130 is the invoiced object identifier
+// (BT-18), which is entitled to a reference type code (BT-18-1); and
+// ram:InvoiceReferencedDocument is the preceding invoice (BG-3), which is
+// entitled to an issue date (BT-26).
+func ciiDatatypeReferenceRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, d := range g.refDocs {
+		additional := d.name == "AdditionalReferencedDocument"
+		// The unconditional twelve.
+		for _, c := range []forbiddenChild{
+			{"CII-DT-016", "StatusCode"},
+			{"CII-DT-017", "CopyIndicator"},
+			{"CII-DT-019", "GlobalID"},
+			{"CII-DT-020", "RevisionID"},
+			{"CII-DT-023", "Information"},
+			{"CII-DT-025", "SectionName"},
+			{"CII-DT-026", "PreviousRevisionID"},
+			{"CII-DT-028", "EffectiveSpecifiedPeriod"},
+			{"CII-DT-029", "IssuerTradeParty"},
+			{"CII-DT-030", "AttachedSpecifiedBinaryFile"},
+		} {
+			if hasChild(d, c.name) {
+				add(c.rule, fmt.Sprintf("A document reference shall not carry a %s element", c.name))
+			}
+		}
+		// not(ram:URIID) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')
+		if hasChild(d, "URIID") && !(additional && childValueIs(d, "TypeCode", "916")) {
+			add("CII-DT-015", "Only a supporting document (BG-24, type code 916) may carry an external reference URI (BT-124)")
+		}
+		// not(ram:TypeCode) or (self::ram:AdditionalReferencedDocument) and
+		// (ram:TypeCode='50' or ram:TypeCode='130' or ram:TypeCode='916')
+		if hasChild(d, "TypeCode") && !(additional &&
+			(childValueIs(d, "TypeCode", "50") || childValueIs(d, "TypeCode", "130") || childValueIs(d, "TypeCode", "916"))) {
+			add("CII-DT-018", "Only an additional document reference may carry a document type code, and only 50, 130 or 916")
+		}
+		// not(ram:Name) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')
+		if hasChild(d, "Name") && !(additional && childValueIs(d, "TypeCode", "916")) {
+			add("CII-DT-021", "Only a supporting document (BG-24, type code 916) may carry a description (BT-123)")
+		}
+		// not(ram:AttachmentBinaryObject) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='916')
+		if hasChild(d, "AttachmentBinaryObject") && !(additional && childValueIs(d, "TypeCode", "916")) {
+			add("CII-DT-022", "Only a supporting document (BG-24, type code 916) may carry an attached document (BT-125)")
+		}
+		// not(ram:ReferenceTypeCode) or (self::ram:AdditionalReferencedDocument and ram:TypeCode='130')
+		if hasChild(d, "ReferenceTypeCode") && !(additional && childValueIs(d, "TypeCode", "130")) {
+			add("CII-DT-024", "Only the Invoiced object identifier (BT-18, type code 130) may carry a scheme identifier (BT-18-1)")
+		}
+		// not(ram:FormattedIssueDateTime) or self::ram:InvoiceReferencedDocument
+		if hasChild(d, "FormattedIssueDateTime") && d.name != "InvoiceReferencedDocument" {
+			add("CII-DT-027", "Only a preceding invoice reference (BG-3) may carry an issue date (BT-26)")
 		}
 	}
 }
