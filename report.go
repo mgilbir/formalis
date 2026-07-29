@@ -16,9 +16,12 @@ package formalis
 // comment; the twelve national formats check "the mandatory structure and code
 // lists" rather than the XSD or Schematron their authority publishes; and the
 // EN 16931 core itself — the one rule set that looked complete, because the
-// CEN unit-test oracle reports 198/198 — implements none of the CII datatype
-// bindings and five of the fifty-four fatal UBL syntax rules. None of that
-// reached a caller. A Portuguese integrator could run ValidateCIUSPT, read
+// CEN unit-test oracle reports 198/198 — implemented, when this table was
+// written, none of the CII datatype bindings and five of the fifty-four fatal
+// UBL syntax rules. None of that reached a caller. Both bindings' fatal halves
+// are evaluated now, and the table below is how that became a statement someone
+// can check rather than a claim in a commit message. A Portuguese integrator
+// could run ValidateCIUSPT, read
 // len(v) == 0, file with AT, and be rejected on BR-CIUS-PT-13: a rule this
 // package never evaluated and never said it had not evaluated.
 //
@@ -187,18 +190,23 @@ var notEvaluated = map[Source][]string{
 	// claiming the whole rule, which would send a caller to re-implement a check
 	// that already runs on every Factur-X document.
 	//
-	// The fatal half of the UBL syntax binding is no longer here. All 54 fatal
-	// UBL-SR-* rules are evaluated (en16931_ubl_rules.go). The CII binding is
-	// being closed the same way, family by family, in en16931_cii_rules.go; the
-	// two entries below shrink as that lands and name what is still outstanding at
-	// each step. Report.Conformant is false for every document throughout.
+	// Neither binding's fatal half is here any more. All 54 fatal UBL-SR-* rules
+	// are evaluated (en16931_ubl_rules.go) and so are all 42 fatal CII-SR-* and
+	// 67 of the 70 fatal CII-DT-* rules (en16931_cii_rules.go). What is left
+	// under EN 16931 is advisory — rules CEN flags warning, which a reference
+	// validator reports and no authority rejects an invoice for — plus the three
+	// fatal CII datatype rules no reference validator can reach.
+	//
+	// Report.Conformant is still false for every document, and deliberately so:
+	// this table is not empty, and a caller keying on Conformant is asking
+	// whether the rule set had holes rather than whether the holes mattered.
 	SourceEN16931: {
 		"BR-51 other than in the CII binding: EN16931-CII-model.sch flags it fatal and this package evaluates it there, while EN16931-UBL-model.sch flags it warning, so a UBL invoice carrying a full card PAN (BT-87) is not reported",
 		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145) — CEN binds all four to true() in both syntaxes, so they are unenforceable rather than unimplemented",
 		"UBL-DT-* other than UBL-DT-01/06/07 (the 21 advisory UBL datatype rules)",
 		"UBL-CR-* (678 rules, all but two advisory: UBL elements outside the EN 16931 core)",
 		"the 440 advisory CII-SR-* rules (of CEN's 482; all 42 fatal ones are evaluated)",
-		"CII-DT-* other than the 39 fatal rules on the document element, the identifiers, the codes, the values and the document references (31 of the 70 fatal CII datatype rules remain, three of which — CII-DT-010, CII-DT-011 and CII-DT-012 — are unreachable: the EN16931-CII-Syntax pattern matches the invoice type code with //ram:TypeCode before the rule bound to it specifically, and ISO Schematron gives a node to the first matching rule only, so no reference validator reports them either; and 31 advisory ones)",
+		"the 31 advisory CII-DT-* rules (of CEN's 101), and CII-DT-010, CII-DT-011 and CII-DT-012, which are flagged fatal but cannot be reached: the EN16931-CII-Syntax pattern matches the invoice type code with //ram:TypeCode before the rule bound to it specifically, and ISO Schematron gives a node to the first matching rule only, so no reference validator reports them either",
 	},
 
 	// XRechnung: the KoSIT Schematron publishes 54 identifiers; this package
