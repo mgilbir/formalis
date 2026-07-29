@@ -207,3 +207,73 @@ func TestDocAllowanceChargesItemized(t *testing.T) {
 		})
 	}
 }
+
+// notSubjectToVATUBL is a conforming invoice using the "Not subject to VAT" (O)
+// category throughout: no VAT rate anywhere (BR-O-05..07), a zero breakdown tax
+// amount (BR-O-09), an exemption reason (BR-O-10), and no seller, buyer or
+// tax-representative VAT identifier (BR-O-02..04).
+var notSubjectToVATUBL = strings.NewReplacer(
+	// The seller identifies itself without a VAT identifier, which category O forbids.
+	"<PartyTaxScheme><CompanyID>DE123456789</CompanyID><TaxScheme><ID>VAT</ID></TaxScheme></PartyTaxScheme>",
+	"<PartyIdentification><ID>SELLER-1</ID></PartyIdentification>",
+	"<ClassifiedTaxCategory><ID>S</ID><Percent>19</Percent></ClassifiedTaxCategory>",
+	"<ClassifiedTaxCategory><ID>O</ID></ClassifiedTaxCategory>",
+	ublSingleTaxTotal, `<TaxTotal><TaxAmount>0.00</TaxAmount>
+  <TaxSubtotal><TaxableAmount>100.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
+    <TaxCategory><ID>O</ID><TaxExemptionReason>Not subject to VAT</TaxExemptionReason>
+      <TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory></TaxSubtotal></TaxTotal>`,
+	"<TaxInclusiveAmount>119.00</TaxInclusiveAmount>", "<TaxInclusiveAmount>100.00</TaxInclusiveAmount>",
+	"<PayableAmount>119.00</PayableAmount>", "<PayableAmount>100.00</PayableAmount>",
+).Replace(minimalUBL)
+
+// TestNotSubjectToVATExclusivity pins BR-O-11 — including the case an audit
+// flagged as a double report, which is kept because it is what the normative
+// binding does.
+//
+// An invoice with one "O" breakdown group and one group missing its VAT category
+// code (BT-118) reports both BR-47 and BR-O-11: one input error, two findings.
+// The EN 16931 UBL binding counts the same way. Its BR-O-11 parameter counts
+// cac:TaxCategory[normalize-space(cbc:ID) != 'O'], and for a group with no
+// cbc:ID that expression is "" != 'O', which is true — so the group is counted
+// and the assert fails there too. An uncategorised BG-23 group is another BG-23
+// group, and matching the published rule set is worth more than suppressing the
+// second finding.
+func TestNotSubjectToVATExclusivity(t *testing.T) {
+	// The all-O invoice is clean: one breakdown group, category O.
+	if v := Validate(context.Background(), []byte(notSubjectToVATUBL), ProfileEN16931); len(v) != 0 {
+		t.Fatalf(`baseline "Not subject to VAT" invoice not clean: %d violation(s): %v`, len(v), v)
+	}
+
+	// A second breakdown group carrying a different category: plainly BR-O-11.
+	withZeroRated := strings.Replace(notSubjectToVATUBL, "</TaxTotal>",
+		`<TaxSubtotal><TaxableAmount>0.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
+      <TaxCategory><ID>Z</ID><Percent>0</Percent><TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory>
+    </TaxSubtotal></TaxTotal>`, 1)
+	if !hasFacturXRule(Validate(context.Background(), []byte(withZeroRated), ProfileEN16931), "BR-O-11") {
+		t.Error("BR-O-11 should fire for an O breakdown alongside a zero-rated one")
+	}
+
+	// A second breakdown group with no category code at all. Both rules fire, and
+	// both are correct: BR-47 for the missing BT-118, BR-O-11 because a group
+	// without a code is still a group.
+	withUncategorised := strings.Replace(notSubjectToVATUBL, "</TaxTotal>",
+		`<TaxSubtotal><TaxableAmount>0.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
+      <TaxCategory><Percent>0</Percent><TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory>
+    </TaxSubtotal></TaxTotal>`, 1)
+	v := Validate(context.Background(), []byte(withUncategorised), ProfileEN16931)
+	if !hasFacturXRule(v, "BR-47") {
+		t.Errorf("BR-47 should report the breakdown group missing its VAT category code; got %v", v)
+	}
+	if !hasFacturXRule(v, "BR-O-11") {
+		t.Errorf("BR-O-11 should count an uncategorised breakdown group as another group, matching the UBL binding; got %v", v)
+	}
+
+	// Two groups both categorised O are one category, not "other groups".
+	twoO := strings.Replace(notSubjectToVATUBL, "</TaxTotal>",
+		`<TaxSubtotal><TaxableAmount>0.00</TaxableAmount><TaxAmount>0.00</TaxAmount>
+      <TaxCategory><ID>O</ID><TaxExemptionReason>Not subject to VAT</TaxExemptionReason>
+        <TaxScheme><ID>VAT</ID></TaxScheme></TaxCategory></TaxSubtotal></TaxTotal>`, 1)
+	if hasFacturXRule(Validate(context.Background(), []byte(twoO), ProfileEN16931), "BR-O-11") {
+		t.Error("BR-O-11 must not fire when every breakdown group carries category O")
+	}
+}
