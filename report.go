@@ -172,8 +172,6 @@ var notEvaluated = map[Source][]string{
 	// list below.
 	SourceEN16931: {
 		"BR-51 (advisory: an invoice should not carry a full card PAN, BT-87)",
-		"BR-CL-08 (Invoice note subject code, UNCL 4451)",
-		"BR-CL-26 (Deliver-to location identifier scheme, ISO 6523 ICD)",
 		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145)",
 		"BR-DEC-02/06/15/25/28 (decimal limits on BT-93, BT-100, BT-111, BT-137, BT-142)",
 		"UBL-SR-* other than UBL-SR-12/18/42/44/47 (49 of the 54 fatal UBL cardinality rules)",
