@@ -52,6 +52,18 @@ const (
 	// the clone; minEN16931RulesCaught is the coverage ratchet over it, and it
 	// is the one number in this package that measures the rule engine rather
 	// than the corpus.
+	//
+	// It measures it over the population the suite can see, which is smaller than
+	// the rule set. The ratio is computed over the rules for which the suite ships
+	// an <error> fragment, so a rule with no failing fragment is invisible to it
+	// in both directions: implementing one does not move the number, and losing
+	// one would not either. Of the semantic-model rules added since this baseline
+	// was set — BR-CL-08, BR-CL-26, BR-DEC-02/06/15/25/28 — the suite ships a
+	// fragment for none, and the one it does ship for BR-51 is tagged <warning>,
+	// which the harness does not score. So 198 standing still is the expected
+	// result of that work rather than evidence there was none;
+	// en16931_core_rules_test.go is where those rules are stated, and
+	// Coverage(SourceEN16931) is where the remaining gap is.
 	minEN16931UnitTestFiles = 277
 	minEN16931RulesCaught   = 198
 

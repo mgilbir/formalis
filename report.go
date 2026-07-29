@@ -171,6 +171,14 @@ var notEvaluated = map[Source][]string{
 	// rules. Reading the published Schematron instead of the oracle gives the
 	// list below.
 	//
+	// BR-CO-05..08 are unenforceable by construction rather than unimplemented.
+	// CEN binds all four to the XPath expression true() in both syntaxes, so no
+	// reference validator reports them and the unit-test suite ships no fragment
+	// for them. "The reason code and the free-text reason indicate the same type
+	// of allowance" is a judgement about prose in an arbitrary language; any
+	// mechanical stand-in would accuse conforming invoices, which is the one
+	// thing this table exists to keep the package from doing.
+	//
 	// BR-51 is one assertion in the abstract model with two severities in the two
 	// bindings: EN16931-CII-model.sch flags it fatal and EN16931-UBL-model.sch
 	// flags it warning. This package reports what an authority makes fatal and
@@ -180,8 +188,7 @@ var notEvaluated = map[Source][]string{
 	// that already runs on every Factur-X document.
 	SourceEN16931: {
 		"BR-51 other than in the CII binding: EN16931-CII-model.sch flags it fatal and this package evaluates it there, while EN16931-UBL-model.sch flags it warning, so a UBL invoice carrying a full card PAN (BT-87) is not reported",
-		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145)",
-		"BR-DEC-02/06/15/25/28 (decimal limits on BT-93, BT-100, BT-111, BT-137, BT-142)",
+		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145) — CEN binds all four to true() in both syntaxes, so they are unenforceable rather than unimplemented",
 		"UBL-SR-* other than UBL-SR-12/18/42/44/47 (49 of the 54 fatal UBL cardinality rules)",
 		"UBL-DT-* other than UBL-DT-01/06/07 (the 21 advisory UBL datatype rules)",
 		"UBL-CR-* (678 rules, all but two advisory: UBL elements outside the EN 16931 core)",

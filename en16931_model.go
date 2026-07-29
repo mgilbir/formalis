@@ -163,6 +163,7 @@ type vatBreakdown struct {
 
 type docAllowanceCharge struct {
 	amount     string // BT-92 allowance / BT-99 charge amount
+	baseAmount string // BT-93 allowance / BT-100 charge base amount
 	category   string // BT-95 allowance / BT-102 charge VAT category code
 	rate       string // BT-96 allowance / BT-103 charge VAT rate
 	hasReason  bool   // BT-97/BT-98 or BT-104/BT-105 present
@@ -212,9 +213,10 @@ type invoicePeriod struct {
 
 // lineAllowanceCharge is an Invoice line allowance (BG-27) or charge (BG-28).
 type lineAllowanceCharge struct {
-	amount    string // BT-136 allowance / BT-141 charge amount
-	hasReason bool   // BT-139/BT-140 or BT-144/BT-145 present
-	isCharge  bool   // true = charge (BG-28); false = allowance (BG-27)
+	amount     string // BT-136 allowance / BT-141 charge amount
+	baseAmount string // BT-137 allowance / BT-142 charge base amount
+	hasReason  bool   // BT-139/BT-140 or BT-144/BT-145 present
+	isCharge   bool   // true = charge (BG-28); false = allowance (BG-27)
 }
 
 // vatAmountTolerance is the EN 16931 tolerance (±1 of the invoice currency) the
@@ -629,10 +631,19 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 	for _, ac := range inv.allowCharges {
 		if ac.isCharge {
 			dec("BR-DEC-05", "Document level charge amount (BT-99)", ac.amount)
+			dec("BR-DEC-06", "Document level charge base amount (BT-100)", ac.baseAmount)
 		} else {
 			dec("BR-DEC-01", "Document level allowance amount (BT-92)", ac.amount)
+			dec("BR-DEC-02", "Document level allowance base amount (BT-93)", ac.baseAmount)
 		}
 	}
+	// BR-DEC-15: the Invoice total VAT amount in accounting currency (BT-111).
+	// Checked only when the amount was found, which is where the two bindings
+	// agree. A VAT accounting currency (BT-6) declared without a BT-111 at all is
+	// BR-53's finding, not a decimal one — the CII binding's phrasing does report
+	// BR-DEC-15 for that shape as well, and duplicating BR-53 under a decimal
+	// rule's identifier would say something the document's defect does not.
+	dec("BR-DEC-15", "Invoice total VAT amount in accounting currency (BT-111)", inv.vatInTaxCurrencyAmt)
 
 	// BR-CO-15: Invoice total with VAT (BT-112) = total without VAT (BT-109) +
 	// total VAT amount (BT-110).
@@ -787,6 +798,7 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 				} else {
 					dec("BR-DEC-27", "Invoice line charge amount (BT-141)", ac.amount)
 				}
+				dec("BR-DEC-28", "Invoice line charge base amount (BT-142)", ac.baseAmount)
 				if !ac.hasReason {
 					add("BR-44", "Each Invoice line charge (BG-28) shall have an Invoice line charge reason (BT-144) or reason code (BT-145)")
 					add("BR-CO-24", "Each Invoice line charge (BG-28) shall contain an Invoice line charge reason (BT-144) or reason code (BT-145)")
@@ -797,6 +809,7 @@ func validateEN16931(r *run, inv *en16931Invoice, profile Profile) []Violation {
 				} else {
 					dec("BR-DEC-24", "Invoice line allowance amount (BT-136)", ac.amount)
 				}
+				dec("BR-DEC-25", "Invoice line allowance base amount (BT-137)", ac.baseAmount)
 				if !ac.hasReason {
 					add("BR-42", "Each Invoice line allowance (BG-27) shall have an Invoice line allowance reason (BT-139) or reason code (BT-140)")
 					add("BR-CO-23", "Each Invoice line allowance (BG-27) shall contain an Invoice line allowance reason (BT-139) or reason code (BT-140)")
