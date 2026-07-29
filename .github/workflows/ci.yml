@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          # Tracks the go directive in go.mod.
+          go-version: '1.25.x'
+
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: build
+        run: go build ./...
+
+      - name: test
+        # The conformance corpora are not vendored — testdata is gitignored and
+        # fetched by the Makefile — so the oracle-backed tests skip here. What
+        # this run does cover is the whole rule engine against its hand-written
+        # fixtures, the parser's limits and cancellation, and the detector
+        # parity contract, none of which need a corpus.
+        #
+        # A test that needs the corpus must skip when it is absent rather than
+        # fail, or a clean checkout is a red build that says nothing about the
+        # code. `make cius-oracles` / `make en16931-artefacts` fetch it locally,
+        # and the conformance ratchets (EN 16931 198/198 FP=0, Peppol, XRechnung,
+        # NLCIUS) are checked there before a change lands.
+        run: go test ./... -count=1
