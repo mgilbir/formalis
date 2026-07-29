@@ -64,6 +64,10 @@ func validateUBLSyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ublSyntaxPartyRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ublSyntaxPaymentRules(g, add)
 	return out
 }
 
@@ -515,4 +519,69 @@ func ublCountPayeeIdentifiers(payee *ciiNode) int {
 		}
 	}
 	return n
+}
+
+// ublSyntaxPaymentRules are the rules whose context is a cac:PaymentMeans, plus
+// UBL-SR-32 on cac:TaxSubtotal and the two allowance/charge reason rules, which
+// share one test and differ only in which of the two contexts a group falls in.
+func ublSyntaxPaymentRules(g *ublSyntaxNodes, add func(rule, msg string)) {
+	for _, pm := range g.paymentMeans {
+		// count(cbc:PaymentID) <= 1 — within one payment means group, unlike
+		// UBL-SR-44, which bounds the distinct values across the document.
+		if atMostOnce(pm, "PaymentID") {
+			add("UBL-SR-26", "The Payment reference (BT-83) shall occur at most once in a payment instructions group")
+		}
+		// count(cbc:PaymentMeansCode) <= 1
+		if atMostOnce(pm, "PaymentMeansCode") {
+			add("UBL-SR-27", "The Payment means type code (BT-81) shall occur at most once in a payment instructions group")
+		}
+		// count(cac:PaymentMandate/cbc:ID) <= 1
+		if atMostOnce(pm, "PaymentMandate", "ID") {
+			add("UBL-SR-28", "The Mandate reference identifier (BT-89) shall occur at most once")
+		}
+	}
+
+	// UBL-SR-32: count(cac:TaxCategory/cbc:TaxExemptionReason) <= 1, on every
+	// cac:TaxSubtotal.
+	for _, ts := range g.taxSubtotals {
+		if atMostOnce(ts, "TaxCategory", "TaxExemptionReason") {
+			add("UBL-SR-32", "The VAT exemption reason text (BT-120) shall occur at most once per VAT breakdown")
+		}
+	}
+
+	// UBL-SR-30/31: count(cbc:AllowanceChargeReason) <= 1, on every
+	// cac:AllowanceCharge, with the identifier chosen by cbc:ChargeIndicator.
+	// CEN writes the two contexts as `[cbc:ChargeIndicator = false()]` and
+	// `[... = true()]`, which under XPath 2.0 casts the element's text to
+	// xs:boolean; a group whose indicator is neither matches no context, and so
+	// is not checked here at all.
+	for _, ac := range g.allowanceCharges {
+		if !atMostOnce(ac, "AllowanceChargeReason") {
+			continue
+		}
+		switch ublChargeIndicator(ac) {
+		case ublIndicatorCharge:
+			add("UBL-SR-31", "The Charge reason (BT-104/144) shall occur at most once")
+		case ublIndicatorAllowance:
+			add("UBL-SR-30", "The Allowance reason (BT-97/139) shall occur at most once")
+		}
+	}
+}
+
+// The three states of a cac:ChargeIndicator as the two Schematron contexts see
+// it: a charge, an allowance, or a value neither context matches.
+const (
+	ublIndicatorNeither = iota
+	ublIndicatorCharge
+	ublIndicatorAllowance
+)
+
+func ublChargeIndicator(ac *ciiNode) int {
+	switch strings.ToLower(strings.TrimSpace(ac.str("ChargeIndicator"))) {
+	case "true", "1":
+		return ublIndicatorCharge
+	case "false", "0":
+		return ublIndicatorAllowance
+	}
+	return ublIndicatorNeither
 }
