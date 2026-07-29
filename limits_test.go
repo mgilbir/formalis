@@ -335,9 +335,9 @@ func TestNodeBudgetIsPerDocumentNotPerEntryPoint(t *testing.T) {
 		v := rep.Violations
 		// A tripped budget is the other stopped-run case Complete has to
 		// answer for, and the one a caller is least likely to think about.
-		if rep.Complete || rep.Conformant() {
+		if rep.Complete() || rep.Conformant() {
 			t.Errorf("%s reported an over-budget run as Complete=%v Conformant=%v; the checks that had not "+
-				"run were skipped", name, rep.Complete, rep.Conformant())
+				"run were skipped", name, rep.Complete(), rep.Conformant())
 		}
 		if got := checkerCount(v); got != 1 {
 			t.Errorf("%s reported %d limit violations on a %d-element document, want exactly 1: %v",

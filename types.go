@@ -284,18 +284,91 @@ const (
 	SourceChecker Source = "checker"
 )
 
+// Severity is how much weight the authority that wrote a rule puts on breaking
+// it: enough to reject the document, or not.
+//
+// It is a property of the rule and not of the run or of the document, and it is
+// not this package's opinion. CEN writes it into the Schematron as
+// flag="fatal" or flag="warning" on every assertion, and the national
+// authorities quoted here do the same (KoSIT adds flag="information", which is
+// advisory under another name). This type carries that flag folded onto two
+// values, because two is what a caller can act on: a fatal finding is a reason
+// to refuse an invoice and a warning is not.
+//
+// The same assertion can carry different flags in the two EN 16931 syntax
+// bindings — BR-51 is fatal in the CII binding and a warning in the UBL one —
+// so severity belongs on the finding, where the binding that produced it is
+// known, rather than on a table keyed by rule identifier.
+//
+// # Why SeverityFatal is the zero value
+//
+// An unstamped Severity reads as fatal, deliberately. The two orderings are not
+// symmetric. With SeverityWarning at zero, an emission site that forgot the
+// field would report a genuine non-conformance as advisory: Report.Conformant
+// would pass over it, Report.Fatal would omit it, and an invoice would ship on
+// the strength of a field nobody set. With SeverityFatal at zero the same
+// omission over-reports — a caller sees a blocking finding for an advisory rule,
+// notices, and the stamp gets fixed. This package exists to keep silence from
+// being read as a clean invoice, so the default has to lean the other way.
+//
+// The default is not a substitute for deciding, and it is not left unchecked:
+// TestEveryEmittedFindingIsFatalToday sweeps the whole corpus and fails if any
+// finding's severity was not deliberate, and
+// TestEveryEmittedEN16931RuleIsFatalInCENsSchematron holds the one Source with
+// vendored ground truth to the flag CEN publishes.
+//
+// # SourceChecker findings
+//
+// RuleLimit, RuleProfile and RuleRoot are this package's statements about its
+// own run or about the file it was handed, so no authority has flagged them and
+// severity is this package's classification rather than a quotation. They are
+// fatal, for the reason above rather than by analogy: a caller who writes
+// len(r.Fatal()) == 0 as their release gate must not have a cancelled run, a
+// rejected Profile or a document that is not an invoice slip through it. A third
+// value for "not a rule" was considered and rejected — it would make Fatal and
+// Warnings no longer a partition of Violations, and every caller who switched on
+// severity would have to invent a policy for the third case, most of them
+// choosing the unsafe one. The distinction those callers actually need is
+// already exported, precisely and tested: IsCheckerViolation.
+type Severity int
+
+const (
+	// SeverityFatal is a rule its authority rejects a document for breaking.
+	SeverityFatal Severity = iota
+	// SeverityWarning is a rule its authority reports without rejecting: CEN's
+	// flag="warning", KoSIT's flag="information", NLCIUS's "not recommended".
+	// A document with warnings and no fatal finding is conformant.
+	SeverityWarning
+)
+
+func (s Severity) String() string {
+	switch s {
+	case SeverityFatal:
+		return "fatal"
+	case SeverityWarning:
+		return "warning"
+	}
+	return fmt.Sprintf("Severity(%d)", int(s))
+}
+
 // Violation reports one way in which a document departs from a rule set. Source
 // names the authority that defines the rule and Rule is that authority's
 // identifier for it (e.g. SourceEN16931/"BR-CO-15", SourceNLCIUS/"BR-NL-1");
-// neither is an identity on its own.
+// neither is an identity on its own. Severity is whether that authority rejects
+// a document for it.
 type Violation struct {
-	Source  Source
-	Rule    string
-	Message string
+	Source   Source
+	Rule     string
+	Severity Severity
+	Message  string
 }
 
+// Error renders the finding, severity included. The severity is in the string
+// rather than only in the field because this type satisfies error: a caller that
+// logs a Violation would otherwise present an advisory finding in exactly the
+// same words as a blocking one, which is the confusion Severity exists to end.
 func (v Violation) Error() string {
-	return fmt.Sprintf("%s %s: %s", v.Source, v.Rule, v.Message)
+	return fmt.Sprintf("%s %s (%s): %s", v.Source, v.Rule, v.Severity, v.Message)
 }
 
 // adder returns the emission helper a rule set uses to append its findings,
@@ -307,8 +380,13 @@ func (v Violation) Error() string {
 // XRechnung validator reports EN 16931 core findings alongside BR-DE-*, as do
 // the CIUS-PT, CIUS-RO, NLCIUS, Peppol, SRBDT and UBL.BE validators — so
 // stamping one Source over a returned slice would misattribute the core half.
+//
+// The severity is written out rather than left to Severity's zero value. Every
+// rule this package implements is one its authority flags fatal, which is a fact
+// about the rule set and not a property of this helper, so the site that would
+// have to change when that stops being true is the one that states it.
 func adder(out *[]Violation, src Source) func(rule, msg string) {
 	return func(rule, msg string) {
-		*out = append(*out, Violation{Source: src, Rule: rule, Message: msg})
+		*out = append(*out, Violation{Source: src, Rule: rule, Severity: SeverityFatal, Message: msg})
 	}
 }

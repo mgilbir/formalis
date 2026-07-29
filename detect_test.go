@@ -465,14 +465,14 @@ func TestDetectedValidatorRunsTheRuleSetItNamed(t *testing.T) {
 				t.Fatalf("%q routes to no validator", det.Source)
 			}
 			rep := v(ctx, []byte(tc.doc))
-			gaps := map[string]bool{}
+			gaps := map[RuleFamily]bool{}
 			for _, g := range rep.NotEvaluated {
 				gaps[g] = true
 			}
 			for _, g := range Coverage(det.Source) {
 				if !gaps[g] {
 					t.Errorf("the validator Detect chose for %q did not declare that Source's coverage gap %q; "+
-						"the routing reached a different rule set", det.Source, g)
+						"the routing reached a different rule set", det.Source, g.Rules)
 				}
 			}
 		})

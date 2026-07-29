@@ -347,7 +347,7 @@ func TestBRCO05To08AreNotReported(t *testing.T) {
 // corpus document happens to trip; four of these fire on nothing in the corpus,
 // which is exactly the case that needs stating here instead.
 func TestCoverageDropsTheRulesThisPRImplements(t *testing.T) {
-	gaps := strings.Join(Coverage(SourceEN16931), "\n")
+	gaps := coverageText(SourceEN16931)
 	for _, rule := range []string{
 		"BR-CL-08", "BR-CL-26", "BR-DEC-02", "BR-DEC-06", "BR-DEC-15", "BR-DEC-25", "BR-DEC-28",
 	} {

@@ -233,7 +233,7 @@ func TestCancelledRunReportsOnlyLimit(t *testing.T) {
 			// The same fact in the form a caller is most likely to test. A
 			// stopped run is one of the two ways Complete is false, and
 			// Conformant is the predicate that has to get both right.
-			if r.Complete {
+			if r.Complete() {
 				t.Error("a cancelled run reported Complete; the checker did not see the whole document")
 			}
 			if r.Conformant() {
