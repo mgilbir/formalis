@@ -32,8 +32,9 @@ var rsPIB = regexp.MustCompile(`^RS(\d{9}|\d{13})$`)
 // EN 16931 core plus the SRBDT mandatory-term and format rules.
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
-// package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty Report, so it cannot be mistaken for a valid invoice.
+// package's own limits. A cancelled run reports a RuleLimit violation rather
+// than an empty Violations slice, so a run that stopped early cannot be read
+// as a clean invoice or credit note.
 //
 // The Report names the rule families neither rule set evaluates — the union of
 // Coverage(SourceEN16931) and Coverage(SourceSRBDT).

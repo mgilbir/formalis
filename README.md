@@ -1,35 +1,183 @@
 # formalis
 
-A dependency-free (Go standard library only) validator for European electronic
-invoices against **EN 16931** and its national **Core Invoice Usage
-Specifications (CIUS)**.
+A dependency-free (Go standard library only) validator for electronic invoices.
 
-One syntax-neutral rule engine validates both XML syntaxes — UN/CEFACT Cross
-Industry Invoice (CII, used by Factur-X/ZUGFeRD) and OASIS UBL (Peppol BIS,
-XRechnung, NLCIUS) — and each CIUS adds its own rule layer.
+It checks **EN 16931** and the **Core Invoice Usage Specifications (CIUS)**
+layered on it, and it also checks the national invoice formats that are not
+EN 16931 profiles at all — Italian FatturaPA, Spanish Facturae, Austrian
+ebInterface, Polish KSeF, Finnish Finvoice and TEAPPS, Danish OIOUBL, Swedish
+Svefaktura, Hungarian NAV Online Számla, Turkish UBL-TR, Saudi ZATCA, and Peppol
+PINT for AE / AUNZ / EU / JP / MY / OM / SG. The Franco-German Order-X order
+document is validated too. Twenty-one rule sets in all; the table below names
+each one, the entry point that runs it, and the `Source` that scopes its
+findings.
+
+One syntax-neutral rule engine validates both EN 16931 syntaxes — UN/CEFACT
+Cross Industry Invoice (CII, used by Factur-X/ZUGFeRD) and OASIS UBL (Peppol
+BIS, XRechnung, NLCIUS) — and each CIUS adds its own rule layer on top of it.
+The formats that are not EN 16931 profiles are checked against their own
+mandatory structure and code lists instead.
+
+Every exported function is safe to call from any number of goroutines at once:
+the package holds no mutable global state, and `TestValidatorsAreSafeForConcurrentUse`
+pins that under `-race`.
 
 ## Usage
 
 ```go
-import "github.com/mgilbir/formalis"
+report := formalis.ValidateCIUS(ctx, xml)
 
-// Validate against a specific profile:
-v := formalis.Validate(ctx, xml, formalis.ProfileEN16931)
+for _, v := range report.Violations {
+    fmt.Printf("%s %s: %s\n", v.Source, v.Rule, v.Message)
+}
 
-// Or let the invoice route itself by its CustomizationID (BT-24):
-v := formalis.ValidateCIUS(ctx, xml)
+fmt.Println("nothing found:", len(report.Violations) == 0)
+fmt.Println("conformant:   ", report.Conformant())
+```
 
-for _, x := range v {
-    fmt.Printf("%s %s: %s\n", x.Source, x.Rule, x.Message)
+`ValidateCIUS` routes the document against whichever rule set it declares. Every
+exported validator has this shape — `func(context.Context, []byte) Report` — and
+`Report` is the whole answer:
+
+```go
+type Report struct {
+    Violations   []Violation // what was found
+    Complete     bool        // whether everything that applies was evaluated
+    NotEvaluated []string    // the rule families that were not
+}
+
+func (r Report) Conformant() bool // len(Violations) == 0 && Complete
+```
+
+## What a clean report does and does not mean
+
+**`Conformant()` returns false for every document today.** That is not a bug and
+it is the first thing to understand about this package.
+
+`len(report.Violations) == 0` means only *the checks that ran found nothing*. It
+is equally true of a run that checked everything, a run that was cancelled or hit
+a resource budget, and a run whose rule set does not implement every rule its
+authority publishes. No rule set here is in that last sense complete — each
+evaluates a documented subset — so `Complete` is false everywhere, and therefore
+so is `Conformant()`.
+
+Rather than hide that behind a number in this file that would drift as rules
+land, the package makes it machine-readable:
+
+- **`Coverage(src Source) []string`** names the rule families `src` publishes and
+  this package does not evaluate. It takes no document, parses nothing and cannot
+  fail, so you can ask *before* deciding to trust a validator.
+- **`Report.NotEvaluated`** is the same information for the run that just
+  happened — the union across every authority that call applied. A validator that
+  layers a CIUS on the core reports both sets.
+- **`Report.Complete`** is false when either kind of gap is present: a rule set
+  with holes, or a run that stopped early.
+
+```go
+for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
+    fmt.Println("not evaluated:", gap)
+}
+// not evaluated: BR-NL-19..35 (advisory: NLCIUS's "not recommended" rules,
+//                which do not make an invoice non-conformant)
+```
+
+Use `Conformant()` when you need the strong claim, and `len(r.Violations) == 0`
+when the weaker one will do — with `r.NotEvaluated` beside it saying exactly what
+it omits.
+
+## Coverage
+
+| Format | Entry point | `Is*` predicate | `Source` |
+|---|---|---|---|
+| EN 16931 core (CII + UBL, incl. Factur-X/ZUGFeRD) | `Validate` (with a `Profile`), `ValidateCIUS` | — | `SourceEN16931` |
+| XRechnung (DE) | `ValidateXRechnung` | — | `SourceXRechnung` |
+| Peppol BIS Billing 3.0 | `ValidatePeppol` | — | `SourcePeppol` |
+| NLCIUS / SimplerInvoicing (NL) | `ValidateNLCIUS` | — | `SourceNLCIUS` |
+| CIUS-PT (PT) | `ValidateCIUSPT` | — | `SourceCIUSPT` |
+| CIUS-RO / RO e-Factura (RO) | `ValidateCIUSRO` | — | `SourceCIUSRO` |
+| UBL.BE (BE) | `ValidateUBLBE` | — | `SourceUBLBE` |
+| SRBDT (RS) | `ValidateSRBDT` | — | `SourceSRBDT` |
+| Peppol PINT (AE/AUNZ/EU/JP/MY/OM/SG) | `ValidatePINT` | `IsPINT` | `SourcePINT` |
+| FatturaPA / FatturaElettronica (IT) | `ValidateFatturaPA` | `IsFatturaPA` | `SourceFatturaPA` |
+| Facturae (ES) | `ValidateFacturae` | `IsFacturae` | `SourceFacturae` |
+| ebInterface (AT) | `ValidateEbInterface` | `IsEbInterface` | `SourceEbInterface` |
+| KSeF FA (PL) | `ValidateKSeF` | `IsKSeF` | `SourceKSeF` |
+| Finvoice (FI) | `ValidateFinvoice` | `IsFinvoice` | `SourceFinvoice` |
+| TEAPPSXML (FI) | `ValidateTEAPPS` | `IsTEAPPS` | `SourceTEAPPS` |
+| OIOUBL (DK) | `ValidateOIOUBL` | `IsOIOUBL` | `SourceOIOUBL` |
+| Svefaktura (SE) | `ValidateSvefaktura` | `IsSvefaktura` | `SourceSvefaktura` |
+| ZATCA (SA) | `ValidateZATCA` | `IsZATCA` | `SourceZATCA` |
+| NAV Online Számla / OSA (HU) | `ValidateOSA` | `IsOSA` | `SourceOSA` |
+| UBL-TR e-Fatura (TR) | `ValidateTurkishInvoice` | `IsTurkishInvoice` | `SourceUBLTR` |
+| Order-X (order, not invoice) | `ValidateOrderXML` | — | `SourceOrderX` |
+
+Eight of these are `CIUS` constants — XRechnung, Peppol, NLCIUS, CIUS-PT,
+CIUS-RO, UBL.BE, SRBDT and PINT — and `ValidateCIUS` routes to them on the
+document's **Specification identifier** (BT-24, what `DetectCIUS` reads). It
+routes to OIOUBL and UBL-TR on that same identifier though neither is a CIUS, to
+ZATCA on a profile identifier or a document reference, to ebInterface and
+Svefaktura on a distinguishing child element, to the remaining formats on their
+root element, and otherwise to the EN 16931 core. There is no `Is*` predicate for the EN 16931 core, for the
+seven CIUS layered on it, or for Order-X, and none is needed: the CIUS are told
+apart by that identifier (`DetectCIUS`, or `Detection.CIUS`), and Order-X by a
+root element no other format uses.
+
+`SourceChecker` is a `Source` but not a format: it carries this package's
+statements about its own run — `RuleLimit`, `RuleSyntax` and `RuleProfile` — and
+`Coverage(SourceChecker)` is nil because it publishes no rules. `SourceNone` is
+the zero value, which `Detect` reports for a document it read and recognised as
+no format here, and which no `Violation` ever carries.
+
+## Routing
+
+`Detect` is the routing entry point. It reads the document once, without building
+a tree, and arbitrates between the formats in an order that is part of its
+documented contract:
+
+```go
+det, err := formalis.Detect(xml)
+switch {
+case err != nil:
+    // Could not read it. Do not dispatch on this.
+case !det.Recognised():
+    // Read it; no format this package validates.
+default:
+    report := det.Validator()(ctx, xml)
 }
 ```
 
-A rule is identified by `(Source, Rule)`, not by `Rule` alone. `Source` names the
-authority that defines it — `formalis.SourceEN16931`, `formalis.SourceXRechnung`,
-`formalis.SourcePeppol`, one per CIUS and national format, and
-`formalis.SourceChecker` for the checker's own `RuleLimit`/`RuleSyntax`. Two
-authorities may number a rule the same way, so aggregate and suppress on the
-pair:
+`Detection` also carries `SpecID` (BT-24 as the document wrote it, trimmed),
+`CIUS` and `Root`, and `Coverage(det.Source)` answers what the validator it named
+will not check — before the call.
+
+The twelve `Is*` predicates remain, and each answers about **one** format. They
+are independent tests, **not a partition**: more than one can be true of the same
+bytes (an `<Invoice>` with both a `Biller` and a `SellerParty` is `IsEbInterface`
+*and* `IsSvefaktura`). That is why `Detect` exists — it is the arbitration,
+written down once. Each predicate answers three ways:
+
+```go
+ok, err := formalis.IsFacturae(xml)
+switch {
+case err != nil:
+    // Malformed XML, an unsupported encoding, or a tripped guard.
+    // Not the same thing as "not a Facturae invoice".
+case ok:
+    report := formalis.ValidateFacturae(ctx, xml)
+}
+```
+
+`Profile` is a Factur-X/ZUGFeRD **data-richness** tier (`MINIMUM`, `BASIC WL`,
+`BASIC`, `EN 16931`, `EXTENDED`) and nothing else — it never selects a national
+rule set. `ProfileFor` maps a PDF's XMP `ConformanceLevel` to one; `CIUSFor` maps
+the levels that name a CIUS instead (today, `"XRECHNUNG"`). A `Profile` this
+package does not implement is refused with a `RuleProfile` violation rather than
+silently read as EN 16931.
+
+## Rule identity is `(Source, Rule)`
+
+`Source` names the authority that defines a rule; two authorities may mint the
+same string. Aggregate and suppress on the pair, never on `Rule` alone:
 
 ```go
 type key struct {
@@ -37,51 +185,50 @@ type key struct {
     Rule   string
 }
 counts := map[key]int{}
-for _, x := range v {
-    counts[key{x.Source, x.Rule}]++
+for _, v := range report.Violations {
+    counts[key{v.Source, v.Rule}]++
 }
 ```
 
-Validation is bounded and honours `ctx`. A run that stops early — a cancelled
-context, or a guard tripped by a hostile document — reports a `formalis.RuleLimit`
-violation rather than returning what it happened to collect, so an empty result
-always means "read in full, nothing to report":
+Most national formats publish no rule identifier this package could quote, so the
+identifiers under those `Source`s — `FPA-*`, `FE-*`, `ZA-*`, `ORDER-*`, … — were
+minted here. The `Source` is still the format the document was judged against,
+which is what a caller routing or suppressing by format needs; it is not a claim
+that the format's own documentation uses these names. The `Source`s whose
+identifiers *are* quoted from a published rule set are EN 16931, XRechnung,
+Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and SRBDT.
+
+## Bounded work
+
+Validation honours `ctx` and is bounded by the package's own limits on document
+depth and element count, so the cost of a call is not set by a hostile document.
+A run that stops early — a cancelled context, a tripped budget — reports a
+`RuleLimit` violation rather than an empty `Violations` slice, so it can never be
+read as a clean invoice:
 
 ```go
-for _, x := range v {
-    if formalis.IsCheckerViolation(x) {
-        // The checker stopped. The invoice is neither valid nor invalid.
+for _, v := range report.Violations {
+    if formalis.IsCheckerViolation(v) {
+        // The checker did not judge this document.
+        // Neither conformant nor non-conformant: unknown.
     }
 }
 ```
 
-The `Is*` predicates identify a document's format. They answer three ways, not
-two: `(true, nil)` yes, `(false, nil)` read it and it is some other format, and a
-non-nil error for input that could not be read at all — malformed XML, an
-encoding this package does not implement, or a tripped guard. A truncated
-Facturae invoice is not the same thing as "not a Facturae invoice", and routing
-on the difference is the point:
+`RuleSyntax` is deliberately not a checker violation: "this file is not
+well-formed XML" is a definite finding about the document.
 
-```go
-ok, err := formalis.IsFacturae(xml)
-switch {
-case err != nil:
-    // Could not tell. Do not dispatch on this.
-case ok:
-    v = formalis.ValidateFacturae(ctx, xml)
-}
-```
+## Examples
 
-## CIUS coverage
-
-- EN 16931 core (198/198 rules, FP=0 against the CEN unit-test suite)
-- Factur-X / ZUGFeRD profiles (MINIMUM … EXTENDED)
-- XRechnung (German public-sector CIUS)
-- Peppol BIS Billing 3.0
-- NLCIUS (Dutch SimplerInvoicing / SI-UBL)
+Runnable versions of everything above live in
+[`example_test.go`](example_test.go) as Go `Example` functions, written against
+the exported API from outside the package. `go test` compiles them and checks
+their output, so an example that has drifted from the API fails the build rather
+than misleading a reader. `go doc` shows them alongside the symbols they
+document.
 
 ## Tests
 
-`make test` runs the suite; oracle-backed tests skip until their (gitignored)
-reference data is fetched — see the `en16931-*` and `cius-oracles` Makefile
-targets.
+`make test` runs the suite. The oracle-backed tests need their (gitignored)
+reference corpora — see the `en16931-*` and `cius-oracles` Makefile targets;
+without them those tests skip.

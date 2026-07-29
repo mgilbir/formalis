@@ -9,7 +9,8 @@ import (
 // (a.k.a. ZUGFeRD Order) — the order-document sibling of Factur-X. Order-X
 // business rules differ from EN 16931 (which is invoice-specific), so this checks
 // the order's structure and mandatory head terms, reusing the shared CII parser.
-// The PDF container around it is validated in the pdf0 package.
+// The PDF container around it is validated in pdf0, the sibling module the
+// package documentation introduces; nothing here depends on it.
 //
 // # Why the identifiers read ORDER-01 and not BR-O-01
 //
@@ -56,11 +57,14 @@ import (
 var orderXTypeCodes = map[string]bool{"220": true, "230": true, "231": true}
 
 // ValidateOrderXML checks an embedded Cross Industry Order's structure and
-// mandatory head business terms, returning any violations.
+// mandatory head business terms. An Order-X is an order, not an invoice: none
+// of the EN 16931 invoice rules apply to it, and the five ORDER-* checks here
+// are this package's own.
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
-// package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty Report, so it cannot be mistaken for a valid invoice.
+// package's own limits. A cancelled run reports a RuleLimit violation rather
+// than an empty Violations slice, so a run that stopped early cannot be read
+// as a clean order.
 //
 // This validator checks the mandatory structure and code lists rather than the
 // whole schema its authority publishes, so the Report is never Conformant even
