@@ -253,8 +253,9 @@ func (n *ciiNode) str(path ...string) string {
 // typo cannot be read as a clean invoice.
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
-// package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty Report, so it cannot be mistaken for a valid invoice.
+// package's own limits. A cancelled run reports a RuleLimit violation rather
+// than an empty Violations slice, so a run that stopped early cannot be read
+// as a clean invoice or credit note.
 //
 // The Report names the EN 16931 rule families this package does not evaluate —
 // see Coverage(SourceEN16931), which is not empty — so Report.Conformant is

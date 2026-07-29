@@ -1,10 +1,75 @@
-// Package einvoice validates electronic invoices against the EN 16931 semantic
-// model and the national Core Invoice Usage Specifications (CIUS) layered on top
-// of it. One syntax-neutral rule engine (fed by parseEN16931) serves both XML
-// syntaxes — UN/CEFACT Cross Industry Invoice (CII, used by Factur-X/ZUGFeRD) and
-// OASIS UBL (Peppol BIS, XRechnung UBL, NLCIUS) — and each CIUS adds its own rule
-// layer in its own file (xrechnung.go, peppol.go, nlcius.go). The package is free
-// of any PDF dependency; the pdf0 package wraps it for the Factur-X container.
+// Package formalis validates electronic invoices against the EN 16931 semantic
+// model, the Core Invoice Usage Specifications (CIUS) layered on top of it, and
+// the national invoice formats that stand outside EN 16931 altogether. It uses
+// nothing but the Go standard library.
+//
+// One syntax-neutral rule engine (fed by parseEN16931) serves both EN 16931
+// syntaxes — UN/CEFACT Cross Industry Invoice (CII, used by Factur-X/ZUGFeRD)
+// and OASIS UBL (Peppol BIS, XRechnung UBL, NLCIUS) — and each CIUS adds its own
+// rule layer in its own file (xrechnung.go, peppol.go, nlcius.go, cius_pt.go,
+// cius_ro.go, cius_be.go, cius_rs.go). The formats that are not EN 16931
+// profiles at all — FatturaPA, Facturae, ebInterface, KSeF, Finvoice, TEAPPS,
+// OIOUBL, Svefaktura, ZATCA, NAV OSA, UBL-TR, PINT — and the Order-X order
+// document are checked against their own mandatory structure and code lists by
+// validators of their own. Source names every one of these authorities, and a
+// rule is identified by the pair (Source, Rule) rather than by Rule alone.
+//
+// # Entry points
+//
+// Every exported validator takes a context and the document's bytes and returns
+// a Report. Which one to call:
+//
+//   - Detect routes. It reports which format a document is in, in one streaming
+//     pass that builds no tree, and Detection.Validator returns the entry point
+//     that checks it.
+//   - ValidateCIUS applies that same arbitration and validates in one call,
+//     falling back to the EN 16931 core for a document that declares nothing.
+//   - Validate checks the EN 16931 core against a named Factur-X Profile, for a
+//     caller who has that data-richness metadata from a container the invoice
+//     itself does not carry.
+//   - The format-specific validators (ValidateXRechnung, ValidateZATCA, …) are
+//     the direct route when the format is already known.
+//
+// The twelve Is* predicates answer "is this document format X?" for one format
+// each. They are independent tests and not a partition — more than one can be
+// true of the same bytes — so route with Detect, which arbitrates between them
+// in an order it documents.
+//
+// # What a Report claims, and what it does not
+//
+// No rule set in this package is complete: each evaluates a documented subset of
+// what its authority publishes. Coverage names the gaps for any Source, and it
+// takes no document, so a caller can ask what a validator will not look at
+// before deciding to call it. Report.NotEvaluated repeats those gaps for the run
+// that just happened, and Report.Conformant is false whenever anything was left
+// unexamined — a stopped run, or a rule set with holes. Today that is every
+// document. A caller who wants the weaker "nothing was found" claim writes
+// len(r.Violations) == 0, and now has NotEvaluated beside it naming exactly what
+// that claim omits. See Report, Coverage and RuleLimit.
+//
+// # Concurrency
+//
+// There is no global mutable state. The code-list tables and compiled regexps
+// are package-level values initialised once at load and only read afterwards,
+// and every per-call artefact — the run, the parsed tree, the semantic model —
+// is allocated inside the call. Every exported function may therefore be called
+// from any number of goroutines at once; TestValidatorsAreSafeForConcurrentUse
+// pins that under -race.
+//
+// # A note on pdf0, which this package's comments refer to
+//
+// This package reads XML and has no PDF dependency. pdf0
+// (github.com/mgilbir/pdf0) is a separate, public sibling module that wraps it
+// for the Factur-X container: pdf0 opens the PDF, extracts the attached invoice
+// XML, and calls in here. The dependency runs one way — pdf0 requires formalis,
+// and nothing in this module imports or needs pdf0 — so the references to it in
+// limits.go, orderx.go and facturx_en16931.go are design constraints, not
+// dependencies.
+// They record conventions the two modules deliberately share, RuleLimit above
+// all, so that a caller draining one mixed slice of container and invoice
+// findings has one name to look for rather than two. A reader with no interest
+// in PDF containers can disregard every one of them; nothing here changes
+// behaviour because of pdf0.
 package formalis
 
 import (
