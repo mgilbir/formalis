@@ -32,7 +32,7 @@ import (
 // If Order-X should later publish business rules under identifiers of its own,
 // quote those and retire these.
 //
-// # Why the parse failure is a syntax finding and the wrong root is ORDER-root
+// # Why an unreadable document is an error and the wrong root is ORDER-root
 //
 // This validator used to answer every unreadable input with one finding of its
 // own, "order-xml: the order XML is not a well-formed Cross Industry Order".
@@ -47,8 +47,8 @@ import (
 //
 // The three cases are now three answers: a malformed or empty document is an
 // error wrapping ErrMalformedXML and carrying the decoder's own text, a
-// well-formed document of another
-// root is ORDER-root under SourceOrderX (the convention FPA-root, FE-root,
+// well-formed document of another root is ORDER-root under SourceOrderX (the
+// convention FPA-root, FE-root,
 // ZA-root … already follow), and a run that stopped early is RuleLimit and
 // nothing else. Holding to that is no longer this file's job: treeValidator owns
 // it for every tree-reading validator in the package.
