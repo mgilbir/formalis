@@ -87,6 +87,9 @@ func validateVATCategories(r *run, inv *en16931Invoice, add func(rule, msg strin
 	// "Not subject to VAT" forbids the VAT identifiers.
 	validateVATIdentifiers(inv, lineCats, allowCats, chargeCats, add)
 
+	// Breakdown groups tallied by category. A group missing its VAT category code
+	// (BT-118) is deliberately tallied under "" rather than dropped: it is still a
+	// BG-23 group, and BR-O-11 below counts groups, not codes. See the note there.
 	bdCats := map[string]int{}
 	for _, b := range inv.vatBreakdowns {
 		bdCats[b.category]++
@@ -156,6 +159,27 @@ func validateVATCategories(r *run, inv *en16931Invoice, add func(rule, msg strin
 	validateSplitPayment(inv, add)
 
 	// BR-O-11..14: "Not subject to VAT" (O) is exclusive of every other category.
+	//
+	// A breakdown group carrying no category code at all counts as another group
+	// here, so an invoice with one O group and one group missing BT-118 reports
+	// both BR-47 (the missing code) and BR-O-11 (the exclusivity). That is two
+	// findings for one input error, and it is deliberate: the EN 16931 UBL binding
+	// counts the same way. Its BR-O-11 parameter is
+	//
+	//	count(cac:TaxTotal/cac:TaxSubtotal/cac:TaxCategory
+	//	        [normalize-space(cbc:ID) != 'O'][...TaxScheme is VAT]) = 0
+	//
+	// and for a cac:TaxCategory with no cbc:ID, normalize-space(cbc:ID) is "",
+	// which is != 'O', so the group is counted and the assert fails. Matching the
+	// normative binding is worth more than suppressing the second finding, and the
+	// rule text agrees with it: an uncategorised BG-23 group is another BG-23
+	// group.
+	//
+	// The CII binding reads not(//ram:ApplicableTradeTax[ram:CategoryCode != 'O']),
+	// where the same comparison against an absent element is a node-set test that
+	// is false, so CII does not count it. The two normative bindings genuinely
+	// disagree; this syntax-neutral engine follows the UBL one, which is also the
+	// binding the CEN unit-test oracle exercises.
 	if bdCats["O"] > 0 {
 		if len(bdCats) > 1 {
 			add("BR-O-11", "an Invoice with a \"Not subject to VAT\" (O) VAT breakdown shall not contain other VAT breakdown groups")
