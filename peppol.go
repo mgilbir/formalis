@@ -42,14 +42,13 @@ var peppolVATEX = map[string]struct {
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidatePeppol(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validatePeppol(r, p))
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the rule families neither rule set evaluates — the union of
+// Coverage(SourceEN16931) and Coverage(SourcePeppol). This package implements
+// twenty of the sixty identifiers the OpenPEPPOL Schematron publishes.
+func ValidatePeppol(ctx context.Context, xmlData []byte) Report {
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourcePeppol}, validatePeppol)
 }
 
 func validatePeppol(r *run, p *parsed) []Violation {

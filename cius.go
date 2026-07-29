@@ -55,17 +55,29 @@ func DetectCIUS(specID string) CIUS {
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateCIUS(ctx context.Context, xmlData []byte) []Violation {
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report's coverage follows the document, not this entry point: it names
+// the gaps of the rule set the BT-24 dispatch actually ran, so an XRechnung
+// invoice comes back with the XRechnung gaps and a Portuguese one with the
+// CIUS-PT gaps. A document that declares no recognised CIUS is validated
+// against the EN 16931 core and reports the core's gaps alone.
+func ValidateCIUS(ctx context.Context, xmlData []byte) Report {
 	r := newRun(ctx)
 	p, err := parseEN16931(r, xmlData)
 	if err != nil {
-		return r.finish(syntaxViolation(err))
+		// The document never got as far as declaring a CIUS, so the core — the
+		// rule set every branch of the dispatch runs — is the honest claim here.
+		return newReport(r.finish(syntaxViolation(err)), SourceEN16931)
 	}
-	return r.finish(validateCIUS(r, p))
+	out, sources := validateCIUS(r, p)
+	return newReport(r.finish(out), sources...)
 }
 
-func validateCIUS(r *run, p *parsed) []Violation {
+// validateCIUS routes the document and reports which authorities' rules it ran,
+// so the caller's Report can name that rule set's gaps rather than a fixed set
+// this entry point guessed at.
+func validateCIUS(r *run, p *parsed) ([]Violation, []Source) {
 	// The dispatch is to the unexported forms so the whole dispatched call shares
 	// this run: one cancellation signal and one set of budgets across the detect
 	// and the validate, rather than a fresh (uncancellable) allowance for the
@@ -78,20 +90,20 @@ func validateCIUS(r *run, p *parsed) []Violation {
 	// documents the CIUS-specific entry point accepts.
 	switch DetectCIUS(p.inv.specID) {
 	case CIUSXRechnung:
-		return validateXRechnung(r, p)
+		return validateXRechnung(r, p), []Source{SourceEN16931, SourceXRechnung}
 	case CIUSNLCIUS:
-		return validateNLCIUS(r, p)
+		return validateNLCIUS(r, p), []Source{SourceEN16931, SourceNLCIUS}
 	case CIUSPortugal:
-		return validateCIUSPT(r, p)
+		return validateCIUSPT(r, p), []Source{SourceEN16931, SourceCIUSPT}
 	case CIUSRomania:
-		return validateCIUSRO(r, p)
+		return validateCIUSRO(r, p), []Source{SourceEN16931, SourceCIUSRO}
 	case CIUSBelgium:
-		return validateUBLBE(r, p)
+		return validateUBLBE(r, p), []Source{SourceEN16931, SourceUBLBE}
 	case CIUSSerbia:
-		return validateSRBDT(r, p)
+		return validateSRBDT(r, p), []Source{SourceEN16931, SourceSRBDT}
 	case CIUSPeppol:
-		return validatePeppol(r, p)
+		return validatePeppol(r, p), []Source{SourceEN16931, SourcePeppol}
 	default:
-		return validateEN16931(r, p.inv, ProfileEN16931)
+		return validateEN16931(r, p.inv, ProfileEN16931), []Source{SourceEN16931}
 	}
 }

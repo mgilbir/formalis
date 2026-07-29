@@ -60,8 +60,13 @@ var orderXTypeCodes = map[string]bool{"220": true, "230": true, "231": true}
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateOrderXML(ctx context.Context, xmlData []byte) []Violation {
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// This validator checks the mandatory structure and code lists rather than the
+// whole schema its authority publishes, so the Report is never Conformant even
+// for a document with no findings: Report.NotEvaluated, from Coverage(SourceOrderX),
+// says what was not checked.
+func ValidateOrderXML(ctx context.Context, xmlData []byte) Report {
 	return orderXValidator.validate(ctx, xmlData)
 }
 

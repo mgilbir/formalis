@@ -32,14 +32,16 @@ var xrExtItemSchemes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
 //
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation and never
-// an empty slice, so it cannot be mistaken for a valid invoice.
-func ValidateXRechnung(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	p, err := parseEN16931(r, xmlData)
-	if err != nil {
-		return r.finish(syntaxViolation(err))
-	}
-	return r.finish(validateXRechnung(r, p))
+// an empty Report, so it cannot be mistaken for a valid invoice.
+//
+// The Report names the rule families neither rule set evaluates — the union of
+// Coverage(SourceEN16931) and Coverage(SourceXRechnung). The XRechnung half is
+// not small: this package implements the BR-DE-* mandatory-term rules and
+// neither sub-profile's rules (BR-DEX-*, BR-DE-CVD-*), and an EXTENSION
+// document has BR-CO-16 suppressed in favour of a BR-DEX-09 that is not
+// evaluated.
+func ValidateXRechnung(ctx context.Context, xmlData []byte) Report {
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceXRechnung}, validateXRechnung)
 }
 
 func validateXRechnung(r *run, p *parsed) []Violation {
