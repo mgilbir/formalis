@@ -344,15 +344,16 @@ type Detection struct {
 	Source Source
 
 	// CIUS is the Core Invoice Usage Specification the Specification identifier
-	// declares — DetectCIUS(SpecID), and therefore exactly the branch
-	// ValidateCIUS takes for this document. It is CIUSNone when the identifier
-	// names none, and for every root that carries no BT-24 at all.
+	// declares — DetectCIUS(SpecID) and nothing else. It is CIUSNone when the
+	// identifier names none, and for every root that carries no BT-24 at all.
 	//
 	// It is not always the same answer as Source, and where the two differ
-	// Source is the more specific one: a PINT invoice declares
-	// "urn:peppol:pint:billing-1@my-1", so CIUS reads CIUSPeppol while Source
-	// reads SourcePINT. Route on Source; read CIUS to know what ValidateCIUS
-	// would do.
+	// Source is the one to route on: CIUS answers only "which CIUS", so it is
+	// CIUSNone for a document Source recognises by a national format that is not
+	// a CIUS (an OIOUBL or UBL-TR identifier), by evidence outside BT-24 (a
+	// ZATCA profile identifier, an ebInterface Biller), or by its root element.
+	// The two no longer disagree about which rule set applies, which they did
+	// while a PINT invoice reported CIUSPeppol and SourcePINT.
 	CIUS CIUS
 
 	// SpecID is the Specification identifier (BT-24) as the document wrote it,
@@ -399,10 +400,10 @@ func (d Detection) Recognised() bool { return d.Source != SourceNone }
 // core, and it avoids inventing a Profile. A caller who knows the Factur-X
 // data-richness profile from a PDF container's XMP should call Validate with it
 // instead, since a leaner profile is excused rules the core applies — Detect
-// reads the invoice, and the invoice does not carry that metadata. Each of the
-// seven CIUS maps to its own validator rather than to ValidateCIUS, so that the
-// arbitration above is what takes effect: for the documents where Detect and a
-// bare BT-24 dispatch disagree, Detect's answer is the one the caller asked for.
+// reads the invoice, and the invoice does not carry that metadata. Each CIUS
+// maps to its own validator rather than to ValidateCIUS, which is the direct
+// route to the same rule set: ValidateCIUS now applies this very arbitration, so
+// either call runs what Detect named.
 //
 // The returned function re-reads xmlData. Detection is a separate pass by
 // design — it builds no tree and spends no budget, which is what lets it run on
@@ -518,23 +519,27 @@ func (d Detection) Validator() func(context.Context, []byte) Report {
 //  2. Within the shared UBL root (Invoice, CreditNote), the Specification
 //     identifier — BT-24, the cbc:CustomizationID. This is the one business
 //     term whose entire purpose is to name the rule set the document follows,
-//     so it outranks every structural hint. Among the tests that read it, the
-//     one that consumes more of the string runs first:
+//     so it outranks every structural hint. The tests that read it are the
+//     ordered list specIDRules in cius.go, most specific first, and that list is
+//     the same one DetectCIUS, the Is* predicates and ValidateCIUS read, so no
+//     two of them can answer differently. Three entries are ordered rather than
+//     merely listed:
 //
-//     a. "peppol:pint" (PINT) before DetectCIUS's bare "peppol" (Peppol BIS
-//     Billing 3.0). "urn:peppol:pint:billing-1@my-1" is a Malaysian PINT
-//     invoice and contains the substring "peppol"; PINT and BIS Billing are
-//     different rule sets, and the identifier names PINT.
+//     a. "peppol:pint" (PINT) before the bare "peppol" (Peppol BIS Billing
+//     3.0). "urn:peppol:pint:billing-1@my-1" is a Malaysian PINT invoice and
+//     contains the substring "peppol"; PINT and BIS Billing are different rule
+//     sets, and the identifier names PINT. The pre-release Japanese identifier
+//     "urn:fdc:peppol:jp:billing:3.0" is read as PINT too, for the reason
+//     written out at that entry.
 //
-//     b. "OIOUBL" before the "TR" prefix. Denmark's identifier carries a brand
+//     b. "xrechnung" before "peppol", because an XRechnung identifier may also
+//     reference the Peppol base.
+//
+//     c. "OIOUBL" before the "TR" prefix. Denmark's identifier carries a brand
 //     name that appears in no other profile; the Turkish test is a
 //     two-character prefix over a namespace everyone shares, which is the
 //     weakest of the identifier tests and therefore the last of them. That is
 //     what decides the audit's "TR-OIOUBL-2.02": OIOUBL.
-//
-//     c. DetectCIUS between them, keeping its own documented order (XRechnung
-//     before Peppol, because an XRechnung identifier also references the
-//     Peppol base).
 //
 //  3. ZATCA, which reads a ProfileID value and an AdditionalDocumentReference
 //     rather than BT-24, so it runs after everything that reads BT-24. Real
@@ -584,14 +589,77 @@ func Detect(xmlData []byte) (Detection, error) {
 func (d *docShape) detect() Detection {
 	det := Detection{Root: d.root, SpecID: d.specID()}
 	det.CIUS = DetectCIUS(det.SpecID)
-	det.Source = d.detectSource(det.SpecID, det.CIUS)
+	det.Source = route(d.facts())
 	return det
 }
 
-// detectSource is step 1 of the order: the roots that belong to exactly one
-// format, and the two shared roots that delegate.
-func (d *docShape) detectSource(specID string, c CIUS) Source {
-	switch d.root {
+// routeFacts is everything the arbitration reads about a document, and the
+// whole of the coupling between the two callers that have to make this decision.
+//
+// There are two of them because they arrive by different roads. Detect has a
+// streaming scan and no tree, which is what lets it route a document the parser
+// would refuse; ValidateCIUS has already parsed the document and must not read
+// the bytes a second time, because the element budget belongs to the document
+// rather than to the number of layers a call passed through. Neither can use the
+// other's reading. What they can share — and now do — is the decision, so each
+// fills this in from what it already has and hands it to route.
+type routeFacts struct {
+	// root is the local name of the root element, namespace discarded.
+	root string
+	// specID is the Specification identifier (BT-24) as the document wrote it.
+	specID string
+	// profileID is the text of the root's first ProfileID child, which is what
+	// ZATCA is recognised by.
+	profileID string
+	// The distinguishing direct children, each belonging to one format's
+	// vocabulary.
+	hasNaglowek    bool
+	hasBiller      bool
+	hasSellerParty bool
+	// zatcaMarked reports an AdditionalDocumentReference whose ID reads "ICV".
+	//
+	// It is a function rather than a bool because the two callers pay very
+	// differently for it: the scan has the answer already, while the model-fed
+	// path has to walk the whole tree for it. route asks only for a UBL document
+	// whose Specification identifier named nothing, so on every document that
+	// declares a profile — which is most of them — the walk never happens.
+	zatcaMarked func() bool
+}
+
+// facts reads the arbitration's inputs off a scanned shape.
+func (d *docShape) facts() routeFacts {
+	return routeFacts{
+		root:           d.root,
+		specID:         d.specID(),
+		profileID:      d.str("ProfileID"),
+		hasNaglowek:    d.hasNaglowek,
+		hasBiller:      d.hasBiller,
+		hasSellerParty: d.hasSellerParty,
+		zatcaMarked:    func() bool { return d.icvDocRef },
+	}
+}
+
+// facts reads the same inputs off a document that has already been parsed, so
+// that ValidateCIUS routes on the arbitration Detect applies without reading the
+// bytes again. Each field is the tree expression of the scan's capture above:
+// the specification identifier is the mapper's own, and the three children are
+// direct children of the root, which is what the scan retains.
+func (p *parsed) facts() routeFacts {
+	return routeFacts{
+		root:           p.root.name,
+		specID:         p.inv.specID,
+		profileID:      p.root.str("ProfileID"),
+		hasNaglowek:    p.root.child("Naglowek") != nil,
+		hasBiller:      p.root.child("Biller") != nil,
+		hasSellerParty: p.root.child("SellerParty") != nil,
+		zatcaMarked:    func() bool { return zatcaDocRef(p.root, "ICV") },
+	}
+}
+
+// route is step 1 of the order: the roots that belong to exactly one format, and
+// the two shared roots that delegate.
+func route(f routeFacts) Source {
+	switch f.root {
 	case "Facturae":
 		return SourceFacturae
 	case "FatturaElettronica":
@@ -611,70 +679,53 @@ func (d *docShape) detectSource(specID string, c CIUS) Source {
 	case "Faktura":
 		// The Polish root without its Naglowek head is not a KSeF FA document,
 		// and nothing else claims the name.
-		if d.hasNaglowek {
+		if f.hasNaglowek {
 			return SourceKSeF
 		}
 		return SourceNone
 	case "CrossIndustryInvoice":
 		// The CII syntax is used by Factur-X/ZUGFeRD and by the CIUS that
 		// publish a CII binding, and by no national format in this package, so
-		// the specification identifier is the only question left to ask.
-		if src := ciusSource(c); src != SourceNone {
+		// the specification identifier is the only question left to ask — and
+		// only the part of it that names a CIUS, since OIOUBL and UBL-TR are UBL
+		// vocabularies that no CII document is written in.
+		//
+		// PINT is a CIUS constant and so is reached here, though it publishes no
+		// CII binding either. That is deliberate: a CrossIndustryInvoice
+		// declaring a PINT identifier is a contradiction, and answering PINT
+		// sends it to a validator that says so — "the document root shall be a
+		// UBL Invoice or CreditNote" — rather than quietly validating it against
+		// a rule set it did not claim.
+		if src := ciusSource(DetectCIUS(f.specID)); src != SourceNone {
 			return src
 		}
 		return SourceEN16931
 	case "Invoice", "CreditNote":
-		return d.detectUBL(specID, c)
+		return routeUBL(f)
 	}
 	return SourceNone
 }
 
-// detectUBL is steps 2 to 5: arbitration inside the root name that four
-// national formats, seven CIUS and the EN 16931 UBL binding all share.
-func (d *docShape) detectUBL(specID string, c CIUS) Source {
+// routeUBL is steps 2 to 5: arbitration inside the root name that four national
+// formats, the CIUS and the EN 16931 UBL binding all share.
+func routeUBL(f routeFacts) Source {
+	// Step 2 — the Specification identifier, most specific test first. The order
+	// within it is specIDRules, which DetectCIUS and the Is* predicates read
+	// too, so this cannot drift from what ValidateCIUS routes on.
+	if src := specIDSource(f.specID); src != SourceNone {
+		return src
+	}
 	switch {
-	// Step 2 — the Specification identifier, most specific match first.
-	case strings.Contains(specID, "peppol:pint"):
-		return SourcePINT
-	case strings.Contains(specID, "OIOUBL"):
-		return SourceOIOUBL
-	case c != CIUSNone:
-		return ciusSource(c)
-	case strings.HasPrefix(strings.ToUpper(specID), "TR"):
-		return SourceUBLTR
-	// Step 3 — ZATCA, which reads a profile identifier and a document
-	// reference rather than BT-24.
-	case strings.Contains(strings.ToLower(d.str("ProfileID")), "reporting") || d.icvDocRef:
+	// Step 3 — ZATCA, which reads a profile identifier and a document reference
+	// rather than BT-24.
+	case strings.Contains(strings.ToLower(f.profileID), "reporting") || f.zatcaMarked():
 		return SourceZATCA
 	// Step 4 — a distinguishing child, the weakest evidence here.
-	case d.hasBiller:
+	case f.hasBiller:
 		return SourceEbInterface
-	case d.hasSellerParty:
+	case f.hasSellerParty:
 		return SourceSvefaktura
 	}
 	// Step 5 — a UBL invoice declaring no national profile.
 	return SourceEN16931
-}
-
-// ciusSource maps a CIUS onto the authority that publishes it, so the seven
-// CIUS reach Detection.Source without a second taxonomy. It reports SourceNone
-// for CIUSNone.
-func ciusSource(c CIUS) Source {
-	switch c {
-	case CIUSXRechnung:
-		return SourceXRechnung
-	case CIUSPeppol:
-		return SourcePeppol
-	case CIUSNLCIUS:
-		return SourceNLCIUS
-	case CIUSPortugal:
-		return SourceCIUSPT
-	case CIUSRomania:
-		return SourceCIUSRO
-	case CIUSBelgium:
-		return SourceUBLBE
-	case CIUSSerbia:
-		return SourceSRBDT
-	}
-	return SourceNone
 }

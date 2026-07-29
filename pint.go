@@ -23,9 +23,18 @@ var pintJurisdiction = regexp.MustCompile(`@([a-z]{2,4})-`)
 
 // DetectPINTJurisdiction returns the jurisdiction code declared in a PINT
 // CustomizationID (e.g. "eu", "ae", "jp", "my", "sg", "om", "aunz"), or "".
+//
+// The pre-release Japanese identifier is answered too. JP PINT 0.1.2 wrote its
+// jurisdiction into the path — "urn:fdc:peppol:jp:billing:3.0" — rather than
+// into the "@jp-1" suffix the released profiles use, and a caller applying
+// jurisdiction-specific handling to a document this package routes to PINT
+// should not have to know which vintage it came from.
 func DetectPINTJurisdiction(customizationID string) string {
 	if m := pintJurisdiction.FindStringSubmatch(customizationID); m != nil {
 		return m[1]
+	}
+	if strings.Contains(normSpecID(customizationID), "fdc:peppol:jp:billing") {
+		return "jp"
 	}
 	return ""
 }
@@ -38,12 +47,16 @@ func DetectPINTJurisdiction(customizationID string) string {
 // read and is some other format.
 //
 // The Is* predicates are independent tests, not a partition. This one reads the
-// Specification identifier of a root four national formats, seven CIUS and the
+// Specification identifier of a root four national formats, the CIUS and the
 // EN 16931 UBL binding all share, so more than one can report true about the
 // same document: an invoice declaring "urn:peppol:pint:x" and ProfileID
 // "reporting:1.0" satisfies this predicate and IsZATCA both. Detect applies a
 // documented precedence — this one wins that pair — and returns a single answer;
 // route with it.
+//
+// The identifiers it accepts are the PINT entry of specIDRules, which is also
+// what Detect, DetectCIUS and ValidateCIUS route on, so this predicate cannot
+// disagree with them about which documents are PINT.
 func IsPINT(xmlData []byte) (bool, error) {
 	d, err := detectShape(xmlData)
 	if err != nil {
@@ -52,7 +65,7 @@ func IsPINT(xmlData []byte) (bool, error) {
 	if d.root != "Invoice" && d.root != "CreditNote" {
 		return false, nil
 	}
-	return strings.Contains(d.str("CustomizationID"), "peppol:pint"), nil
+	return declaresSpecID(SourcePINT, d.str("CustomizationID")), nil
 }
 
 // ValidatePINT validates a Peppol PINT document against the mandatory structure
@@ -79,7 +92,11 @@ var pintValidator = treeValidator{
 }
 
 func checkPINT(root *ciiNode, add func(rule, msg string)) {
-	if !strings.Contains(root.str("CustomizationID"), "peppol:pint") {
+	// The same test the routing uses, so a document this package sends here is
+	// never told on arrival that it is not PINT. Before they were one test, the
+	// eight pre-release JP PINT instances in the corpus failed this rule and
+	// nothing else.
+	if !declaresSpecID(SourcePINT, root.str("CustomizationID")) {
 		add("PINT-customization", "the CustomizationID shall declare a Peppol PINT profile")
 	}
 	if strings.TrimSpace(root.str("ProfileID")) == "" {

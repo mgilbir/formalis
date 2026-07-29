@@ -80,12 +80,33 @@ func (t treeValidator) validate(ctx context.Context, xmlData []byte) Report {
 		// broken; the RuleLimit trip r.finish appends is then the whole answer.
 		return newReport(r.finish(syntaxViolation(err)), t.source)
 	}
+	return newReport(r.finish(t.checkTree(root)), t.source)
+}
+
+// checkTree is the half of validate that does not read bytes: refuse a root this
+// format does not describe, otherwise run the rule body.
+//
+// It is separate so ValidateCIUS can route a document to this format's rules
+// without parsing it a second time. That dispatcher has already built a tree,
+// and re-reading the bytes to build another would charge one document's element
+// budget twice — the failure TestNodeBudgetIsPerDocumentNotPerEntryPoint exists
+// to prevent. Both callers therefore run the same body over the same root, and a
+// format cannot say one thing through its own entry point and another through
+// the dispatcher.
+func (t treeValidator) checkTree(root *ciiNode) []Violation {
 	if !t.accepts(root) {
-		return newReport(r.finish([]Violation{{Source: t.source, Rule: t.rootRule, Message: t.rootMsg}}), t.source)
+		return []Violation{{Source: t.source, Rule: t.rootRule, Message: t.rootMsg}}
 	}
 	var out []Violation
 	t.check(root, adder(&out, t.source))
-	return newReport(r.finish(out), t.source)
+	return out
+}
+
+// checkParsed runs this format's rules against a document another entry point
+// has already parsed onto the EN 16931 model. The tree is kept alongside that
+// model precisely so this is possible.
+func (t treeValidator) checkParsed(p *parsed) []Violation {
+	return t.checkTree(p.root)
 }
 
 // rootNamed accepts a document whose root element carries one of the given local
