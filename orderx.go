@@ -2,7 +2,6 @@ package formalis
 
 import (
 	"context"
-	"errors"
 	"fmt"
 )
 
@@ -31,6 +30,26 @@ import (
 //
 // If Order-X should later publish business rules under identifiers of its own,
 // quote those and retire these.
+//
+// # Why the parse failure is a syntax finding and the wrong root is ORDER-root
+//
+// This validator used to answer every unreadable input with one finding of its
+// own, "order-xml: the order XML is not a well-formed Cross Industry Order".
+// That was three answers collapsed into one, and one of the three was false: a
+// CrossIndustryInvoice handed to this entry point is perfectly well-formed, and
+// saying otherwise accuses a document the parser never complained about. The
+// other two lost information rather than inventing it — the decoder's message is
+// the only thing that says *where* the XML broke, and a caller filtering on the
+// exported RuleSyntax constant to separate "bad file" from "bad invoice" saw
+// nothing from this validator at all, though limits.go states that every
+// exported validator routes its parse errors through syntaxViolation.
+//
+// The three cases are now three answers: a malformed or empty document is
+// RuleSyntax carrying the decoder's own text, a well-formed document of another
+// root is ORDER-root under SourceOrderX (the convention FPA-root, FE-root,
+// ZA-root … already follow), and a run that stopped early is RuleLimit and
+// nothing else. Holding to that is no longer this file's job: treeValidator owns
+// it for every tree-reading validator in the package.
 
 // orderXTypeCodes is the order document type code set (UNTDID 1001): order (220),
 // order change (230), order response (231).
@@ -43,34 +62,18 @@ var orderXTypeCodes = map[string]bool{"220": true, "230": true, "231": true}
 // package's own limits. A cancelled run reports a RuleLimit violation and never
 // an empty slice, so it cannot be mistaken for a valid invoice.
 func ValidateOrderXML(ctx context.Context, xmlData []byte) []Violation {
-	r := newRun(ctx)
-	root, err := parseCII(r, xmlData)
-	if errors.Is(err, errStopped) {
-		// A run that stopped says nothing about the order. Reporting "not
-		// well-formed" here would accuse a document the checker never finished
-		// reading; the trip itself is already recorded on the run.
-		return r.finish(nil)
-	}
-	if err != nil {
-		return r.finish([]Violation{notAnOrder})
-	}
-	return r.finish(validateOrderXML(r, root))
+	return orderXValidator.validate(ctx, xmlData)
 }
 
-// notAnOrder is the finding for XML that is not a Cross Industry Order.
-var notAnOrder = Violation{
-	Source:  SourceOrderX,
-	Rule:    "order-xml",
-	Message: "the order XML is not a well-formed Cross Industry Order (SCRDMCCBDACIOMessageStructure)",
+var orderXValidator = treeValidator{
+	source:   SourceOrderX,
+	rootRule: "ORDER-root",
+	rootMsg:  "the document root shall be a Cross Industry Order (SCRDMCCBDACIOMessageStructure)",
+	accepts:  rootNamed("SCRDMCCBDACIOMessageStructure"),
+	check:    checkOrderX,
 }
 
-func validateOrderXML(r *run, root *ciiNode) []Violation {
-	var out []Violation
-	add := adder(&out, SourceOrderX)
-
-	if root.name != "SCRDMCCBDACIOMessageStructure" {
-		return []Violation{notAnOrder}
-	}
+func checkOrderX(root *ciiNode, add func(rule, msg string)) {
 	doc := root.child("ExchangedDocument").orNil()
 	agr := root.child("SupplyChainTradeTransaction", "ApplicableHeaderTradeAgreement").orNil()
 
@@ -91,5 +94,4 @@ func validateOrderXML(r *run, root *ciiNode) []Violation {
 	if agr.str("SellerTradeParty", "Name") == "" {
 		add("ORDER-05", "an Order shall contain the Seller name")
 	}
-	return out
 }
