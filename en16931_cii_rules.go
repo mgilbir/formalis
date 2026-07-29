@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -32,7 +33,24 @@ import (
 // advisory. Only the fatal ones are evaluated here, on the policy this package
 // has followed since NLCIUS's BR-NL-19..35: report what an authority makes fatal
 // and name its advisory families in Coverage.
-
+//
+// Three of the seventy fatal datatype rules are not evaluated, and cannot be —
+// see ciiDatatypeIdentifierRules for CII-DT-010/011/012, which the Schematron's
+// own rule ordering makes unreachable. Coverage(SourceEN16931) names them.
+//
+// Rule order matters, and this file honours it. Under ISO Schematron a node is
+// processed by the *first* rule in a pattern whose context matches it, and every
+// assertion here lives in one pattern, EN16931-CII-Syntax. Two of its contexts
+// overlap:
+//
+//   - `//ram:*[ends-with(name(), 'ID')]` (CII-DT-101..104) is preceded by a rule
+//     naming four specific identifiers (CII-DT-001..007), so those four are
+//     checked under the CII-DT-00x identifiers and never under CII-DT-10x. The
+//     generated XSLT gives the four-identifier template priority 1011 and the
+//     wildcard 1010, which is that reading made mechanical.
+//   - `//ram:TypeCode` (CII-DT-008/009, priority 1009) precedes
+//     `/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode`
+//     (CII-DT-010/011/012, priority 1008), so the latter never runs.
 //
 // Source. These findings are stamped SourceEN16931, not a source of their own:
 // CEN publishes the syntax bindings as normative parts of EN 16931 itself.
@@ -69,6 +87,14 @@ func validateCIISyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ciiSyntaxTotalsRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiDatatypeIdentifierRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiDatatypeValueRules(g, add)
 	return out
 }
 
@@ -296,6 +322,24 @@ func anyHasAttr(ns []*ciiNode, name string) bool {
 // hasChild is `(ram:X)` — an existence test on a child element, whatever its
 // content.
 func hasChild(n *ciiNode, name string) bool { return len(n.all(name)) > 0 }
+
+// childValueIs is CEN's `ram:TypeCode='130'` — a general comparison over the
+// children, so an element with several codes matches if any of them does.
+func childValueIs(n *ciiNode, name, want string) bool {
+	for _, c := range n.all(name) {
+		if strings.TrimSpace(c.text) == want {
+			return true
+		}
+	}
+	return false
+}
+
+// forbiddenAttr is the shape thirty-one of the datatype rules share: an
+// attribute the EN 16931 CII binding does not use, on a population of elements.
+type forbiddenAttr struct {
+	rule string
+	attr string
+}
 
 // ciiSyntaxDocumentRules are the rules CEN binds to the document element and to
 // the two head groups under it — `/rsm:CrossIndustryInvoice`,
@@ -553,6 +597,123 @@ func ciiSyntaxTotalsRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
 			if atMostOnce(ms, c.elem) {
 				add(c.rule, c.term+" shall occur at most once in the document totals (BG-22)")
 			}
+		}
+	}
+}
+
+// ciiDatatypeIdentifierRules are the datatype rules about identifiers and codes:
+// the seven attributes CEN forbids on the four identifiers that carry a bare
+// value (BT-24, BT-1, BT-126, BT-155), the four it forbids on every other
+// identifier in the document, and the two it forbids on every code.
+//
+// CII-DT-010, CII-DT-011 and CII-DT-012 are the three fatal datatype rules this
+// package does not evaluate, and the reason is CEN's rather than this package's.
+// They are bound to `/rsm:CrossIndustryInvoice/rsm:ExchangedDocument/
+// ram:TypeCode`, and the rule immediately before them in the same pattern is
+// bound to `//ram:TypeCode`, which matches the same element. Under ISO
+// Schematron a node is processed by the first matching rule in a pattern and no
+// later one, so the invoice type code is checked for @name and @listURI
+// (CII-DT-008/009) and never for @listID, @listAgencyID or @listVersionID. CEN's
+// own generated XSLT makes it mechanical: the `//ram:TypeCode` template has
+// priority 1009 and the ExchangedDocument one 1008. Emitting them here would
+// report a document no reference validator reports — the false positive this
+// package exists not to produce — so Coverage(SourceEN16931) names them instead.
+func ciiDatatypeIdentifierRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, id := range g.scopedIDs {
+		for _, c := range []forbiddenAttr{
+			{"CII-DT-001", "schemeName"},
+			{"CII-DT-002", "schemeAgencyName"},
+			{"CII-DT-003", "schemeDataURI"},
+			{"CII-DT-004", "schemeURI"},
+			{"CII-DT-005", "schemeID"},
+			{"CII-DT-006", "schemeAgencyID"},
+			{"CII-DT-007", "schemeVersionID"},
+		} {
+			if id.hasAttr(c.attr) {
+				add(c.rule, fmt.Sprintf("The %s identifier shall not carry a @%s attribute", id.name, c.attr))
+			}
+		}
+	}
+	for _, id := range g.otherIDs {
+		for _, c := range []forbiddenAttr{
+			{"CII-DT-101", "schemeName"},
+			{"CII-DT-102", "schemeAgencyName"},
+			{"CII-DT-103", "schemeDataURI"},
+			{"CII-DT-104", "schemeURI"},
+		} {
+			if id.hasAttr(c.attr) {
+				add(c.rule, fmt.Sprintf("The %s identifier shall not carry a @%s attribute", id.name, c.attr))
+			}
+		}
+	}
+	for _, tc := range g.typeCodes {
+		if tc.hasAttr("name") {
+			add("CII-DT-008", "A code shall not carry a @name attribute")
+		}
+		if tc.hasAttr("listURI") {
+			add("CII-DT-009", "A code shall not carry a @listURI attribute")
+		}
+	}
+}
+
+// ciiDate102 is the date form UN/EDIFACT format qualifier 102 names: CCYYMMDD,
+// with a plausible month and day. CEN writes it as an XSD regular expression and
+// this is the same expression; Go's syntax accepts it unchanged.
+var ciiDate102 = regexp.MustCompile(`^\s*(\d{4})(1[0-2]|0[1-9]){1}(3[01]|[12][0-9]|0[1-9]){1}\s*$`)
+
+// ciiDatatypeValueRules are the datatype rules on the value-carrying elements:
+// the currency attributes on an amount, the unit attributes on a quantity, the
+// tax type on a tax group, and the format of a date.
+func ciiDatatypeValueRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	// CII-DT-031/032, on every amount but ram:TaxTotalAmount. The exception is
+	// BT-110/BT-111, the only amounts EN 16931 lets a CII invoice denominate
+	// explicitly, because an invoice with a VAT accounting currency (BT-6) carries
+	// the VAT total twice, in two currencies. Every other amount is in the invoice
+	// currency (BT-5) by construction and saying so again can only contradict it.
+	for _, a := range g.amounts {
+		if a.hasAttr("currencyID") {
+			add("CII-DT-031", fmt.Sprintf("%s shall not carry a @currencyID attribute; only the VAT total (BT-110/111) may", a.name))
+		}
+		if a.hasAttr("currencyCodeListVersionID") {
+			add("CII-DT-032", fmt.Sprintf("%s shall not carry a @currencyCodeListVersionID attribute", a.name))
+		}
+	}
+
+	for _, q := range g.quantities {
+		// not(@unitCode) or (/rsm:CrossIndustryInvoice/.../ram:BilledQuantity/@unitCode)
+		//
+		// The second operand does not mention the context node: one line's billed
+		// quantity carrying a unit code satisfies the rule for every quantity in
+		// the document. So this fires only on an invoice that puts a unit on some
+		// quantity while no line states the unit it invoiced in.
+		if q.hasAttr("unitCode") && !g.billedQuantityUnitCode {
+			add("CII-DT-033", fmt.Sprintf("%s carries a @unitCode while no invoiced quantity (BT-130) states its unit of measure (BT-130-1)", q.name))
+		}
+		for _, c := range []forbiddenAttr{
+			{"CII-DT-034", "unitCodeListID"},
+			{"CII-DT-035", "unitCodeListAgencyID"},
+			{"CII-DT-036", "unitCodeListAgencyName"},
+		} {
+			if q.hasAttr(c.attr) {
+				add(c.rule, fmt.Sprintf("%s shall not carry a @%s attribute", q.name, c.attr))
+			}
+		}
+	}
+
+	// CII-DT-037: not(ram:TypeCode) or (ram:TypeCode = 'VAT'). A general
+	// comparison, so a group naming several tax types passes if one of them is
+	// VAT; a group naming none passes too, and BR-CO-09 and the category rules are
+	// what have something to say about that.
+	for _, tt := range g.tradeTaxes {
+		if hasChild(tt, "TypeCode") && !childValueIs(tt, "TypeCode", "VAT") {
+			add("CII-DT-037", fmt.Sprintf("The tax type code in %s shall be VAT", tt.name))
+		}
+	}
+
+	// CII-DT-097, on every udt:DateTimeString declaring format 102.
+	for _, d := range g.dates102 {
+		if !ciiDate102.MatchString(d.text) {
+			add("CII-DT-097", fmt.Sprintf("A date declaring format 102 shall be written YYYYMMDD, not %q", strings.TrimSpace(d.text)))
 		}
 	}
 }

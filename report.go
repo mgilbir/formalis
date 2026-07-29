@@ -198,7 +198,7 @@ var notEvaluated = map[Source][]string{
 		"UBL-DT-* other than UBL-DT-01/06/07 (the 21 advisory UBL datatype rules)",
 		"UBL-CR-* (678 rules, all but two advisory: UBL elements outside the EN 16931 core)",
 		"the 440 advisory CII-SR-* rules (of CEN's 482; all 42 fatal ones are evaluated)",
-		"CII-DT-* other than CII-DT-013/014 (68 of the 70 fatal CII datatype rules remain, and 31 advisory ones)",
+		"CII-DT-* other than the 23 fatal rules on the document element, the identifiers, the codes and the values (47 of the 70 fatal CII datatype rules remain, three of which — CII-DT-010, CII-DT-011 and CII-DT-012 — are unreachable: the EN16931-CII-Syntax pattern matches the invoice type code with //ram:TypeCode before the rule bound to it specifically, and ISO Schematron gives a node to the first matching rule only, so no reference validator reports them either; and 31 advisory ones)",
 	},
 
 	// XRechnung: the KoSIT Schematron publishes 54 identifiers; this package
