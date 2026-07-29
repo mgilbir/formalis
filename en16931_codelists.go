@@ -289,6 +289,52 @@ var en16931RefTypeCodes = map[string]bool{
 	"WN": true, "WR": true, "WS": true, "WY": true, "XA": true, "XC": true, "XP": true, "ZZZ": true,
 }
 
+// en16931TextSubjectCodes is the UNTDID 4451 text subject qualifier code set
+// (BR-CL-08).
+var en16931TextSubjectCodes = map[string]bool{
+	"AAA": true, "AAB": true, "AAC": true, "AAD": true, "AAE": true, "AAF": true, "AAG": true, "AAI": true, "AAJ": true, "AAK": true,
+	"AAL": true, "AAM": true, "AAN": true, "AAO": true, "AAP": true, "AAQ": true, "AAR": true, "AAS": true, "AAT": true, "AAU": true,
+	"AAV": true, "AAW": true, "AAX": true, "AAY": true, "AAZ": true, "ABA": true, "ABB": true, "ABC": true, "ABD": true, "ABE": true,
+	"ABF": true, "ABG": true, "ABH": true, "ABI": true, "ABJ": true, "ABK": true, "ABL": true, "ABM": true, "ABN": true, "ABO": true,
+	"ABP": true, "ABQ": true, "ABR": true, "ABS": true, "ABT": true, "ABU": true, "ABV": true, "ABW": true, "ABX": true, "ABZ": true,
+	"ACA": true, "ACB": true, "ACC": true, "ACD": true, "ACE": true, "ACF": true, "ACG": true, "ACH": true, "ACI": true, "ACJ": true,
+	"ACK": true, "ACL": true, "ACM": true, "ACN": true, "ACO": true, "ACP": true, "ACQ": true, "ACR": true, "ACS": true, "ACT": true,
+	"ACU": true, "ACV": true, "ACW": true, "ACX": true, "ACY": true, "ACZ": true, "ADA": true, "ADB": true, "ADC": true, "ADD": true,
+	"ADE": true, "ADF": true, "ADG": true, "ADH": true, "ADI": true, "ADJ": true, "ADK": true, "ADL": true, "ADM": true, "ADN": true,
+	"ADO": true, "ADP": true, "ADQ": true, "ADR": true, "ADS": true, "ADT": true, "ADU": true, "ADV": true, "ADW": true, "ADX": true,
+	"ADY": true, "ADZ": true, "AEA": true, "AEB": true, "AEC": true, "AED": true, "AEE": true, "AEF": true, "AEG": true, "AEH": true,
+	"AEI": true, "AEJ": true, "AEK": true, "AEL": true, "AEM": true, "AEN": true, "AEO": true, "AEP": true, "AEQ": true, "AER": true,
+	"AES": true, "AET": true, "AEU": true, "AEV": true, "AEW": true, "AEX": true, "AEY": true, "AEZ": true, "AFA": true, "AFB": true,
+	"AFC": true, "AFD": true, "AFE": true, "AFF": true, "AFG": true, "AFH": true, "AFI": true, "AFJ": true, "AFK": true, "AFL": true,
+	"AFM": true, "AFN": true, "AFO": true, "AFP": true, "AFQ": true, "AFR": true, "AFS": true, "AFT": true, "AFU": true, "AFV": true,
+	"AFW": true, "AFX": true, "AFY": true, "AFZ": true, "AGA": true, "AGB": true, "AGC": true, "AGD": true, "AGE": true, "AGF": true,
+	"AGG": true, "AGH": true, "AGI": true, "AGJ": true, "AGK": true, "AGL": true, "AGM": true, "AGN": true, "AGO": true, "AGP": true,
+	"AGQ": true, "AGR": true, "AGS": true, "AGT": true, "AGU": true, "AGV": true, "AGW": true, "AGX": true, "AGY": true, "AGZ": true,
+	"AHA": true, "AHB": true, "AHC": true, "AHD": true, "AHE": true, "AHF": true, "AHG": true, "AHH": true, "AHI": true, "AHJ": true,
+	"AHK": true, "AHL": true, "AHM": true, "AHN": true, "AHO": true, "AHP": true, "AHQ": true, "AHR": true, "AHS": true, "AHT": true,
+	"AHU": true, "AHV": true, "AHW": true, "AHX": true, "AHY": true, "AHZ": true, "AIA": true, "AIB": true, "AIC": true, "AID": true,
+	"AIE": true, "AIF": true, "AIG": true, "AIH": true, "AII": true, "AIJ": true, "AIK": true, "AIL": true, "AIM": true, "AIN": true,
+	"AIO": true, "AIP": true, "AIQ": true, "AIR": true, "AIS": true, "AIT": true, "AIU": true, "AIV": true, "AIW": true, "AIX": true,
+	"AIY": true, "AIZ": true, "AJA": true, "AJB": true, "ALC": true, "ALD": true, "ALE": true, "ALF": true, "ALG": true, "ALH": true,
+	"ALI": true, "ALJ": true, "ALK": true, "ALL": true, "ALM": true, "ALN": true, "ALO": true, "ALP": true, "ALQ": true, "ARR": true,
+	"ARS": true, "AUT": true, "AUU": true, "AUV": true, "AUW": true, "AUX": true, "AUY": true, "AUZ": true, "AVA": true, "AVB": true,
+	"AVC": true, "AVD": true, "AVE": true, "AVF": true, "BAG": true, "BAH": true, "BAI": true, "BAJ": true, "BAK": true, "BAL": true,
+	"BAM": true, "BAN": true, "BAO": true, "BAP": true, "BAQ": true, "BAR": true, "BAS": true, "BAT": true, "BAU": true, "BAV": true,
+	"BAW": true, "BAX": true, "BAY": true, "BAZ": true, "BBA": true, "BBB": true, "BLC": true, "BLD": true, "BLE": true, "BLF": true,
+	"BLG": true, "BLH": true, "BLI": true, "BLJ": true, "BLK": true, "BLL": true, "BLM": true, "BLN": true, "BLO": true, "BLP": true,
+	"BLQ": true, "BLR": true, "BLS": true, "BLT": true, "BLU": true, "BLV": true, "BLW": true, "BLX": true, "BLY": true, "BLZ": true,
+	"BMA": true, "BMB": true, "BMC": true, "BMD": true, "BME": true, "BMF": true, "BMG": true, "BMH": true, "CCI": true, "CCJ": true,
+	"CCK": true, "CCL": true, "CCM": true, "CCN": true, "CCO": true, "CEX": true, "CHG": true, "CIP": true, "CLP": true, "CLR": true,
+	"COI": true, "CUR": true, "CUS": true, "DAR": true, "DCL": true, "DEL": true, "DIN": true, "DOC": true, "DUT": true, "EUR": true,
+	"FBC": true, "GBL": true, "GEN": true, "GS7": true, "HAN": true, "HAZ": true, "ICN": true, "IIN": true, "IMI": true, "IND": true,
+	"INS": true, "INV": true, "IRP": true, "ITR": true, "ITS": true, "LAN": true, "LIN": true, "LOI": true, "MCO": true, "MDH": true,
+	"MKS": true, "ORI": true, "OSI": true, "PAC": true, "PAI": true, "PAY": true, "PKG": true, "PKT": true, "PMD": true, "PMT": true,
+	"PRD": true, "PRF": true, "PRI": true, "PUR": true, "QIN": true, "QQD": true, "QUT": true, "RAH": true, "REG": true, "RET": true,
+	"REV": true, "RQR": true, "SAF": true, "SIC": true, "SIN": true, "SLR": true, "SPA": true, "SPG": true, "SPH": true, "SPP": true,
+	"SPT": true, "SRN": true, "SSR": true, "SUR": true, "TCA": true, "TDT": true, "TRA": true, "TRR": true, "TXD": true, "WHI": true,
+	"ZZZ": true,
+}
+
 // en16931ItemClassCodes is the UNTDID 7143 item classification scheme set (BR-CL-13).
 var en16931ItemClassCodes = map[string]bool{
 	"AA": true, "AB": true, "AC": true, "AD": true, "AE": true, "AF": true, "AG": true, "AH": true, "AI": true, "AJ": true,
