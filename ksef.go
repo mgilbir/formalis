@@ -28,11 +28,11 @@ var ksefRodzajFaktury = map[string]bool{
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsKSeF(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "Faktura" && root.child("Naglowek") != nil, nil
+	return d.root == "Faktura" && d.hasNaglowek, nil
 }
 
 // ValidateKSeF validates a Polish KSeF FA document against its mandatory

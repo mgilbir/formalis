@@ -22,11 +22,11 @@ import (
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsSvefaktura(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "Invoice" && root.child("SellerParty") != nil, nil
+	return d.root == "Invoice" && d.hasSellerParty, nil
 }
 
 // ValidateSvefaktura validates a Swedish Svefaktura document against its

@@ -23,12 +23,12 @@ import (
 // meaningless. It is distinct from (false, nil), which says the document was
 // read and is some other format.
 func IsTurkishInvoice(xmlData []byte) (bool, error) {
-	root, err := detectRoot(xmlData)
+	d, err := detectShape(xmlData)
 	if err != nil {
 		return false, err
 	}
-	return root.name == "Invoice" &&
-		strings.HasPrefix(strings.ToUpper(strings.TrimSpace(root.str("CustomizationID"))), "TR"), nil
+	return d.root == "Invoice" &&
+		strings.HasPrefix(strings.ToUpper(strings.TrimSpace(d.str("CustomizationID"))), "TR"), nil
 }
 
 // ValidateTurkishInvoice validates a Turkish UBL-TR Invoice against its mandatory

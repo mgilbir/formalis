@@ -66,13 +66,18 @@ import (
 //
 // # Why the Is* predicates take no context
 //
-// The exported detection predicates (IsZATCA, IsFinvoice, ...) keep their
-// original signatures. They return a bool, which has no room for a third answer,
-// so a context could only turn "the run stopped" into "no, this is not a ZATCA
-// invoice" — precisely the confusion the convention above exists to prevent. They
-// still get the limits, through a run that can never be cancelled, so hostile
-// input cannot crash them. A caller who needs a bounded detection should bound
-// the input instead.
+// The exported detection predicates (IsZATCA, IsFinvoice, ...) report whether
+// they could read the document, but take no context. There is nothing to
+// cancel: they do not build a tree, so there is no budget for them to trip and
+// no long-running phase for a deadline to interrupt. scanShape reads the
+// document once, retaining only the open elements and a few short strings, so
+// their cost is a single linear pass in memory set by the nesting rather than
+// by the size. See detect.go.
+//
+// Their error therefore reports what the document is — malformed XML, an
+// encoding this package does not implement, nesting past the cap — and never
+// "the checker gave up", which is the distinction RuleLimit exists to carry on
+// the validation side.
 
 // RuleLimit is the rule identifier carried by a Violation that reports the
 // checker stopping early — a cancelled context or a tripped resource budget —
@@ -95,25 +100,6 @@ const RuleSyntax = "syntax"
 // as "unknown", never as "conformant" and never as "non-conformant".
 func IsCheckerViolation(v Violation) bool { return v.Rule == RuleLimit }
 
-// detectRoot reads xmlData far enough to identify what kind of document it is,
-// returning the root element.
-//
-// It exists so the Is* predicates share one answer to "could I read this at
-// all". They report three outcomes between them — yes, definitively not, and
-// could not tell — and the third is what the error carries: XML that is not
-// well-formed, an encoding this package does not implement, or a guard that
-// tripped before the document was identified. Folding any of those into a
-// plain false would tell a caller that a truncated Facturae invoice is not a
-// Facturae invoice, which is not the same statement and misroutes anything
-// dispatching on the answer.
-func detectRoot(xmlData []byte) (*ciiNode, error) {
-	root, err := parseCII(newRun(nil), xmlData)
-	if err != nil {
-		return nil, fmt.Errorf("the XML could not be read: %w", err)
-	}
-	return root, nil
-}
-
 // maxDepth is the deepest element nesting the parser will build.
 //
 // Real invoices in every syntax this package reads nest around a dozen levels;
@@ -122,6 +108,36 @@ func detectRoot(xmlData []byte) (*ciiNode, error) {
 // enough that no genuine invoice can reach it and low enough that the recursive
 // walks stay far from the 1 GB goroutine stack limit.
 const maxDepth = 1000
+
+// maxNodes is the largest number of elements the parser will build a tree from.
+//
+// maxDepth bounds how *deep* a document nests; it says nothing about how *many*
+// elements it has, and the two failure shapes are unrelated. A document that is
+// millions of shallow siblings has a depth of 2, so maxDepth never engages,
+// while every one of those siblings becomes a ciiNode — a name string, a
+// children slice, a text string and an accumulator. That is about 105 bytes
+// retained per element, and around 165 bytes of peak RSS, for an element
+// written as four (`<a/>`): a 60 MB document of them reached 2.5 GB, and the
+// 100 MB this package can be handed projected to roughly 4.2 GB. Like the stack
+// overflow maxDepth exists for, an OOM kill is a process death rather than a
+// finding the caller can report, which is what makes a bound necessary rather
+// than merely tidy.
+//
+// A context does not substitute for it. parseCII polls cancellation every
+// cancelParseTokens tokens, so a deadline does stop the parse — but only after
+// whatever has already been allocated, so a short deadline still admits
+// gigabytes.
+//
+// The number is set the way maxDepth was: measure real documents and leave a
+// wide margin. Across the 1613 documents in testdata the largest is 8300
+// elements, and that is a UN/ECE code list rather than an invoice; the largest
+// actual invoice is 1803. The largest XML pdf0 has found embedded in a PDF is
+// 1.3 MB. A million elements is over a hundred times the largest document here,
+// and it holds the whole call flat: validating 15, 30 and 60 MB of siblings now
+// peaks at 167, 203 and 236 MB rather than 610 MB, 1.24 GB and 2.56 GB, and
+// reports one RuleLimit finding instead of eighteen invented business-rule
+// violations.
+const maxNodes = 1_000_000
 
 // maxVATSumWork bounds the (breakdown x operand) pairs validateVATTaxableSums
 // may examine across one invoice.
@@ -180,6 +196,8 @@ type run struct {
 	cancel canceler
 	// vatWork is the remaining validateVATTaxableSums pair budget.
 	vatWork int
+	// nodes is the remaining element budget for the tree parseCII builds.
+	nodes int
 	// trips accumulates the RuleLimit findings this run has to report. A run
 	// records at most one trip per distinct cause, since repeating "the checker
 	// stopped" tells the caller nothing new.
@@ -188,7 +206,7 @@ type run struct {
 }
 
 func newRun(ctx context.Context) *run {
-	return &run{cancel: newCanceler(ctx), vatWork: maxVATSumWork}
+	return &run{cancel: newCanceler(ctx), vatWork: maxVATSumWork, nodes: maxNodes}
 }
 
 // note records a limit trip once per guard.
@@ -217,6 +235,20 @@ func (r *run) stopped() bool {
 		err = context.Canceled
 	}
 	r.note("context-canceled", "the run was cancelled before it finished: "+err.Error())
+	return true
+}
+
+// spendNode draws one element from the tree budget, reporting whether the parse
+// may proceed.
+func (r *run) spendNode() bool {
+	if r == nil {
+		return true
+	}
+	if r.nodes <= 0 {
+		r.note("xml-node-count", fmt.Sprintf("the invoice XML has more than %d elements", maxNodes))
+		return false
+	}
+	r.nodes--
 	return true
 }
 
