@@ -125,9 +125,6 @@ type en16931Invoice struct {
 	creditorID         string // BT-90 Bank assigned creditor identifier
 	debitedAccount     string // BT-91 Debited account identifier
 
-	sellerVATIDCount  int      // number of Seller VAT identifiers (cardinality)
-	buyerVATIDCount   int      // number of Buyer VAT identifiers (cardinality)
-	supplierSchemeCnt int      // number of supplier party tax scheme entries
 	paymentIDs        []string // BT-83 payment identifiers
 	amountDecimalsBad bool     // an amount (any @currencyID element) exceeds two decimals
 
@@ -234,8 +231,8 @@ const vatAmountTolerance = 1.0
 // two kinds of statement, not one. The BR-* rules are about business terms and
 // are evaluated on the syntax-neutral model, which is the whole point of the
 // model. CEN also publishes a syntax binding per syntax — UBL-SR-*, CII-SR-* —
-// whose rules are about the shape of the XML, and reading those wants the tree
-// the same parse already built.
+// whose rules are about the shape of the XML, and those are evaluated on the
+// tree, in en16931_ubl_rules.go, which says why at greater length.
 func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 	inv := p.inv
 	var out []Violation
@@ -490,40 +487,31 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 		}
 	}
 
-	// Datatype and cardinality rules. These live in each syntax's own binding rule
-	// set, so the check runs on the shared model but the reported identifier is the
-	// one for the invoice's syntax (a CII invoice never reports a UBL rule). Where
-	// a binding has no counterpart (its "" id) the rule is not reported: CII, for
-	// instance, bounds decimals through the shared BR-DEC rules instead of a
-	// blanket amount rule.
-	binding := func(ublID, ciiID, msg string) {
-		id := ublID
-		if inv.syntax == "CII" {
-			id = ciiID
-		}
-		if id != "" {
-			add(id, msg)
+	// Datatype rules from the UBL binding that the model can answer. These are
+	// UBL-only: the reported identifier is a UBL one, and a CII invoice does not
+	// report them, because CII bounds decimals through the shared BR-DEC rules
+	// and states its attribute requirements as CII-DT-* rules this package does
+	// not yet evaluate. Coverage(SourceEN16931) says so.
+	//
+	// The rest of the UBL binding — the 54 fatal UBL-SR-* cardinality rules — is
+	// not here. Those are statements about the UBL document tree rather than
+	// about business terms, and they are evaluated against the tree in
+	// en16931_ubl_rules.go.
+	ublOnly := func(rule, msg string) {
+		if inv.syntax != "CII" {
+			add(rule, msg)
 		}
 	}
 	if inv.amountDecimalsBad {
-		binding("UBL-DT-01", "", "Amounts shall be decimal up to two fraction digits")
+		ublOnly("UBL-DT-01", "Amounts shall be decimal up to two fraction digits")
 	}
 	for _, d := range inv.docRefs {
 		if d.binaryPresent && d.mimeCode == "" {
-			binding("UBL-DT-06", "", "A binary object (attachment) shall carry a MIME code attribute")
+			ublOnly("UBL-DT-06", "A binary object (attachment) shall carry a MIME code attribute")
 		}
 		if d.binaryPresent && d.filename == "" {
-			binding("UBL-DT-07", "", "A binary object (attachment) shall carry a file name attribute")
+			ublOnly("UBL-DT-07", "A binary object (attachment) shall carry a file name attribute")
 		}
-	}
-	if inv.sellerVATIDCount > 1 {
-		binding("UBL-SR-12", "", "The Seller VAT identifier shall occur at most once")
-	}
-	if inv.buyerVATIDCount > 1 {
-		binding("UBL-SR-18", "", "The Buyer VAT identifier shall occur at most once")
-	}
-	if inv.supplierSchemeCnt > 2 {
-		binding("UBL-SR-42", "", "The supplier party tax scheme shall occur at most twice")
 	}
 	// The two CII syntax-binding rules this package evaluates. Their UBL
 	// counterparts — UBL-SR-44 and UBL-SR-47 — say the same thing about the same

@@ -184,6 +184,109 @@ func TestUBLSyntaxRules(t *testing.T) {
 		{"UBL-SR-56 two tender or lot references", ublWith(t, ublAtDocument,
 			`<OriginatorDocumentReference><ID>LOT-1</ID></OriginatorDocumentReference>`+
 				`<OriginatorDocumentReference><ID>LOT-2</ID></OriginatorDocumentReference>`), "UBL-SR-56", true},
+
+		// --- Parties, addresses and tax schemes ---------------------------
+		{"UBL-SR-09 one seller name", minimalUBL, "UBL-SR-09", false},
+		{"UBL-SR-09 two seller names", ublWith(t, ublAtSeller,
+			`<PartyLegalEntity><RegistrationName>Seller Ltd (trading)</RegistrationName></PartyLegalEntity>`), "UBL-SR-09", true},
+
+		{"UBL-SR-10 one seller trading name", ublWith(t, ublAtSeller,
+			`<PartyName><Name>SellerCo</Name></PartyName>`), "UBL-SR-10", false},
+		{"UBL-SR-10 two seller trading names", ublWith(t, ublAtSeller,
+			`<PartyName><Name>SellerCo</Name></PartyName><PartyName><Name>SellCo</Name></PartyName>`), "UBL-SR-10", true},
+
+		{"UBL-SR-11 one seller legal registration identifier", ublWith(t, ublAtSeller,
+			`<PartyLegalEntity><CompanyID>HRB 1234</CompanyID></PartyLegalEntity>`), "UBL-SR-11", false},
+		{"UBL-SR-11 two seller legal registration identifiers", ublWith(t, ublAtSeller,
+			`<PartyLegalEntity><CompanyID>HRB 1234</CompanyID><CompanyID>HRB 5678</CompanyID></PartyLegalEntity>`), "UBL-SR-11", true},
+
+		{"UBL-SR-12 one seller VAT identifier", minimalUBL, "UBL-SR-12", false},
+		{"UBL-SR-12 two seller VAT identifiers", ublWith(t, ublAtSeller, ublVATScheme), "UBL-SR-12", true},
+
+		{"UBL-SR-13 one seller tax registration", ublWith(t, ublAtSeller, ublOtherScheme), "UBL-SR-13", false},
+		{"UBL-SR-13 two seller tax registrations", ublWith(t, ublAtSeller, ublOtherScheme+ublOtherScheme), "UBL-SR-13", true},
+
+		{"UBL-SR-14 one seller legal form", ublWith(t, ublAtSeller,
+			`<PartyLegalEntity><CompanyLegalForm>GmbH</CompanyLegalForm></PartyLegalEntity>`), "UBL-SR-14", false},
+		{"UBL-SR-14 two seller legal forms", ublWith(t, ublAtSeller,
+			`<PartyLegalEntity><CompanyLegalForm>GmbH</CompanyLegalForm><CompanyLegalForm>AG</CompanyLegalForm></PartyLegalEntity>`), "UBL-SR-14", true},
+
+		{"UBL-SR-15 one buyer name", minimalUBL, "UBL-SR-15", false},
+		{"UBL-SR-15 two buyer names", ublWith(t, ublAtBuyer,
+			`<PartyLegalEntity><RegistrationName>Buyer Ltd (trading)</RegistrationName></PartyLegalEntity>`), "UBL-SR-15", true},
+
+		{"UBL-SR-16 one buyer identifier", ublWith(t, ublAtBuyer,
+			`<PartyIdentification><ID>BUY-1</ID></PartyIdentification>`), "UBL-SR-16", false},
+		{"UBL-SR-16 two buyer identifiers", ublWith(t, ublAtBuyer,
+			`<PartyIdentification><ID>BUY-1</ID></PartyIdentification><PartyIdentification><ID>BUY-2</ID></PartyIdentification>`), "UBL-SR-16", true},
+
+		{"UBL-SR-17 one buyer legal registration identifier", ublWith(t, ublAtBuyer,
+			`<PartyLegalEntity><CompanyID>HRB 4321</CompanyID></PartyLegalEntity>`), "UBL-SR-17", false},
+		{"UBL-SR-17 two buyer legal registration identifiers", ublWith(t, ublAtBuyer,
+			`<PartyLegalEntity><CompanyID>HRB 4321</CompanyID><CompanyID>HRB 8765</CompanyID></PartyLegalEntity>`), "UBL-SR-17", true},
+
+		{"UBL-SR-18 one buyer VAT identifier", ublWith(t, ublAtBuyer, ublVATScheme), "UBL-SR-18", false},
+		{"UBL-SR-18 two buyer VAT identifiers", ublWith(t, ublAtBuyer, ublVATScheme+ublVATScheme), "UBL-SR-18", true},
+
+		{"UBL-SR-19 one payee name, different from the seller", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName></PayeeParty>`), "UBL-SR-19", false},
+		{"UBL-SR-19 two payee names", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName><PartyName><Name>Factor GmbH</Name></PartyName></PayeeParty>`), "UBL-SR-19", true},
+		{"UBL-SR-19 payee named exactly like the seller", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Seller Ltd</Name></PartyName></PayeeParty>`), "UBL-SR-19", true},
+
+		{"UBL-SR-20 one payee identifier", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName><PartyIdentification><ID>PAY-1</ID></PartyIdentification></PayeeParty>`), "UBL-SR-20", false},
+		{"UBL-SR-20 a payee identifier beside a SEPA creditor identifier", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName>`+
+				`<PartyIdentification><ID>PAY-1</ID></PartyIdentification>`+
+				`<PartyIdentification><ID schemeID="SEPA">DE98ZZZ09999999999</ID></PartyIdentification></PayeeParty>`), "UBL-SR-20", false},
+		{"UBL-SR-20 two payee identifiers", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName>`+
+				`<PartyIdentification><ID>PAY-1</ID></PartyIdentification>`+
+				`<PartyIdentification><ID>PAY-2</ID></PartyIdentification></PayeeParty>`), "UBL-SR-20", true},
+
+		{"UBL-SR-21 one payee legal registration identifier", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName><PartyLegalEntity><CompanyID>HRB 99</CompanyID></PartyLegalEntity></PayeeParty>`), "UBL-SR-21", false},
+		{"UBL-SR-21 two payee legal registration identifiers", ublWith(t, ublAtDocument,
+			`<PayeeParty><PartyName><Name>Factor Ltd</Name></PartyName>`+
+				`<PartyLegalEntity><CompanyID>HRB 99</CompanyID><CompanyID>HRB 100</CompanyID></PartyLegalEntity></PayeeParty>`), "UBL-SR-21", true},
+
+		{"UBL-SR-22 one tax representative name", ublWith(t, ublAtDocument,
+			`<TaxRepresentativeParty><PartyName><Name>Rep Ltd</Name></PartyName>`+ublVATScheme+`</TaxRepresentativeParty>`), "UBL-SR-22", false},
+		{"UBL-SR-22 two tax representative names", ublWith(t, ublAtDocument,
+			`<TaxRepresentativeParty><PartyName><Name>Rep Ltd</Name></PartyName><PartyName><Name>Rep GmbH</Name></PartyName>`+
+				ublVATScheme+`</TaxRepresentativeParty>`), "UBL-SR-22", true},
+
+		{"UBL-SR-23 one tax representative VAT identifier", ublWith(t, ublAtDocument,
+			`<TaxRepresentativeParty><PartyName><Name>Rep Ltd</Name></PartyName>`+ublVATScheme+`</TaxRepresentativeParty>`), "UBL-SR-23", false},
+		{"UBL-SR-23 two tax representative VAT identifiers", ublWith(t, ublAtDocument,
+			`<TaxRepresentativeParty><PartyName><Name>Rep Ltd</Name></PartyName>`+ublVATScheme+ublVATScheme+`</TaxRepresentativeParty>`), "UBL-SR-23", true},
+
+		{"UBL-SR-25 one deliver-to party name", ublWith(t, ublAtDocument,
+			`<Delivery><DeliveryParty><PartyName><Name>Warehouse A</Name></PartyName></DeliveryParty></Delivery>`), "UBL-SR-25", false},
+		{"UBL-SR-25 two deliver-to party names", ublWith(t, ublAtDocument,
+			`<Delivery><DeliveryParty><PartyName><Name>Warehouse A</Name></PartyName>`+
+				`<PartyName><Name>Warehouse B</Name></PartyName></DeliveryParty></Delivery>`), "UBL-SR-25", true},
+
+		{"UBL-SR-40 one buyer trading name", ublWith(t, ublAtBuyer,
+			`<PartyName><Name>BuyerCo</Name></PartyName>`), "UBL-SR-40", false},
+		{"UBL-SR-40 two buyer trading names", ublWith(t, ublAtBuyer,
+			`<PartyName><Name>BuyerCo</Name></PartyName><PartyName><Name>BuyCo</Name></PartyName>`), "UBL-SR-40", true},
+
+		{"UBL-SR-42 seller with two party tax schemes", ublWith(t, ublAtSeller, ublOtherScheme), "UBL-SR-42", false},
+		{"UBL-SR-42 seller with three party tax schemes", ublWith(t, ublAtSeller, ublOtherScheme+ublOtherScheme), "UBL-SR-42", true},
+
+		{"UBL-SR-51 one additional address line", ublWith(t, ublAtAddress,
+			`<AddressLine><Line>Building C</Line></AddressLine>`), "UBL-SR-51", false},
+		{"UBL-SR-51 two additional address lines", ublWith(t, ublAtAddress,
+			`<AddressLine><Line>Building C</Line></AddressLine><AddressLine><Line>Floor 3</Line></AddressLine>`), "UBL-SR-51", true},
+
+		{"UBL-SR-53 a complete party tax scheme", minimalUBL, "UBL-SR-53", false},
+		{"UBL-SR-53 a tax scheme without a company identifier", ublWith(t, ublAtSeller,
+			`<PartyTaxScheme><TaxScheme><ID>FC</ID></TaxScheme></PartyTaxScheme>`), "UBL-SR-53", true},
+		{"UBL-SR-53 a company identifier without a tax scheme identifier", ublWith(t, ublAtSeller,
+			`<PartyTaxScheme><CompanyID>123/456/789</CompanyID><TaxScheme></TaxScheme></PartyTaxScheme>`), "UBL-SR-53", true},
 	}
 	runRuleCases(t, cases)
 }
