@@ -11,6 +11,26 @@ import (
 // business rules differ from EN 16931 (which is invoice-specific), so this checks
 // the order's structure and mandatory head terms, reusing the shared CII parser.
 // The PDF container around it is validated in the pdf0 package.
+//
+// # Why the identifiers read ORDER-01 and not BR-O-01
+//
+// These five checks are this package's own, not quotations from a published
+// Order-X rule set, so they are numbered in this package's own namespace the way
+// FPA-*, FE-*, EB-* and ZA-* are. They used to be called BR-O-01…BR-O-05, which
+// was a name CEN had already taken: BR-O-01 … BR-O-14 are EN 16931's rules for
+// the "Not subject to VAT" (O) category, and the conformance corpus this package
+// is tested against ships CEN's own unit tests for them under exactly those
+// names (testdata/en16931-artefacts/test/Invoice-unit-UBL/BR-O-01.xml …).
+// The rule engine emits them from validateVATCategories and
+// validateVATIdentifiers, so one string meant two unrelated things depending on
+// which validator produced it, and a caller aggregating a mailbox by rule
+// identifier merged the two. Violation.Source now scopes every finding, but a
+// name minted inside another authority's numbering is worth correcting on its
+// own account: a reader who sees BR-O-03 in a log has no reason to check the
+// scope before believing it is the CEN rule.
+//
+// If Order-X should later publish business rules under identifiers of its own,
+// quote those and retire these.
 
 // orderXTypeCodes is the order document type code set (UNTDID 1001): order (220),
 // order change (230), order response (231).
@@ -55,21 +75,21 @@ func validateOrderXML(r *run, root *ciiNode) []Violation {
 	agr := root.child("SupplyChainTradeTransaction", "ApplicableHeaderTradeAgreement").orNil()
 
 	if doc.str("ID") == "" {
-		add("BR-O-01", "an Order shall have an order number (ExchangedDocument/ID)")
+		add("ORDER-01", "an Order shall have an order number (ExchangedDocument/ID)")
 	}
 	if doc.str("IssueDateTime", "DateTimeString") == "" {
-		add("BR-O-02", "an Order shall have an issue date (ExchangedDocument/IssueDateTime)")
+		add("ORDER-02", "an Order shall have an issue date (ExchangedDocument/IssueDateTime)")
 	}
 	if tc := doc.str("TypeCode"); tc == "" {
-		add("BR-O-03", "an Order shall have a document type code (ExchangedDocument/TypeCode)")
+		add("ORDER-03", "an Order shall have a document type code (ExchangedDocument/TypeCode)")
 	} else if !orderXTypeCodes[tc] {
-		add("BR-O-03", fmt.Sprintf("order type code %q is not a permitted UNTDID 1001 order value (220/230/231)", tc))
+		add("ORDER-03", fmt.Sprintf("order type code %q is not a permitted UNTDID 1001 order value (220/230/231)", tc))
 	}
 	if agr.str("BuyerTradeParty", "Name") == "" {
-		add("BR-O-04", "an Order shall contain the Buyer name")
+		add("ORDER-04", "an Order shall contain the Buyer name")
 	}
 	if agr.str("SellerTradeParty", "Name") == "" {
-		add("BR-O-05", "an Order shall contain the Seller name")
+		add("ORDER-05", "an Order shall contain the Seller name")
 	}
 	return out
 }
