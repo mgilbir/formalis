@@ -83,8 +83,23 @@ func TestCIISyntaxRules(t *testing.T) {
 	cases = append(cases, ciiAllowanceCases(t)...)
 	cases = append(cases, ciiHeaderCases(t)...)
 	cases = append(cases, ciiTotalsCases(t)...)
+	cases = append(cases, ciiIdentifierAttrCases(t)...)
+	cases = append(cases, ciiCodeAttrCases(t)...)
+	cases = append(cases, ciiAmountAttrCases(t)...)
+	cases = append(cases, ciiQuantityCases(t)...)
+	cases = append(cases, ciiTaxTypeAndDateCases(t)...)
 
 	runRuleCases(t, cases)
+}
+
+// ciiUnreachableRules are the fatal identifiers CEN publishes that no reference
+// validator can report, because an earlier rule in the same Schematron pattern
+// claims their context node first. See ciiDatatypeIdentifierRules for the
+// derivation and Coverage(SourceEN16931) for the statement a caller reads.
+var ciiUnreachableRules = map[string]bool{
+	"CII-DT-010": true,
+	"CII-DT-011": true,
+	"CII-DT-012": true,
 }
 
 // ciiDocumentCases are the rules CEN binds to the document element and to the
@@ -339,6 +354,139 @@ func ciiTotalsCases(t *testing.T) []ruleCase {
 	return out
 }
 
+// ciiIdentifierAttrCases are the eleven attribute rules on identifiers: the
+// seven CEN forbids on the four identifiers it gives a rule of their own, and
+// the four it forbids on every other identifier in the document.
+//
+// The two families are exercised on two different elements on purpose. The
+// invoice number (ram:ID under rsm:ExchangedDocument) is one of the four, so it
+// answers to CII-DT-001..007; the seller's VAT registration identifier is not,
+// so it answers to CII-DT-101..104. Putting @schemeName on the first and
+// expecting CII-DT-001 rather than CII-DT-101 is the Schematron's rule order
+// made a test — TestCIIDatatypeRuleOrderFollowsTheSchematron states the negative
+// half of it.
+func ciiIdentifierAttrCases(t *testing.T) []ruleCase {
+	t.Helper()
+	var out []ruleCase
+	for _, c := range []struct{ rule, attr string }{
+		{"CII-DT-001", "schemeName"},
+		{"CII-DT-002", "schemeAgencyName"},
+		{"CII-DT-003", "schemeDataURI"},
+		{"CII-DT-004", "schemeURI"},
+		{"CII-DT-005", "schemeID"},
+		{"CII-DT-006", "schemeAgencyID"},
+		{"CII-DT-007", "schemeVersionID"},
+	} {
+		out = append(out,
+			ruleCase{c.rule + " a bare invoice number", validCII, c.rule, false},
+			ruleCase{c.rule + " an invoice number carrying @" + c.attr,
+				mutate(t, validCII, `<ID>INV-1</ID>`,
+					fmt.Sprintf(`<ID %s="x">INV-1</ID>`, c.attr)), c.rule, true})
+	}
+	for _, c := range []struct{ rule, attr string }{
+		{"CII-DT-101", "schemeName"},
+		{"CII-DT-102", "schemeAgencyName"},
+		{"CII-DT-103", "schemeDataURI"},
+		{"CII-DT-104", "schemeURI"},
+	} {
+		out = append(out,
+			ruleCase{c.rule + " a VAT registration identifier with only @schemeID", validCII, c.rule, false},
+			ruleCase{c.rule + " a VAT registration identifier carrying @" + c.attr,
+				mutate(t, validCII, `<ID schemeID="VA">FR12345678</ID>`,
+					fmt.Sprintf(`<ID schemeID="VA" %s="x">FR12345678</ID>`, c.attr)), c.rule, true})
+	}
+	return out
+}
+
+// ciiCodeAttrCases are the two attributes CEN forbids on every code in the
+// document.
+func ciiCodeAttrCases(t *testing.T) []ruleCase {
+	t.Helper()
+	return []ruleCase{
+		{"CII-DT-008 no @name on a code", validCII, "CII-DT-008", false},
+		{"CII-DT-008 @name on a code", mutate(t, validCII,
+			`<TypeCode>380</TypeCode>`, `<TypeCode name="Commercial invoice">380</TypeCode>`), "CII-DT-008", true},
+
+		{"CII-DT-009 no @listURI on a code", validCII, "CII-DT-009", false},
+		{"CII-DT-009 @listURI on a code", mutate(t, validCII,
+			`<TypeCode>380</TypeCode>`, `<TypeCode listURI="http://example.com/1001">380</TypeCode>`), "CII-DT-009", true},
+	}
+}
+
+// ciiAmountAttrCases are the two currency attributes CEN forbids on every amount
+// but ram:TaxTotalAmount. The conforming case for CII-DT-031 is the carve-out
+// itself: the VAT total may name its currency, because an invoice with a VAT
+// accounting currency (BT-6) carries that one amount twice, in two currencies.
+// It is the case that matters — @currencyID occurs 210 times in the corpus and
+// every one of them is on a ram:TaxTotalAmount, so a rule that had lost the
+// exclusion would fire 210 times rather than none.
+func ciiAmountAttrCases(t *testing.T) []ruleCase {
+	t.Helper()
+	return []ruleCase{
+		{"CII-DT-031 a currency on the VAT total", mutate(t, validCII,
+			`<TaxTotalAmount>20.00</TaxTotalAmount>`, `<TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>`),
+			"CII-DT-031", false},
+		{"CII-DT-031 a currency on the grand total", mutate(t, validCII,
+			`<GrandTotalAmount>120.00</GrandTotalAmount>`, `<GrandTotalAmount currencyID="EUR">120.00</GrandTotalAmount>`),
+			"CII-DT-031", true},
+
+		{"CII-DT-032 no currency code list version on an amount", validCII, "CII-DT-032", false},
+		{"CII-DT-032 a currency code list version on an amount", mutate(t, validCII,
+			`<GrandTotalAmount>120.00</GrandTotalAmount>`,
+			`<GrandTotalAmount currencyCodeListVersionID="2016">120.00</GrandTotalAmount>`), "CII-DT-032", true},
+	}
+}
+
+// ciiQuantityCases are the four rules on a quantity: the one that permits a unit
+// code only once some line has stated the unit it invoiced in, and the three
+// code-list attributes CEN forbids outright.
+func ciiQuantityCases(t *testing.T) []ruleCase {
+	t.Helper()
+	const withBasis = `<GrossPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount>` +
+		`<BasisQuantity unitCode="C62">1</BasisQuantity></GrossPriceProductTradePrice>`
+	out := []ruleCase{
+		{"CII-DT-033 a unit code where the line states its unit",
+			ciiWith(t, ciiAtLineAgreement, withBasis), "CII-DT-033", false},
+		{"CII-DT-033 a unit code where no line states its unit", mutate(t,
+			ciiWith(t, ciiAtLineAgreement, withBasis),
+			`<BilledQuantity unitCode="C62">1</BilledQuantity>`, `<BilledQuantity>1</BilledQuantity>`),
+			"CII-DT-033", true},
+	}
+	for _, c := range []struct{ rule, attr string }{
+		{"CII-DT-034", "unitCodeListID"},
+		{"CII-DT-035", "unitCodeListAgencyID"},
+		{"CII-DT-036", "unitCodeListAgencyName"},
+	} {
+		out = append(out,
+			ruleCase{c.rule + " a billed quantity with only @unitCode", validCII, c.rule, false},
+			ruleCase{c.rule + " a billed quantity carrying @" + c.attr,
+				mutate(t, validCII, `<BilledQuantity unitCode="C62">1</BilledQuantity>`,
+					fmt.Sprintf(`<BilledQuantity unitCode="C62" %s="x">1</BilledQuantity>`, c.attr)), c.rule, true})
+	}
+	return out
+}
+
+// ciiTaxTypeAndDateCases are the two remaining value rules: the tax type a tax
+// group may name, and the form a date declaring UN/EDIFACT format 102 must take.
+func ciiTaxTypeAndDateCases(t *testing.T) []ruleCase {
+	t.Helper()
+	return []ruleCase{
+		{"CII-DT-037 a VAT tax group", mutate(t, validCII,
+			`<ApplicableTradeTax><CalculatedAmount>`, `<ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>`),
+			"CII-DT-037", false},
+		{"CII-DT-037 a non-VAT tax group", mutate(t, validCII,
+			`<ApplicableTradeTax><CalculatedAmount>`, `<ApplicableTradeTax><TypeCode>AAA</TypeCode><CalculatedAmount>`),
+			"CII-DT-037", true},
+
+		{"CII-DT-097 a format-102 date written YYYYMMDD", mutate(t, validCII,
+			`<DateTimeString>20240101</DateTimeString>`, `<DateTimeString format="102">20240101</DateTimeString>`),
+			"CII-DT-097", false},
+		{"CII-DT-097 a format-102 date written with separators", mutate(t, validCII,
+			`<DateTimeString>20240101</DateTimeString>`, `<DateTimeString format="102">2024-01-01</DateTimeString>`),
+			"CII-DT-097", true},
+	}
+}
+
 // TestCIISyntaxRulesAreNotAskedOfUBL pins the half of the design the file
 // comment argues for, and is the converse of
 // TestUBLSyntaxRulesAreNotAskedOfCII: the CII binding is a statement about CII,
@@ -358,6 +506,39 @@ func TestCIISyntaxRulesAreNotAskedOfUBL(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestCIIDatatypeRuleOrderFollowsTheSchematron states the negative half of ISO
+// Schematron's first-matching-rule semantics, which is the one thing about this
+// binding a transcription can get subtly and silently wrong.
+//
+// Two contexts in the EN16931-CII-Syntax pattern overlap, and in both cases the
+// earlier rule wins:
+//
+//   - the invoice number is one of the four identifiers CEN gives a rule of
+//     their own, so @schemeName on it is CII-DT-001 and never CII-DT-101;
+//   - the invoice type code is matched by `//ram:TypeCode` before the rule bound
+//     to it specifically, so @listID on it is reported by nobody — CII-DT-010,
+//     CII-DT-011 and CII-DT-012 cannot fire, which is why Coverage names them.
+func TestCIIDatatypeRuleOrderFollowsTheSchematron(t *testing.T) {
+	scoped := mutate(t, validCII, `<ID>INV-1</ID>`, `<ID schemeName="x">INV-1</ID>`)
+	v := Validate(context.Background(), []byte(scoped), ProfileEN16931).Violations
+	if !reports(v, "CII-DT-001") {
+		t.Errorf("@schemeName on the invoice number should be CII-DT-001; got %v", v)
+	}
+	if reports(v, "CII-DT-101") {
+		t.Errorf("@schemeName on the invoice number reported CII-DT-101, which an earlier rule in the same pattern claims: %v", v)
+	}
+
+	for _, attr := range []string{"listID", "listAgencyID", "listVersionID"} {
+		doc := mutate(t, validCII, `<TypeCode>380</TypeCode>`,
+			fmt.Sprintf(`<TypeCode %s="x">380</TypeCode>`, attr))
+		for _, x := range Validate(context.Background(), []byte(doc), ProfileEN16931).Violations {
+			if ciiUnreachableRules[x.Rule] {
+				t.Errorf("@%s on the invoice type code reported %s, which no reference validator can reach", attr, x.Rule)
+			}
+		}
 	}
 }
 
