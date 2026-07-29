@@ -46,7 +46,7 @@ const minimalXRechnungUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:s
 </Invoice>`
 
 func TestValidateXRechnungBaseline(t *testing.T) {
-	if v := ValidateXRechnung(context.Background(), []byte(minimalXRechnungUBL)); len(v) != 0 {
+	if v := ValidateXRechnung(context.Background(), []byte(minimalXRechnungUBL)).Violations; len(v) != 0 {
 		t.Fatalf("baseline XRechnung not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 }
@@ -67,7 +67,7 @@ func TestValidateXRechnungRules(t *testing.T) {
 			if broken == minimalXRechnungUBL {
 				t.Fatalf("mutation %q not found", tc.from)
 			}
-			v := ValidateXRechnung(context.Background(), []byte(broken))
+			v := ValidateXRechnung(context.Background(), []byte(broken)).Violations
 			found := false
 			for _, x := range v {
 				if x.Rule == tc.rule {
@@ -100,7 +100,7 @@ func TestValidateXRechnungCorpus(t *testing.T) {
 			return nil
 		}
 		files++
-		if v := ValidateXRechnung(context.Background(), data); len(v) != 0 {
+		if v := ValidateXRechnung(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: conforming XRechnung reported %d violations (first: %s: %s)",
 				filepath.Base(p), len(v), v[0].Rule, v[0].Message)
 		} else {

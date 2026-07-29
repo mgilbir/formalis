@@ -34,7 +34,7 @@ func TestCIUSPTCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if pt := ptRuleViolations(ValidateCIUSPT(context.Background(), data)); len(pt) != 0 {
+		if pt := ptRuleViolations(ValidateCIUSPT(context.Background(), data).Violations); len(pt) != 0 {
 			t.Errorf("%s: expected 0 CIUS-PT violations on a conformant sample, got %v", filepath.Base(f), pt)
 		}
 	}
@@ -64,7 +64,7 @@ const minimalCIUSPTUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 </Invoice>`
 
 func TestCIUSPTMutations(t *testing.T) {
-	if pt := ptRuleViolations(ValidateCIUSPT(context.Background(), []byte(minimalCIUSPTUBL))); len(pt) != 0 {
+	if pt := ptRuleViolations(ValidateCIUSPT(context.Background(), []byte(minimalCIUSPTUBL)).Violations); len(pt) != 0 {
 		t.Fatalf("baseline CIUS-PT invoice not clean: %v", pt)
 	}
 	cases := []struct{ name, remove, want string }{
@@ -86,8 +86,8 @@ func TestCIUSPTMutations(t *testing.T) {
 			if broken == minimalCIUSPTUBL {
 				t.Fatalf("mutation string not found: %q", tc.remove)
 			}
-			if !hasFacturXRule(ValidateCIUSPT(context.Background(), []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ptRuleViolations(ValidateCIUSPT(context.Background(), []byte(broken))))
+			if !hasFacturXRule(ValidateCIUSPT(context.Background(), []byte(broken)).Violations, tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ptRuleViolations(ValidateCIUSPT(context.Background(), []byte(broken)).Violations))
 			}
 		})
 	}

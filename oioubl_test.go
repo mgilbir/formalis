@@ -23,7 +23,7 @@ func TestOIOUBLCorpus(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if v := ValidateOIOUBL(context.Background(), data); len(v) != 0 {
+		if v := ValidateOIOUBL(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: expected 0 OIOUBL violations, got %v", filepath.Base(f), v)
 		}
 	}
@@ -38,7 +38,7 @@ const minimalOIOUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:
 </Invoice>`
 
 func TestOIOUBLMutations(t *testing.T) {
-	if v := ValidateOIOUBL(context.Background(), []byte(minimalOIOUBL)); len(v) != 0 {
+	if v := ValidateOIOUBL(context.Background(), []byte(minimalOIOUBL)).Violations; len(v) != 0 {
 		t.Fatalf("baseline OIOUBL not clean: %v", v)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -57,8 +57,8 @@ func TestOIOUBLMutations(t *testing.T) {
 			if broken == minimalOIOUBL {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateOIOUBL(context.Background(), []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOIOUBL(context.Background(), []byte(broken)))
+			if !hasFacturXRule(ValidateOIOUBL(context.Background(), []byte(broken)).Violations, tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, ValidateOIOUBL(context.Background(), []byte(broken)).Violations)
 			}
 		})
 	}

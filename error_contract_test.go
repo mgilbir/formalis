@@ -130,7 +130,7 @@ func TestMalformedXMLIsReportedAsSyntax(t *testing.T) {
 
 	for name, fn := range allValidators {
 		t.Run(name, func(t *testing.T) {
-			v := fn(context.Background(), []byte(malformed))
+			v := fn(context.Background(), []byte(malformed)).Violations
 			if len(v) != 1 {
 				t.Fatalf("malformed XML produced %d findings, want exactly 1: %v", len(v), v)
 			}
@@ -153,7 +153,7 @@ func TestMalformedXMLIsReportedAsSyntax(t *testing.T) {
 func TestEmptyInputIsReportedAsSyntax(t *testing.T) {
 	for name, fn := range allValidators {
 		t.Run(name, func(t *testing.T) {
-			v := fn(context.Background(), nil)
+			v := fn(context.Background(), nil).Violations
 			if len(v) != 1 {
 				t.Fatalf("empty input produced %d findings, want exactly 1: %v", len(v), v)
 			}
@@ -184,13 +184,13 @@ func TestWrongRootIsNotReportedAsMalformed(t *testing.T) {
 	for name, fn := range allValidators {
 		c := errorContracts[name]
 		t.Run(name, func(t *testing.T) {
-			malformed := fn(ctx, []byte(`<a></b>`))
+			malformed := fn(ctx, []byte(`<a></b>`)).Violations
 			if len(malformed) != 1 {
 				t.Fatalf("malformed XML produced %d findings, want exactly 1: %v", len(malformed), malformed)
 			}
 
 			for _, doc := range append([]string{unknownRoot}, c.otherRoots...) {
-				v := fn(ctx, []byte(doc))
+				v := fn(ctx, []byte(doc)).Violations
 				if len(v) != 1 {
 					t.Errorf("%s produced %d findings, want exactly 1: %v", doc, len(v), v)
 					continue
@@ -225,9 +225,19 @@ func TestCancelledRunReportsOnlyLimit(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
-			v := fn(ctx, []byte(validCII))
+			r := fn(ctx, []byte(validCII))
+			v := r.Violations
 			if len(v) == 0 {
 				t.Fatal("a cancelled run returned nothing, which reads as valid")
+			}
+			// The same fact in the form a caller is most likely to test. A
+			// stopped run is one of the two ways Complete is false, and
+			// Conformant is the predicate that has to get both right.
+			if r.Complete {
+				t.Error("a cancelled run reported Complete; the checker did not see the whole document")
+			}
+			if r.Conformant() {
+				t.Error("a cancelled run reported Conformant, which is the exact reading RuleLimit exists to prevent")
 			}
 			for _, e := range v {
 				if e.Rule != RuleLimit {

@@ -264,7 +264,7 @@ func TestDetectionMemoryDoesNotScaleWithInput(t *testing.T) {
 func TestNodeBudgetStopsTheTree(t *testing.T) {
 	data := flatDoc(maxNodes + 1)
 
-	v := Validate(context.Background(), data, ProfileEN16931)
+	v := Validate(context.Background(), data, ProfileEN16931).Violations
 
 	// A stopped run never returns an empty result, or a caller keying on
 	// len(v) == 0 reads it as a clean invoice.

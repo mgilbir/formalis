@@ -68,7 +68,7 @@ func TestUnsupportedCharsetIsNotSilentlyMisread(t *testing.T) {
 
 	// The same document through a validator is a syntax finding about the
 	// file, not a list of business-rule violations derived from mangled text.
-	v := ValidateFacturae(context.Background(), []byte(doc))
+	v := ValidateFacturae(context.Background(), []byte(doc)).Violations
 	if len(v) != 1 || v[0].Rule != RuleSyntax {
 		t.Fatalf("got %v, want exactly one %q violation", v, RuleSyntax)
 	}

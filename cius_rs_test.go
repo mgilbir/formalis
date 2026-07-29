@@ -31,7 +31,7 @@ func TestSRBDTCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if rs := rsRuleViolations(ValidateSRBDT(context.Background(), data)); len(rs) != 0 {
+		if rs := rsRuleViolations(ValidateSRBDT(context.Background(), data).Violations); len(rs) != 0 {
 			t.Errorf("%s: expected 0 SRBDT violations on a conformant sample, got %v", filepath.Base(f), rs)
 		}
 	}
@@ -62,7 +62,7 @@ const minimalSRBDT = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:x
 </Invoice>`
 
 func TestSRBDTMutations(t *testing.T) {
-	if rs := rsRuleViolations(ValidateSRBDT(context.Background(), []byte(minimalSRBDT))); len(rs) != 0 {
+	if rs := rsRuleViolations(ValidateSRBDT(context.Background(), []byte(minimalSRBDT)).Violations); len(rs) != 0 {
 		t.Fatalf("baseline SRBDT invoice not clean: %v", rs)
 	}
 	cases := []struct{ name, from, to, want string }{
@@ -87,8 +87,8 @@ func TestSRBDTMutations(t *testing.T) {
 			if broken == minimalSRBDT {
 				t.Fatalf("mutation string not found: %q", tc.from)
 			}
-			if !hasFacturXRule(ValidateSRBDT(context.Background(), []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, rsRuleViolations(ValidateSRBDT(context.Background(), []byte(broken))))
+			if !hasFacturXRule(ValidateSRBDT(context.Background(), []byte(broken)).Violations, tc.want) {
+				t.Errorf("expected %s to fire; got %v", tc.want, rsRuleViolations(ValidateSRBDT(context.Background(), []byte(broken)).Violations))
 			}
 		})
 	}

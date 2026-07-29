@@ -36,20 +36,20 @@ func TestUnknownProfileIsRefusedNotAssumed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			v := Validate(context.Background(), []byte(validCII), tc.profile)
+			v := Validate(context.Background(), []byte(validCII), tc.profile).Violations
 			// The property that matters most: never an empty slice, so a caller
 			// testing len(v) == 0 for "valid" cannot get a clean bill of health
 			// from a run that chose no rule set. validCII is conformant, so
 			// without the rejection this returns zero findings.
 			if len(v) != 1 {
-				t.Fatalf("Validate(%q) returned %d violations, want exactly 1: %v", string(tc.profile), len(v), v)
+				t.Fatalf("Validate(%q).Violations returned %d violations, want exactly 1: %v", string(tc.profile), len(v), v)
 			}
 			if v[0].Rule != RuleProfile || v[0].Source != SourceChecker {
-				t.Errorf("Validate(%q) reported %s/%s, want %s/%s", string(tc.profile), v[0].Source, v[0].Rule, SourceChecker, RuleProfile)
+				t.Errorf("Validate(%q).Violations reported %s/%s, want %s/%s", string(tc.profile), v[0].Source, v[0].Rule, SourceChecker, RuleProfile)
 			}
 			// It is not an accusation against the document, which is conformant.
 			if v[0].Rule == RuleSyntax {
-				t.Errorf("Validate(%q) blamed the document with %s", string(tc.profile), RuleSyntax)
+				t.Errorf("Validate(%q).Violations blamed the document with %s", string(tc.profile), RuleSyntax)
 			}
 			// A caller separating "unknown" from "non-conformant" must land on
 			// "unknown"; counting this as a document defect would blame the
@@ -74,7 +74,7 @@ func TestUnknownProfileIsRefusedNotAssumed(t *testing.T) {
 // the profile, not the syntax: the checker never got as far as reading it, and
 // saying otherwise would claim a finding it did not make.
 func TestUnknownProfileIsRefusedBeforeTheDocumentIsRead(t *testing.T) {
-	v := Validate(context.Background(), []byte(`<a></b>`), Profile("GARBAGE"))
+	v := Validate(context.Background(), []byte(`<a></b>`), Profile("GARBAGE")).Violations
 	if len(v) != 1 || v[0].Rule != RuleProfile {
 		t.Fatalf("malformed XML with an unknown profile reported %v, want one %s finding", v, RuleProfile)
 	}
@@ -87,9 +87,9 @@ func TestKnownProfilesAreAccepted(t *testing.T) {
 		if !knownProfile(p) {
 			t.Errorf("knownProfile(%q) = false for a declared profile", string(p))
 		}
-		v := Validate(context.Background(), []byte(validCII), p)
+		v := Validate(context.Background(), []byte(validCII), p).Violations
 		if len(v) != 0 {
-			t.Errorf("Validate(%q) on a conformant invoice reported %d violation(s): %v", string(p), len(v), v)
+			t.Errorf("Validate(%q).Violations on a conformant invoice reported %d violation(s): %v", string(p), len(v), v)
 		}
 	}
 }
@@ -201,7 +201,7 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 				exempt[p] = true
 			}
 			for _, p := range profiles {
-				got := hasFacturXRule(Validate(context.Background(), []byte(tc.doc), p), tc.rule)
+				got := hasFacturXRule(Validate(context.Background(), []byte(tc.doc), p).Violations, tc.rule)
 				if want := !exempt[p]; got != want {
 					t.Errorf("profile %q: %s reported = %v, want %v", string(p), tc.rule, got, want)
 				}
@@ -225,12 +225,12 @@ func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
 	docs["broken"] = broken
 
 	for name, doc := range docs {
-		base := ruleSet(Validate(context.Background(), []byte(doc), ProfileEN16931))
+		base := ruleSet(Validate(context.Background(), []byte(doc), ProfileEN16931).Violations)
 		if name == "broken" && len(base) < 3 {
 			t.Fatalf("the broken document reported only %d rules (%v); it is not exercising enough", len(base), base)
 		}
 		for _, p := range []Profile{ProfileBasic, ProfileExtended} {
-			got := ruleSet(Validate(context.Background(), []byte(doc), p))
+			got := ruleSet(Validate(context.Background(), []byte(doc), p).Violations)
 			for rule := range got {
 				if !base[rule] {
 					t.Errorf("%s: profile %q reports %s, which EN 16931 does not", name, string(p), rule)
