@@ -111,6 +111,169 @@ func TestValidateUBLMutations(t *testing.T) {
 	}
 }
 
+// The two cac:TaxTotal elements of an invoice that declares a VAT accounting
+// currency (BT-6): one in the document currency carrying BT-110 and the BG-23
+// breakdown, one in the accounting currency carrying BT-111 and no subtotals.
+const (
+	ublDocCurrencyTaxTotal = `<TaxTotal><TaxAmount currencyID="EUR">19.00</TaxAmount>
+  <TaxSubtotal><TaxableAmount currencyID="EUR">100.00</TaxableAmount><TaxAmount currencyID="EUR">19.00</TaxAmount>
+    <TaxCategory><ID>S</ID><Percent>19</Percent></TaxCategory></TaxSubtotal>
+</TaxTotal>`
+	ublAccountingCurrencyTaxTotal = `<TaxTotal><TaxAmount currencyID="SEK">219.00</TaxAmount></TaxTotal>`
+	// The single-TaxTotal block minimalUBL carries, replaced by the pair above.
+	ublSingleTaxTotal = `<TaxTotal><TaxAmount>19.00</TaxAmount>
+  <TaxSubtotal><TaxableAmount>100.00</TaxableAmount><TaxAmount>19.00</TaxAmount>
+    <TaxCategory><ID>S</ID><Percent>19</Percent></TaxCategory></TaxSubtotal>
+</TaxTotal>`
+)
+
+// twoTaxTotalUBL builds a conforming invoice with a EUR document currency and a
+// SEK VAT accounting currency, emitting the two cac:TaxTotal elements in the
+// given order.
+func twoTaxTotalUBL(first, second string) string {
+	withBT6 := strings.Replace(minimalUBL,
+		"<DocumentCurrencyCode>EUR</DocumentCurrencyCode>",
+		"<DocumentCurrencyCode>EUR</DocumentCurrencyCode><TaxCurrencyCode>SEK</TaxCurrencyCode>", 1)
+	out := strings.Replace(withBT6, ublSingleTaxTotal, first+"\n"+second, 1)
+	if out == withBT6 {
+		panic("the minimalUBL TaxTotal block moved; update ublSingleTaxTotal")
+	}
+	return out
+}
+
+// TestTaxTotalSelectedByCurrency is the regression test for the document-currency
+// cac:TaxTotal selection.
+//
+// An invoice using a VAT accounting currency (BT-6) carries two cac:TaxTotal —
+// one in the document currency holding BT-110 and the BG-23 groups, one in the
+// accounting currency holding BT-111. Neither EN 16931, the UBL binding nor
+// Peppol BIS (R053/R054 constrain count and subtotal-presence, not sequence)
+// fixes their order, so the mapper must select by currency rather than by
+// document order. Reading the first one made a conforming invoice report
+// BR-CO-18 ("shall at least have one VAT breakdown group"), BR-CO-15 against the
+// SEK figure, and BR-S-01 — three fabricated findings — whenever a producer
+// wrote the accounting-currency element first.
+func TestTaxTotalSelectedByCurrency(t *testing.T) {
+	docFirst := twoTaxTotalUBL(ublDocCurrencyTaxTotal, ublAccountingCurrencyTaxTotal)
+	accFirst := twoTaxTotalUBL(ublAccountingCurrencyTaxTotal, ublDocCurrencyTaxTotal)
+
+	for _, tc := range []struct{ name, xml string }{
+		{"document-currency TaxTotal first", docFirst},
+		{"accounting-currency TaxTotal first", accFirst},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if v := Validate(context.Background(), []byte(tc.xml), ProfileEN16931); len(v) != 0 {
+				t.Errorf("a conforming two-TaxTotal invoice reported %d violation(s): %v", len(v), v)
+			}
+		})
+	}
+
+	// Order must not be observable at all: the same document in either order is
+	// the same invoice and must produce the same verdict.
+	a := Validate(context.Background(), []byte(docFirst), ProfileEN16931)
+	b := Validate(context.Background(), []byte(accFirst), ProfileEN16931)
+	if len(a) != len(b) {
+		t.Errorf("TaxTotal order changed the verdict: %d violation(s) one way, %d the other (%v / %v)",
+			len(a), len(b), a, b)
+	}
+
+	// And the amount actually mapped as BT-110 is the document-currency one, not
+	// the SEK figure: pin it through a rule that prints the value it read.
+	brokenGrand := strings.Replace(accFirst,
+		"<TaxInclusiveAmount>119.00</TaxInclusiveAmount>",
+		"<TaxInclusiveAmount>999.00</TaxInclusiveAmount>", 1)
+	var co15 string
+	for _, v := range Validate(context.Background(), []byte(brokenGrand), ProfileEN16931) {
+		if v.Rule == "BR-CO-15" {
+			co15 = v.Message
+		}
+	}
+	if co15 == "" {
+		t.Fatal("expected BR-CO-15 to fire on an inconsistent grand total")
+	}
+	if !strings.Contains(co15, "BT-110=19.00") {
+		t.Errorf("BR-CO-15 read the wrong VAT total: want the document-currency 19.00, got %q", co15)
+	}
+}
+
+// TestTaxTotalDegenerateSelection pins the selection's behaviour on the shapes
+// that are not the two-currency pair: none, one (the overwhelmingly common case,
+// which must be returned whatever it is tagged with), an ambiguous pair, and a
+// pair naming neither the document currency.
+func TestTaxTotalDegenerateSelection(t *testing.T) {
+	root := func(x string) *ciiNode {
+		n, err := parseCII(newRun(nil), []byte(x))
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		return n
+	}
+	subtotal := `<TaxSubtotal><TaxableAmount>100.00</TaxableAmount></TaxSubtotal>`
+
+	cases := []struct {
+		name, xml, currency, wantTaxAmount string
+		wantSubtotals                      int
+	}{
+		{
+			name: "no TaxTotal", currency: "EUR",
+			xml:           `<Invoice><DocumentCurrencyCode>EUR</DocumentCurrencyCode></Invoice>`,
+			wantTaxAmount: "", wantSubtotals: 0,
+		},
+		{
+			// The single-element path must never consult the currency: a producer
+			// that mis-tags its only TaxTotal still has exactly one breakdown.
+			name: "one TaxTotal tagged with a foreign currency", currency: "EUR",
+			xml:           `<Invoice><TaxTotal><TaxAmount currencyID="SEK">7</TaxAmount>` + subtotal + `</TaxTotal></Invoice>`,
+			wantTaxAmount: "7", wantSubtotals: 1,
+		},
+		{
+			name: "two, both untagged: the one with subtotals wins", currency: "EUR",
+			xml: `<Invoice><TaxTotal><TaxAmount>1</TaxAmount></TaxTotal>` +
+				`<TaxTotal><TaxAmount>2</TaxAmount>` + subtotal + `</TaxTotal></Invoice>`,
+			wantTaxAmount: "2", wantSubtotals: 1,
+		},
+		{
+			name: "two with the same currencyID: the one with subtotals wins", currency: "EUR",
+			xml: `<Invoice><TaxTotal><TaxAmount currencyID="EUR">1</TaxAmount></TaxTotal>` +
+				`<TaxTotal><TaxAmount currencyID="EUR">2</TaxAmount>` + subtotal + `</TaxTotal></Invoice>`,
+			wantTaxAmount: "2", wantSubtotals: 1,
+		},
+		{
+			name: "neither names the document currency: fall back to the breakdown", currency: "EUR",
+			xml: `<Invoice><TaxTotal><TaxAmount currencyID="SEK">1</TaxAmount></TaxTotal>` +
+				`<TaxTotal><TaxAmount currencyID="NOK">2</TaxAmount>` + subtotal + `</TaxTotal></Invoice>`,
+			wantTaxAmount: "2", wantSubtotals: 1,
+		},
+		{
+			name: "neither names it and neither has a breakdown: document order", currency: "EUR",
+			xml: `<Invoice><TaxTotal><TaxAmount currencyID="SEK">1</TaxAmount></TaxTotal>` +
+				`<TaxTotal><TaxAmount currencyID="NOK">2</TaxAmount></TaxTotal></Invoice>`,
+			wantTaxAmount: "1", wantSubtotals: 0,
+		},
+		{
+			// Malformed: the breakdown sits in the accounting-currency element. The
+			// explicit currency tag is the stronger signal and wins, so the invoice
+			// is reported as missing its breakdown rather than accused of arithmetic
+			// carried out across two currencies.
+			name: "subtotals in the accounting-currency element", currency: "EUR",
+			xml: `<Invoice><TaxTotal><TaxAmount currencyID="SEK">1</TaxAmount>` + subtotal + `</TaxTotal>` +
+				`<TaxTotal><TaxAmount currencyID="EUR">2</TaxAmount></TaxTotal></Invoice>`,
+			wantTaxAmount: "2", wantSubtotals: 0,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tt := ublDocumentTaxTotal(root(tc.xml), tc.currency).orNil()
+			if got := tt.str("TaxAmount"); got != tc.wantTaxAmount {
+				t.Errorf("BT-110: got %q, want %q", got, tc.wantTaxAmount)
+			}
+			if got := len(tt.all("TaxSubtotal")); got != tc.wantSubtotals {
+				t.Errorf("breakdown groups: got %d, want %d", got, tc.wantSubtotals)
+			}
+		})
+	}
+}
+
 // TestVATAmountTolerance pins the EN 16931 ±1 tolerance of the VAT-breakdown
 // amount check (BR-CO-17): per-line rounding drift within one currency unit is
 // accepted, a larger drift is flagged.

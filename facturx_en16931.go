@@ -771,6 +771,61 @@ func parseAmount(s string) (float64, bool) {
 	return f, err == nil
 }
 
+// ublDocumentTaxTotal selects the cac:TaxTotal that carries the invoice's VAT in
+// the *document* currency: the Invoice total VAT amount (BT-110) and the BG-23
+// VAT breakdown groups.
+//
+// An invoice that declares a VAT accounting currency (BT-6 cbc:TaxCurrencyCode)
+// carries two cac:TaxTotal elements — one in the document currency holding BT-110
+// and the cac:TaxSubtotal groups, and one in the accounting currency holding
+// BT-111 and no subtotals. Nothing constrains their order: not EN 16931, not the
+// UBL binding, and not Peppol BIS (PEPPOL-EN16931-R053/R054 constrain their count
+// and subtotal-presence, not their sequence). Taking whichever appears first
+// therefore reads BT-110 and the entire breakdown out of the accounting-currency
+// element whenever a producer emits that one first, which fabricates BR-CO-18,
+// BR-CO-15 and BR-{fam}-01 findings on a conforming invoice.
+//
+// The currency identifier is the primary signal: a cac:TaxTotal whose
+// cbc:TaxAmount/@currencyID equals the Invoice currency code (BT-5) is the
+// document-currency one, and so is one carrying no @currencyID at all — many
+// producers omit it, and the UBL binding's implied currency is the document's.
+// Where that leaves more than one candidate, or none, the presence of
+// cac:TaxSubtotal children breaks the tie, because the binding puts the breakdown
+// only in the document-currency element.
+//
+// A document with a single cac:TaxTotal always selects that one, whatever it is
+// tagged with. That is the shape of essentially every invoice, and treating it
+// any other way would turn a mis-tagged @currencyID into a missing breakdown.
+func ublDocumentTaxTotal(root *ciiNode, currency string) *ciiNode {
+	tts := root.all("TaxTotal")
+	if len(tts) < 2 {
+		if len(tts) == 0 {
+			return nil
+		}
+		return tts[0]
+	}
+	var candidates []*ciiNode
+	for _, tt := range tts {
+		if cur := tt.child("TaxAmount").attr("currencyID"); cur == "" || strings.EqualFold(cur, currency) {
+			candidates = append(candidates, tt)
+		}
+	}
+	if len(candidates) == 0 {
+		// Neither element names the document currency. The breakdown is the only
+		// remaining evidence; failing that, document order.
+		candidates = tts
+	}
+	if len(candidates) == 1 {
+		return candidates[0]
+	}
+	for _, tt := range candidates {
+		if len(tt.all("TaxSubtotal")) > 0 {
+			return tt
+		}
+	}
+	return candidates[0]
+}
+
 // mapUBL extracts the EN 16931 business terms from an OASIS UBL Invoice or
 // CreditNote. The tree is parsed namespace-agnostically (parseCII), so the cbc:/
 // cac: prefixes are already stripped to local names. The document-type element
@@ -783,14 +838,15 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	seller := root.child("AccountingSupplierParty", "Party").orNil()
 	buyer := root.child("AccountingCustomerParty", "Party").orNil()
 	total := root.child("LegalMonetaryTotal")
-	taxTotal := root.child("TaxTotal").orNil()
+	currency := root.str("DocumentCurrencyCode")
+	taxTotal := ublDocumentTaxTotal(root, currency).orNil()
 
 	inv := &en16931Invoice{
 		specID:    root.str("CustomizationID"),
 		number:    root.str("ID"),
 		issueDate: root.str("IssueDate"),
 		typeCode:  root.str(typeCodeName),
-		currency:  root.str("DocumentCurrencyCode"),
+		currency:  currency,
 		// BT-27/BT-44 bind to the legal registration name; some producers carry
 		// the name only in cac:PartyName, so fall back to it.
 		sellerName:           firstNonEmpty(seller.str("PartyLegalEntity", "RegistrationName"), seller.str("PartyName", "Name")),
@@ -831,9 +887,16 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	}
 	inv.taxCurrency = root.str("TaxCurrencyCode")
 	if inv.taxCurrency != "" {
+		// BT-111 is the VAT total in the accounting currency: a cac:TaxTotal whose
+		// cbc:TaxAmount is tagged with BT-6. This is a presence test over every
+		// cac:TaxTotal, deliberately independent of which one ublDocumentTaxTotal
+		// picked — the two selections answer different questions, and the one the
+		// mapper chose for BT-110 is by construction not the accounting-currency
+		// one unless BT-6 and BT-5 are equal, which PEPPOL-EN16931-R005 forbids.
 		for _, tt := range root.all("TaxTotal") {
 			if strings.EqualFold(tt.child("TaxAmount").attr("currencyID"), inv.taxCurrency) {
 				inv.vatInTaxCurrency = true
+				break
 			}
 		}
 	}
@@ -844,7 +907,6 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 			allowanceTotal:  total.str("AllowanceTotalAmount"),
 			chargeTotal:     total.str("ChargeTotalAmount"),
 			taxBasisTotal:   total.str("TaxExclusiveAmount"),
-			taxTotal:        taxTotal.str("TaxAmount"), // BT-110: TaxTotal's direct amount
 			grandTotal:      total.str("TaxInclusiveAmount"),
 			paidAmount:      total.str("PrepaidAmount"),
 			payableRounding: total.str("PayableRoundingAmount"),
@@ -853,7 +915,10 @@ func mapUBL(root *ciiNode) *en16931Invoice {
 	}
 	// The Invoice total VAT amount (BT-110) lives in TaxTotal, independent of the
 	// document monetary summation, so read it even without a LegalMonetaryTotal.
+	// Assigned after the block above, which replaces the whole struct.
 	inv.totals.taxTotal = taxTotal.str("TaxAmount")
+	// The BG-23 breakdown groups come from that same element: BT-110 and the
+	// subtotals that must sum to it are one statement in one currency.
 	for _, ts := range taxTotal.all("TaxSubtotal") {
 		inv.vatBreakdowns = append(inv.vatBreakdowns, vatBreakdown{
 			basis:      ts.str("TaxableAmount"),
