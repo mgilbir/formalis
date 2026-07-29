@@ -80,12 +80,20 @@ func (c claims) record(validator string, vs []Violation) []string {
 
 // sweep is the result of running every exported validator over every document
 // available: the identifier -> Source map, the rules each Source was seen to
-// report, and how many corpus files were read.
+// report, the severities each of those rules was reported at, and how many
+// corpus files were read.
 type sweep struct {
-	claims  claims
-	byRule  map[Source]map[string]bool
-	files   int
-	defects []string
+	claims claims
+	byRule map[Source]map[string]bool
+	// bySeverity is (Source, Rule) -> the set of severities the sweep saw it
+	// emitted at. It is a set rather than one value because a rule with two
+	// severities is a real thing — CEN flags BR-51 fatal in one binding and a
+	// warning in the other — so a package that emitted one rule both ways would
+	// be reporting a fact, and one that emitted it inconsistently would be
+	// reporting a bug. Either way the set is what makes the difference visible.
+	bySeverity map[Source]map[string]map[Severity]bool
+	files      int
+	defects    []string
 }
 
 // corpusSweep runs the full cross product once per test binary and memoises it.
@@ -96,7 +104,11 @@ type sweep struct {
 // would add half again to the whole suite's runtime to learn nothing new, so
 // the sweep gathers data and each test states its own assertions over it.
 var corpusSweep = sync.OnceValue(func() *sweep {
-	s := &sweep{claims: claims{}, byRule: map[Source]map[string]bool{}}
+	s := &sweep{
+		claims:     claims{},
+		byRule:     map[Source]map[string]bool{},
+		bySeverity: map[Source]map[string]map[Severity]bool{},
+	}
 	ctx := context.Background()
 
 	add := func(vname string, r Report) {
@@ -106,6 +118,13 @@ var corpusSweep = sync.OnceValue(func() *sweep {
 				s.byRule[v.Source] = map[string]bool{}
 			}
 			s.byRule[v.Source][v.Rule] = true
+			if s.bySeverity[v.Source] == nil {
+				s.bySeverity[v.Source] = map[string]map[Severity]bool{}
+			}
+			if s.bySeverity[v.Source][v.Rule] == nil {
+				s.bySeverity[v.Source][v.Rule] = map[Severity]bool{}
+			}
+			s.bySeverity[v.Source][v.Rule][v.Severity] = true
 		}
 	}
 
@@ -308,9 +327,14 @@ func TestCheckerFindingsCarryTheCheckerSource(t *testing.T) {
 
 // TestViolationErrorNamesItsSource keeps the string form unambiguous: printing a
 // bare rule identifier is exactly the habit that let two of them be confused.
+//
+// The severity is in the string for the same reason the Source is. Violation
+// satisfies error, so it gets logged, and a log line that reads the same for an
+// advisory finding as for a blocking one recreates the confusion one field
+// along.
 func TestViolationErrorNamesItsSource(t *testing.T) {
 	got := Violation{Source: SourceNLCIUS, Rule: "BR-NL-1", Message: "the supplier shall be identified"}.Error()
-	want := "NLCIUS BR-NL-1: the supplier shall be identified"
+	want := "NLCIUS BR-NL-1 (fatal): the supplier shall be identified"
 	if got != want {
 		t.Errorf("Error() = %q, want %q", got, want)
 	}

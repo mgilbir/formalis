@@ -115,13 +115,17 @@ func ExampleDetect() {
 
 // ExampleCoverage answers "what will that validator not look at?" before a call
 // is made. It takes no document and cannot fail.
+//
+// The severity on each family is what a caller acts on: a fatal gap means a rule
+// that could have rejected this document was never evaluated, so Report.Conformant
+// cannot be true. NLCIUS is the one rule set here whose only gap is advisory.
 func ExampleCoverage() {
 	for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
-		fmt.Println("not evaluated:", gap)
+		fmt.Printf("not evaluated: %s [%s] — %s\n", gap.Rules, gap.Severity, gap.Reason)
 	}
 
 	// Output:
-	// not evaluated: BR-NL-19..35 (advisory: NLCIUS's "not recommended" rules, which do not make an invoice non-conformant)
+	// not evaluated: BR-NL-19..35 [warning] — NLCIUS's "not recommended" rules, which do not make an invoice non-conformant
 }
 
 // ExampleIsCheckerViolation separates "the invoice is wrong" from "the checker
