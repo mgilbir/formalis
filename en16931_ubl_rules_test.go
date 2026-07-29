@@ -287,6 +287,42 @@ func TestUBLSyntaxRules(t *testing.T) {
 			`<PartyTaxScheme><TaxScheme><ID>FC</ID></TaxScheme></PartyTaxScheme>`), "UBL-SR-53", true},
 		{"UBL-SR-53 a company identifier without a tax scheme identifier", ublWith(t, ublAtSeller,
 			`<PartyTaxScheme><CompanyID>123/456/789</CompanyID><TaxScheme></TaxScheme></PartyTaxScheme>`), "UBL-SR-53", true},
+
+		// --- Payment instructions, allowances, charges and the VAT breakdown ---
+		{"UBL-SR-26 one payment reference in a payment means group", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentID>REF-1</PaymentID></PaymentMeans>`), "UBL-SR-26", false},
+		{"UBL-SR-26 two payment references in one payment means group", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentID>REF-1</PaymentID><PaymentID>REF-1</PaymentID></PaymentMeans>`), "UBL-SR-26", true},
+
+		{"UBL-SR-27 one payment means code in a group", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>`), "UBL-SR-27", false},
+		{"UBL-SR-27 two payment means codes in one group", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>30</PaymentMeansCode><PaymentMeansCode>30</PaymentMeansCode></PaymentMeans>`), "UBL-SR-27", true},
+
+		{"UBL-SR-28 one mandate reference", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>59</PaymentMeansCode><PaymentMandate><ID>MND-1</ID></PaymentMandate></PaymentMeans>`), "UBL-SR-28", false},
+		{"UBL-SR-28 two mandate references", ublWith(t, ublAtDocument,
+			`<PaymentMeans><PaymentMeansCode>59</PaymentMeansCode><PaymentMandate><ID>MND-1</ID><ID>MND-2</ID></PaymentMandate></PaymentMeans>`), "UBL-SR-28", true},
+
+		{"UBL-SR-30 one document allowance reason", ublWith(t, ublAtDocument,
+			`<AllowanceCharge><ChargeIndicator>false</ChargeIndicator><AllowanceChargeReason>Discount</AllowanceChargeReason><Amount>5.00</Amount></AllowanceCharge>`), "UBL-SR-30", false},
+		{"UBL-SR-30 two document allowance reasons", ublWith(t, ublAtDocument,
+			`<AllowanceCharge><ChargeIndicator>false</ChargeIndicator><AllowanceChargeReason>Discount</AllowanceChargeReason>`+
+				`<AllowanceChargeReason>Rebate</AllowanceChargeReason><Amount>5.00</Amount></AllowanceCharge>`), "UBL-SR-30", true},
+		{"UBL-SR-30 stays silent on a charge", ublWith(t, ublAtDocument,
+			`<AllowanceCharge><ChargeIndicator>true</ChargeIndicator><AllowanceChargeReason>Freight</AllowanceChargeReason>`+
+				`<AllowanceChargeReason>Packing</AllowanceChargeReason><Amount>5.00</Amount></AllowanceCharge>`), "UBL-SR-30", false},
+
+		{"UBL-SR-31 one document charge reason", ublWith(t, ublAtDocument,
+			`<AllowanceCharge><ChargeIndicator>true</ChargeIndicator><AllowanceChargeReason>Freight</AllowanceChargeReason><Amount>5.00</Amount></AllowanceCharge>`), "UBL-SR-31", false},
+		{"UBL-SR-31 two document charge reasons", ublWith(t, ublAtDocument,
+			`<AllowanceCharge><ChargeIndicator>true</ChargeIndicator><AllowanceChargeReason>Freight</AllowanceChargeReason>`+
+				`<AllowanceChargeReason>Packing</AllowanceChargeReason><Amount>5.00</Amount></AllowanceCharge>`), "UBL-SR-31", true},
+
+		{"UBL-SR-32 one VAT exemption reason", ublWith(t, ublAtCategory,
+			`<TaxExemptionReason>Reverse charge</TaxExemptionReason>`), "UBL-SR-32", false},
+		{"UBL-SR-32 two VAT exemption reasons", ublWith(t, ublAtCategory,
+			`<TaxExemptionReason>Reverse charge</TaxExemptionReason><TaxExemptionReason>Export</TaxExemptionReason>`), "UBL-SR-32", true},
 	}
 	runRuleCases(t, cases)
 }
