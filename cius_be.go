@@ -69,7 +69,7 @@ func validateUBLBE(r *run, p *parsed) []Violation {
 
 func validateUBLBERules(root *ciiNode) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceUBLBE)
 
 	// ubl-BE-02: exactly one AdditionalDocumentReference/DocumentDescription with
 	// the value "CommercialInvoice" or "CreditNote".

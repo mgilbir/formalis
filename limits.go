@@ -81,7 +81,8 @@ import (
 
 // RuleLimit is the rule identifier carried by a Violation that reports the
 // checker stopping early — a cancelled context or a tripped resource budget —
-// rather than a defect in the invoice.
+// rather than a defect in the invoice. Such a finding carries SourceChecker,
+// because it is a statement by this package and not by any rule authority.
 //
 // It matches the identifier pdf0 uses for the same event, so a caller that
 // already separates "the file is bad" from "the checker could not finish" needs
@@ -90,7 +91,8 @@ const RuleLimit = "limit"
 
 // RuleSyntax is the rule identifier for XML that is not well-formed or is not
 // an invoice document at all. Unlike RuleLimit this *is* a statement about the
-// file.
+// file, but it is still this checker's statement rather than a rule authority's,
+// so it too carries SourceChecker.
 const RuleSyntax = "syntax"
 
 // IsCheckerViolation reports whether v describes the checker stopping early
@@ -98,6 +100,19 @@ const RuleSyntax = "syntax"
 //
 // A cancelled context and a tripped resource budget both produce one. Treat it
 // as "unknown", never as "conformant" and never as "non-conformant".
+//
+// It tests Rule alone, deliberately, even though every finding this package
+// emits now carries a Source and the pair a caller should think in is
+// (SourceChecker, RuleLimit). Two reasons. RuleLimit is a reserved word rather
+// than an identifier in anyone's numbering scheme — no rule authority mints a
+// rule called "limit" — so there is nothing for the scope to disambiguate here.
+// And the constant is shared with pdf0, which constructs this same finding for
+// its own container guards and hands it back in one mixed slice; requiring
+// SourceChecker would silently reclassify every one of those as a business-rule
+// violation the moment this package added the field. A caller that wants the
+// strict pair can still write it — the Source is there — but the predicate that
+// exists to keep "unknown" from being read as "conformant" must not start
+// returning false for a finding it has always covered.
 func IsCheckerViolation(v Violation) bool { return v.Rule == RuleLimit }
 
 // maxDepth is the deepest element nesting the parser will build.
@@ -233,6 +248,7 @@ func (r *run) note(guard, msg string) {
 	}
 	r.seen[guard] = true
 	r.trips = append(r.trips, Violation{
+		Source:  SourceChecker,
 		Rule:    RuleLimit,
 		Message: fmt.Sprintf("%s (%s); the checks that had not yet run were skipped, so this invoice is neither confirmed valid nor invalid", msg, guard),
 	})

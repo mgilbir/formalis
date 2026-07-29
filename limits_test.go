@@ -239,7 +239,7 @@ func TestVATSumBudgetDeclinesRatherThanAccuses(t *testing.T) {
 	})
 
 	var fired []Violation
-	add := func(rule, msg string) { fired = append(fired, Violation{Rule: rule, Message: msg}) }
+	add := adder(&fired, SourceEN16931)
 
 	r := newRun(context.Background())
 	r.vatWork = 0 // exhausted

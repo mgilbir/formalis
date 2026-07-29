@@ -48,10 +48,10 @@ func ValidateTurkishInvoice(ctx context.Context, xmlData []byte) []Violation {
 
 func validateTurkishInvoice(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" {
-		return []Violation{{Rule: "TR-root", Message: "the document root shall be an Invoice"}}
+		return []Violation{{Source: SourceUBLTR, Rule: "TR-root", Message: "the document root shall be an Invoice"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceUBLTR)
 
 	if !strings.HasPrefix(strings.ToUpper(strings.TrimSpace(root.str("CustomizationID"))), "TR") {
 		add("TR-customization", "the CustomizationID shall declare a UBL-TR profile (TR1.x)")

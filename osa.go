@@ -54,10 +54,10 @@ func ValidateOSA(ctx context.Context, xmlData []byte) []Violation {
 
 func validateOSA(r *run, root *ciiNode) []Violation {
 	if root.name != "InvoiceData" {
-		return []Violation{{Rule: "HU-root", Message: "the document root shall be InvoiceData"}}
+		return []Violation{{Source: SourceOSA, Rule: "HU-root", Message: "the document root shall be InvoiceData"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceOSA)
 
 	if strings.TrimSpace(root.str("invoiceNumber")) == "" {
 		add("HU-number", "the document shall contain an invoiceNumber")

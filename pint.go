@@ -64,10 +64,10 @@ func ValidatePINT(ctx context.Context, xmlData []byte) []Violation {
 
 func validatePINT(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" && root.name != "CreditNote" {
-		return []Violation{{Rule: "PINT-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}
+		return []Violation{{Source: SourcePINT, Rule: "PINT-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourcePINT)
 
 	if !strings.Contains(root.str("CustomizationID"), "peppol:pint") {
 		add("PINT-customization", "the CustomizationID shall declare a Peppol PINT profile")

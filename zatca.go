@@ -65,10 +65,10 @@ func ValidateZATCA(ctx context.Context, xmlData []byte) []Violation {
 
 func validateZATCA(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" && root.name != "CreditNote" {
-		return []Violation{{Rule: "ZA-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}
+		return []Violation{{Source: SourceZATCA, Rule: "ZA-root", Message: "the document root shall be a UBL Invoice or CreditNote"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceZATCA)
 
 	// ZA-number/date/uuid: the document id, issue date and UUID are mandatory.
 	if strings.TrimSpace(root.str("ID")) == "" {

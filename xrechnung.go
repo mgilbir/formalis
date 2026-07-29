@@ -64,10 +64,10 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	// Re-apply the item identifier scheme checks with the XRechnung extensions.
 	for _, li := range inv.lines {
 		if s := li.stdIDScheme; s != "" && !en16931ICD[s] && !(ext && xrExtItemSchemes[s]) {
-			out = append(out, Violation{Rule: "BR-CL-21", Message: fmt.Sprintf("Item standard identifier scheme (%q) is not permitted", s)})
+			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-21", Message: fmt.Sprintf("Item standard identifier scheme (%q) is not permitted", s)})
 		}
 		if l := li.classListID; l != "" && !en16931ItemClassCodes[l] && !(cvd && l == "CVD") {
-			out = append(out, Violation{Rule: "BR-CL-13", Message: fmt.Sprintf("Item classification scheme (%q) is not permitted", l)})
+			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-13", Message: fmt.Sprintf("Item classification scheme (%q) is not permitted", l)})
 		}
 	}
 	out = append(out, validateXRechnungRules(inv, ext, cvd)...)
@@ -78,7 +78,7 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 // adds on top of EN 16931 (the BR-DE-* family).
 func validateXRechnungRules(inv *en16931Invoice, ext, cvd bool) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceXRechnung)
 	req := func(rule, msg, val string) {
 		if val == "" {
 			add(rule, msg)

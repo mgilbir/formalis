@@ -48,10 +48,10 @@ func ValidateEbInterface(ctx context.Context, xmlData []byte) []Violation {
 
 func validateEbInterface(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" || root.child("Biller") == nil {
-		return []Violation{{Rule: "EB-root", Message: "the document root shall be an ebInterface Invoice with a Biller"}}
+		return []Violation{{Source: SourceEbInterface, Rule: "EB-root", Message: "the document root shall be an ebInterface Invoice with a Biller"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceEbInterface)
 
 	// EB-number/EB-date: the invoice number and date elements are mandatory. The
 	// number is checked for presence only (the ebInterface XSD, and thus the

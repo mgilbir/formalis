@@ -44,10 +44,10 @@ func ValidateFinvoice(ctx context.Context, xmlData []byte) []Violation {
 
 func validateFinvoice(r *run, root *ciiNode) []Violation {
 	if root.name != "Finvoice" {
-		return []Violation{{Rule: "FI-root", Message: "the document root shall be Finvoice"}}
+		return []Violation{{Source: SourceFinvoice, Rule: "FI-root", Message: "the document root shall be Finvoice"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceFinvoice)
 
 	// FI-seller: the seller party has an organisation name and a postal address.
 	sp := root.child("SellerPartyDetails").orNil()

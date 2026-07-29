@@ -46,10 +46,10 @@ func ValidateSvefaktura(ctx context.Context, xmlData []byte) []Violation {
 
 func validateSvefaktura(r *run, root *ciiNode) []Violation {
 	if root.name != "Invoice" || root.child("SellerParty") == nil {
-		return []Violation{{Rule: "SV-root", Message: "the document root shall be a Svefaktura Invoice with a SellerParty"}}
+		return []Violation{{Source: SourceSvefaktura, Rule: "SV-root", Message: "the document root shall be a Svefaktura Invoice with a SellerParty"}}
 	}
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceSvefaktura)
 
 	if strings.TrimSpace(root.str("ID")) == "" {
 		add("SV-number", "the invoice shall contain an ID")

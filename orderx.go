@@ -39,13 +39,14 @@ func ValidateOrderXML(ctx context.Context, xmlData []byte) []Violation {
 
 // notAnOrder is the finding for XML that is not a Cross Industry Order.
 var notAnOrder = Violation{
+	Source:  SourceOrderX,
 	Rule:    "order-xml",
 	Message: "the order XML is not a well-formed Cross Industry Order (SCRDMCCBDACIOMessageStructure)",
 }
 
 func validateOrderXML(r *run, root *ciiNode) []Violation {
 	var out []Violation
-	add := func(rule, msg string) { out = append(out, Violation{Rule: rule, Message: msg}) }
+	add := adder(&out, SourceOrderX)
 
 	if root.name != "SCRDMCCBDACIOMessageStructure" {
 		return []Violation{notAnOrder}

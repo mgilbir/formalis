@@ -20,7 +20,25 @@ v := formalis.Validate(ctx, xml, formalis.ProfileEN16931)
 v := formalis.ValidateCIUS(ctx, xml)
 
 for _, x := range v {
-    fmt.Printf("%s: %s\n", x.Rule, x.Message)
+    fmt.Printf("%s %s: %s\n", x.Source, x.Rule, x.Message)
+}
+```
+
+A rule is identified by `(Source, Rule)`, not by `Rule` alone. `Source` names the
+authority that defines it — `formalis.SourceEN16931`, `formalis.SourceXRechnung`,
+`formalis.SourcePeppol`, one per CIUS and national format, and
+`formalis.SourceChecker` for the checker's own `RuleLimit`/`RuleSyntax`. Two
+authorities may number a rule the same way, so aggregate and suppress on the
+pair:
+
+```go
+type key struct {
+    Source formalis.Source
+    Rule   string
+}
+counts := map[key]int{}
+for _, x := range v {
+    counts[key{x.Source, x.Rule}]++
 }
 ```
 
