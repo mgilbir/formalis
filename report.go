@@ -197,7 +197,7 @@ var notEvaluated = map[Source][]string{
 		"BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145) — CEN binds all four to true() in both syntaxes, so they are unenforceable rather than unimplemented",
 		"UBL-DT-* other than UBL-DT-01/06/07 (the 21 advisory UBL datatype rules)",
 		"UBL-CR-* (678 rules, all but two advisory: UBL elements outside the EN 16931 core)",
-		"CII-SR-* other than CII-SR-009/010/014 and CII-SR-467/468/469 (36 of the 42 fatal CII syntax rules remain, and 440 advisory ones)",
+		"CII-SR-* other than the 17 fatal rules on the document element, the invoice line and the allowance and charge groups (25 of the 42 fatal CII syntax rules remain, and 440 advisory ones)",
 		"CII-DT-* other than CII-DT-013/014 (68 of the 70 fatal CII datatype rules remain, and 31 advisory ones)",
 	},
 

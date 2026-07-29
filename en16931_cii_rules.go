@@ -53,6 +53,14 @@ func validateCIISyntaxRules(r *run, root *ciiNode) []Violation {
 	g := gatherCIISyntaxNodes(root)
 
 	ciiSyntaxDocumentRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiSyntaxLineRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ciiSyntaxAllowanceRules(g, add)
 	return out
 }
 
@@ -264,6 +272,23 @@ func allNormalizeSpaceEqual(vals []string) bool {
 	return true
 }
 
+// anyHasAttr reports whether any node in the set carries the named attribute. It
+// is how CEN's existence tests on an attribute node read when the step before
+// them selects a sequence: `ram:GlobalID/@schemeID` is true when *some*
+// ram:GlobalID has one.
+func anyHasAttr(ns []*ciiNode, name string) bool {
+	for _, n := range ns {
+		if n.hasAttr(name) {
+			return true
+		}
+	}
+	return false
+}
+
+// hasChild is `(ram:X)` — an existence test on a child element, whatever its
+// content.
+func hasChild(n *ciiNode, name string) bool { return len(n.all(name)) > 0 }
+
 // ciiSyntaxDocumentRules are the rules CEN binds to the document element and to
 // the two head groups under it — `/rsm:CrossIndustryInvoice`,
 // `/rsm:CrossIndustryInvoice/rsm:ExchangedDocumentContext` and
@@ -316,5 +341,86 @@ func ciiSyntaxDocumentRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
 	}
 	if g.root.hasAttr("languageLocaleID") {
 		add("CII-DT-014", "The document element shall not carry a languageLocaleID attribute")
+	}
+}
+
+// ciiSyntaxLineRules are the rules whose context is an invoice line or a group
+// inside one: ram:SpecifiedTradeProduct, its ram:ApplicableProductCharacteristic
+// and ram:SpecifiedLineTradeAgreement. All three contexts are absolute paths
+// through ram:IncludedSupplyChainTradeLineItem, so a product group written
+// somewhere else in the tree is not asked to answer them.
+func ciiSyntaxLineRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, ln := range g.lines {
+		for _, p := range ln.all("SpecifiedTradeProduct") {
+			// not(ram:GlobalID) or (ram:GlobalID/@schemeID)
+			if ids := p.all("GlobalID"); len(ids) > 0 && !anyHasAttr(ids, "schemeID") {
+				add("CII-SR-046", "The Item standard identifier (BT-157) shall carry a scheme identifier (BT-157-1)")
+			}
+			// not(ram:OriginTradeCountry) or (count(ram:OriginTradeCountry/ram:ID) = 1)
+			if hasChild(p, "OriginTradeCountry") {
+				if n := countAt(p, "OriginTradeCountry", "ID"); n != 1 {
+					add("CII-SR-090", fmt.Sprintf("An item origin country group shall carry exactly one Item country of origin (BT-159), not %d", n))
+				}
+			}
+			for _, ch := range p.all("ApplicableProductCharacteristic") {
+				// count(ram:Description) = 1
+				if n := countAt(ch, "Description"); n != 1 {
+					add("CII-SR-069", fmt.Sprintf("An item attribute (BG-32) shall carry exactly one Item attribute name (BT-160), not %d", n))
+				}
+				// count(ram:Value) = 1
+				if n := countAt(ch, "Value"); n != 1 {
+					add("CII-SR-072", fmt.Sprintf("An item attribute (BG-32) shall carry exactly one Item attribute value (BT-161), not %d", n))
+				}
+			}
+		}
+		for _, ag := range ln.all("SpecifiedLineTradeAgreement") {
+			// CEN publishes two assertions over one count, in one rule: CII-SR-439
+			// requires it to be exactly one and CII-SR-441 requires it to be at
+			// most one. The second is implied by the first and both are fatal, so a
+			// line with two net prices is reported twice; that is what a reference
+			// validator does and this transcribes it rather than deduplicating.
+			n := countAt(ag, "NetPriceProductTradePrice", "ChargeAmount")
+			if n != 1 {
+				add("CII-SR-439", fmt.Sprintf("An invoice line shall carry exactly one Item net price (BT-146), not %d", n))
+			}
+			if n > 1 {
+				add("CII-SR-441", "The Item net price (BT-146) shall occur at most once per invoice line")
+			}
+		}
+	}
+}
+
+// ciiSyntaxAllowanceRules are the rules whose context is an allowance or charge
+// group: `//ram:SpecifiedTradeAllowanceCharge`, which matches the document-level
+// groups (BG-20/21) and the line-level ones (BG-27/28) alike, and
+// `//ram:GrossPriceProductTradePrice/ram:AppliedTradeAllowanceCharge`, which is
+// the item price discount (BT-147).
+func ciiSyntaxAllowanceRules(g *ciiSyntaxNodes, add func(rule, msg string)) {
+	for _, ac := range g.allowanceCharges {
+		// (ram:ChargeIndicator) — an existence test. Without it nothing in the
+		// document says whether the group is an allowance or a charge.
+		if !hasChild(ac, "ChargeIndicator") {
+			add("CII-SR-463", "An allowance or charge group (BG-20/21, BG-27/28) shall carry a charge indicator")
+		}
+		// count(ram:RateApplicablePercent) <= 1. CEN's title for this assertion
+		// names the VAT category code (BT-95); its XPath counts a percentage
+		// element, and the XPath is the rule.
+		if atMostOnce(ac, "RateApplicablePercent") {
+			add("CII-SR-471", "An allowance or charge group shall carry at most one applicable rate percentage")
+		}
+		// count(ram:CategoryTradeTax) <= 1
+		if atMostOnce(ac, "CategoryTradeTax") {
+			add("CII-SR-472", "An allowance or charge group shall carry at most one VAT category group (BT-95/96, BT-102/103)")
+		}
+		// count(ram:ActualAmount) <= 1
+		if atMostOnce(ac, "ActualAmount") {
+			add("CII-SR-473", "An allowance or charge group shall carry at most one amount (BT-92/99, BT-136/141)")
+		}
+	}
+	for _, ap := range g.priceAllowances {
+		// count(ram:ActualAmount) <= 1
+		if atMostOnce(ap, "ActualAmount") {
+			add("CII-SR-440", "The Item price discount (BT-147) shall occur at most once")
+		}
 	}
 }
