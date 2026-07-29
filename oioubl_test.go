@@ -13,8 +13,13 @@ func TestOIOUBLCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("OIOUBL corpus not present (make cius-oracles)")
 	}
+	recognised := 0
 	for _, f := range files {
-		data, _ := os.ReadFile(f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+			continue
+		}
 		ok, err := IsOIOUBL(data)
 		if err != nil {
 			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
@@ -23,10 +28,12 @@ func TestOIOUBLCorpus(t *testing.T) {
 		if !ok {
 			continue
 		}
+		recognised++
 		if v := ValidateOIOUBL(context.Background(), data).Violations; len(v) != 0 {
 			t.Errorf("%s: expected 0 OIOUBL violations, got %v", filepath.Base(f), v)
 		}
 	}
+	atLeast(t, "OIOUBL corpus", recognised, minOIOUBLInstances)
 }
 
 const minimalOIOUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">

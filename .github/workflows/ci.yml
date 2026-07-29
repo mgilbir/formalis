@@ -4,8 +4,24 @@ on:
   push:
     branches: [main]
   pull_request:
+  # The conformance job below depends on ~600 downloads from GitHub and on the
+  # upstream corpora staying where they are. A nightly run means an upstream that
+  # moved, or a corpus that grew past a ratchet, surfaces on its own rather than
+  # in whichever pull request happens to be open when it breaks.
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # The fast job. Everything here runs from a clean checkout with no network
+  # beyond the module cache, and it is the one that should gate a merge.
   build-test:
     runs-on: ubuntu-latest
     steps:
@@ -34,13 +50,98 @@ jobs:
       - name: test
         # The conformance corpora are not vendored — testdata is gitignored and
         # fetched by the Makefile — so the oracle-backed tests skip here. What
-        # this run does cover is the whole rule engine against its hand-written
+        # this run covers is the whole rule engine against its hand-written
         # fixtures, the parser's limits and cancellation, and the detector
         # parity contract, none of which need a corpus.
         #
         # A test that needs the corpus must skip when it is absent rather than
         # fail, or a clean checkout is a red build that says nothing about the
-        # code. `make cius-oracles` / `make en16931-artefacts` fetch it locally,
-        # and the conformance ratchets (EN 16931 198/198 FP=0, Peppol, XRechnung,
-        # NLCIUS) are checked there before a change lands.
+        # code. The oracles themselves run in the conformance job below.
         run: go test ./... -count=1
+
+  # The slow job: fetch the corpora and run the oracles the fast job skips — the
+  # EN 16931 198-rule ratchet, the FP=0 sweeps, the 1,613-document scan/tree
+  # parity check and the routing-agreement sweep.
+  #
+  # The thing this job has to get right is telling a code regression apart from
+  # an upstream that is having a bad day, because the two want opposite
+  # treatments. It does that by splitting the run in half rather than by marking
+  # the whole job continue-on-error:
+  #
+  #   - the fetch step carries continue-on-error, so a rate limit, a moved file
+  #     or a network failure annotates the run and leaves the job green;
+  #   - the test step runs only when the fetch actually finished, and carries no
+  #     such licence, so a red mark here is always about this repository's code.
+  #
+  # The cost is deliberate and worth naming: when the fetch fails, this job is
+  # green while having asserted nothing. The warning below is the only signal,
+  # and the alternative — a red build for someone else's outage, on a pull
+  # request that did not touch the fetch — trains people to ignore the colour,
+  # which is worse.
+  conformance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25.x'
+
+      # Keyed on the fetch recipe, so the ~600 requests happen when the recipe
+      # changes and not on every push. Editing the Makefile or one of the two
+      # tracked download scripts is therefore also how you force a re-fetch.
+      #
+      # restore and save are separate actions rather than the combined `cache`
+      # on purpose. The combined one saves at the end of the job whenever the key
+      # missed — including when the fetch died halfway — which would store a
+      # truncated corpus under the good key and hand it to every later run. The
+      # ratchets would then turn one bad afternoon at GitHub into a permanently
+      # red job. Saving only after a fetch that finished is the whole point.
+      - name: restore the corpora from cache
+        id: corpus-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: testdata
+          key: corpora-${{ runner.os }}-${{ hashFiles('Makefile', 'testdata/en16931-ubl/sources.tsv', 'testdata/en16931-ubl/download.sh', 'testdata/en16931-codelists/download.sh') }}
+
+      - name: fetch the corpora
+        id: corpora
+        continue-on-error: true
+        env:
+          # The fetch makes ~15 `gh api` calls. Unauthenticated that is against a
+          # 60/hour limit shared by everything else on the runner's IP, which is
+          # the documented way this fetch half-succeeds.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # A no-op when the cache hit: each target is stamped. en16931-genericode
+        # rather than en16931-codelists — the first fetches the oracle the
+        # code-list fidelity test needs, the second would also regenerate the
+        # committed tables, which is not a thing a test run should do.
+        run: make cius-oracles en16931-artefacts en16931-ubl en16931-genericode
+
+      - name: save the corpora to cache
+        if: steps.corpora.outcome == 'success' && steps.corpus-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: testdata
+          key: corpora-${{ runner.os }}-${{ hashFiles('Makefile', 'testdata/en16931-ubl/sources.tsv', 'testdata/en16931-ubl/download.sh', 'testdata/en16931-codelists/download.sh') }}
+
+      - name: report a fetch that did not finish
+        if: steps.corpora.outcome != 'success'
+        run: |
+          echo "::warning title=Conformance corpora unavailable::The corpus fetch did not finish, so the conformance oracles did not run in this build. This is not a statement about the code under test. Re-run the job, or run 'make cius-oracles en16931-artefacts en16931-ubl en16931-genericode && make test' locally."
+
+      - name: test against the corpora
+        if: steps.corpora.outcome == 'success'
+        # -race is roughly ten times the runtime of a plain run, which is too
+        # much to put in front of every push for a package with no mutable
+        # global state. TestValidatorsAreSafeForConcurrentUse is worth running
+        # under it over the full corpus all the same, so the nightly and manual
+        # runs pay for it and pull requests do not.
+        run: |
+          flags=(-count=1)
+          case "${{ github.event_name }}" in
+            schedule|workflow_dispatch) flags+=(-race -timeout 40m) ;;
+          esac
+          echo "go test ./... ${flags[*]}"
+          go test ./... "${flags[@]}"

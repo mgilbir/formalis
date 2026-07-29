@@ -16,6 +16,7 @@ func TestFatturaPACorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("FatturaPA corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "FatturaPA corpus", len(files), minFatturaPAInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

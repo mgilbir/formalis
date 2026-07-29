@@ -13,8 +13,13 @@ func TestTEAPPSCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("TEAPPS corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "TEAPPS corpus", len(files), minTEAPPSInstances)
 	for _, f := range files {
-		data, _ := os.ReadFile(f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+			continue
+		}
 		ok, err := IsTEAPPS(data)
 		if err != nil {
 			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)

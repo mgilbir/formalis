@@ -316,12 +316,10 @@ func TestRoutingAndArbitrationAgreeOnHandWrittenDocuments(t *testing.T) {
 // document cheaply. TestValidateCIUSRunsWhatDetectNamed below closes the loop
 // on the findings themselves.
 //
-// minDispatchedDocuments is this sweep's ratchet, and it counts a different
-// population from detect_scan_test.go's: every corpus document the EN 16931
-// parser accepts, which is what ValidateCIUS can be asked to route, rather than
-// every document whose corpus publishes one format.
-const minDispatchedDocuments = 898
-
+// Its ratchet is minDispatchedDocuments (corpus_test.go), which counts a
+// different population from detect_scan_test.go's: every corpus document the
+// EN 16931 parser accepts, which is what ValidateCIUS can be asked to route,
+// rather than every document whose corpus publishes one format.
 func TestRoutingAndArbitrationAgreeOverTheCorpus(t *testing.T) {
 	checked, disagreed := 0, 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
@@ -361,13 +359,9 @@ func TestRoutingAndArbitrationAgreeOverTheCorpus(t *testing.T) {
 	if checked == 0 {
 		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
 	}
-	// The same ratchet the other corpus sweeps carry: the corpora are fetched by
-	// a Makefile target whose downloads are not individually checked, and a test
-	// that agreed with three files would agree with anything.
-	if checked < minDispatchedDocuments {
-		t.Errorf("routed %d documents, want at least %d; a partial corpus fetch makes this test agree with anything",
-			checked, minDispatchedDocuments)
-	}
+	// The same ratchet the other corpus sweeps carry: a test that agreed with
+	// three files would agree with anything.
+	atLeast(t, "documents dispatched", checked, minDispatchedDocuments)
 	t.Logf("routing and arbitration agree on %d corpus documents (%d disagreements)", checked, disagreed)
 }
 

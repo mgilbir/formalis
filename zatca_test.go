@@ -13,6 +13,7 @@ func TestZATCACorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("ZATCA corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "ZATCA corpus", len(files), minZATCAInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

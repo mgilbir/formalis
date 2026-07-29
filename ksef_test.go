@@ -15,6 +15,7 @@ func TestKSeFCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("KSeF corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "KSeF corpus", len(files), minKSeFInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

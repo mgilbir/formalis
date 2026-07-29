@@ -13,9 +13,14 @@ func TestTurkishInvoiceCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("UBL-TR corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "UBL-TR corpus", len(files), minUBLTRFiles)
 	recognised := 0
 	for _, f := range files {
-		data, _ := os.ReadFile(f)
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Errorf("%s: %v", filepath.Base(f), err)
+			continue
+		}
 		ok, err := IsTurkishInvoice(data)
 		if err != nil {
 			t.Errorf("%s: could not be read: %v", filepath.Base(f), err)
@@ -29,9 +34,9 @@ func TestTurkishInvoiceCorpus(t *testing.T) {
 			t.Errorf("%s: expected 0 UBL-TR violations, got %v", filepath.Base(f), v)
 		}
 	}
-	if recognised == 0 {
-		t.Error("no UBL-TR invoice recognised")
-	}
+	// The corpus mixes UBL-TR with documents the predicate declines, so the file
+	// count alone would not show a truncation of the half this asserts on.
+	atLeast(t, "UBL-TR invoices recognised", recognised, minUBLTRRecognised)
 }
 
 const minimalTurkishInvoice = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">

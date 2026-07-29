@@ -154,7 +154,13 @@ func TestValidatePeppolCorpus(t *testing.T) {
 		if e != nil || !strings.HasSuffix(strings.ToLower(p), ".xml") {
 			return nil
 		}
-		data, _ := os.ReadFile(p)
+		data, err := os.ReadFile(p)
+		if err != nil {
+			// A read error used to leave data nil, which fails the regexp below
+			// and dropped the document from the count without a word.
+			t.Errorf("%s: %v", p, err)
+			return nil
+		}
 		if !isInvoice.Match(data) {
 			return nil
 		}
@@ -167,8 +173,9 @@ func TestValidatePeppolCorpus(t *testing.T) {
 		}
 		return nil
 	})
-	if files == 0 {
-		t.Skip("no Peppol examples found")
-	}
+	// The directory exists, so this is no longer the "corpus absent" case the
+	// skip above covers: finding nothing under it, or finding less than the
+	// clone carries, is a broken fetch and must say so.
+	atLeast(t, "Peppol corpus", files, minPeppolExamples)
 	t.Logf("Peppol corpus: %d/%d examples clean (FP=0)", clean, files)
 }

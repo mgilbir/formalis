@@ -29,6 +29,7 @@ func TestCIUSPTCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("CIUS-PT corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "CIUS-PT corpus", len(files), minCIUSPTInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

@@ -26,6 +26,7 @@ func TestUBLBECorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("UBL.BE corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "UBL.BE corpus", len(files), minUBLBEInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

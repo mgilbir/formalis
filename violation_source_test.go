@@ -120,6 +120,11 @@ var corpusSweep = sync.OnceValue(func() *sweep {
 		}
 		data, err := os.ReadFile(p)
 		if err != nil {
+			// Dropping the document silently would shrink the population the
+			// identifier map is built from without changing the count it
+			// reports, which is the same class of quiet degradation the
+			// ratchets exist to catch.
+			s.defects = append(s.defects, p+": "+err.Error())
 			return nil
 		}
 		s.files++
@@ -197,6 +202,12 @@ func TestNoRuleIdentifierIsClaimedByTwoSources(t *testing.T) {
 		t.Error(d)
 	}
 	s.claims.check(t)
+	// The hand-written documents carry this test on a corpus-less checkout, so a
+	// zero here is the "corpus absent" case and not a truncation. Anything above
+	// zero is a claim about the corpus and is held to the corpus's size.
+	if s.files > 0 {
+		atLeast(t, "identifier-collision sweep corpus", s.files, minCorpusDocuments)
+	}
 	t.Logf("checked %d rule identifiers across %d Sources, over %d corpus documents and %d hand-written ones",
 		len(s.claims), countSources(s.claims), s.files, len(collidingDocs))
 }

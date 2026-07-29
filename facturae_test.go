@@ -15,6 +15,7 @@ func TestFacturaeCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("Facturae corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "Facturae corpus", len(files), minFacturaeInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

@@ -15,6 +15,7 @@ func TestEbInterfaceCorpus(t *testing.T) {
 	if len(files) == 0 {
 		t.Skip("ebInterface corpus not present (make cius-oracles)")
 	}
+	atLeast(t, "ebInterface corpus", len(files), minEbInterfaceInstances)
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {

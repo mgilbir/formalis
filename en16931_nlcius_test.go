@@ -35,12 +35,13 @@ func TestNLCIUSConformanceSuite(t *testing.T) {
 		return r
 	}
 	var falsePositives, missed []string
-	caught := 0
+	caught, instances := 0, 0
 	for _, f := range files {
 		base := filepath.Base(f)
 		if !strings.Contains(base, "BR-NL-") {
 			continue
 		}
+		instances++
 		data, err := os.ReadFile(f)
 		if err != nil {
 			t.Fatal(err)
@@ -65,5 +66,11 @@ func TestNLCIUSConformanceSuite(t *testing.T) {
 	for _, m := range missed {
 		t.Errorf("NLCIUS failed to catch a broken instance: %s", m)
 	}
+	// Both halves, for the reason corpus_test.go gives: "no false positive" over
+	// a handful of _ok_ instances is not the same claim as over the suite, and a
+	// truncation that took only the _error_ instances would leave the first
+	// number looking healthy while the engine stopped catching anything.
+	atLeast(t, "NLCIUS BR-NL instances", instances, minNLCIUSInstances)
+	atLeast(t, "NLCIUS error instances caught", caught, minNLCIUSErrorsCaught)
 	t.Logf("NLCIUS conformance: %d error instances caught, %d false positives", caught, len(falsePositives))
 }
