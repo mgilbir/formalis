@@ -79,7 +79,14 @@ import (
 //
 // BR-27 is in ANAF's file too and is not evaluated here: it is a CEN identifier
 // ANAF re-publishes, and this package reports CEN's identifiers under
-// SourceEN16931 with CEN's own condition (the audit's C40).
+// SourceEN16931 with CEN's own condition.
+//
+// ANAF ships a full copy of CEN's UBL binding beside its own rules, and copies can
+// be edited — that is the audit's C40. This one is not: all 930 CEN identifiers in
+// it carry a condition CEN published at some release, 904 of them CEN's current one
+// and 26 an earlier one, and none that CEN never published. So CIUS-RO has no
+// condition overrides, derived rather than assumed; see ciusCENCopyVerdicts and
+// cius_overrides.go.
 
 // roInvoiceTypeCodes is the invoice type code set BR-RO-020_1 permits, quoted from
 // its test: contains(' 380 384 389 751 ', concat(' ', normalize-space(.), ' ')).

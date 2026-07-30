@@ -19,7 +19,10 @@ four-way disjunction over allowance, charge and line categories — and they are
 written by hand in cius_ro.go, whose conditions cius_ro_artefact_test.go compares
 against this same artefact. BR-27 is not emitted either: ANAF re-publishes one CEN
 identifier verbatim in its own file, and an identifier CEN minted stays CEN's and is
-reported under SourceEN16931 with CEN's condition (the audit's C40).
+reported under SourceEN16931 with CEN's condition. Whether ANAF's *copy* of CEN's
+binding, which it ships beside its own file, changes any of those conditions is a
+separate question — the audit's C40 — answered in
+testdata/cius-condition-overrides/gen.py: it changes none of them.
 
 What this generator refuses, and why each refusal is load-bearing
 ----------------------------------------------------------------
@@ -79,7 +82,8 @@ HAND_WRITTEN = {
 }
 
 # CEN's, re-published in ANAF's file. Reported under SourceEN16931 with CEN's own
-# condition; see C40.
+# condition, which for this authority is also what ANAF's own copy of CEN's binding
+# carries; see testdata/cius-condition-overrides/gen.py.
 CEN_OWNED = {"BR-27"}
 
 UBL_INVOICE_NS = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"

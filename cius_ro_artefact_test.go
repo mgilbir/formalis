@@ -85,9 +85,10 @@ func roOwnIdentifier(id string) bool {
 // roCENIdentifiers are the CEN identifiers ANAF re-publishes inside its own national
 // file. There is one, and this package does not evaluate it under SourceCIUSRO:
 // BR-27 is CEN's rule, this package reports it under SourceEN16931 with CEN's own
-// condition, and honouring a national copy of a CEN identifier would silently change
-// what BR-27 means for every caller. That is C40's finding for CIUS-PT and PR 23's
-// recommendation, applied here.
+// condition, and ANAF's copy of it is CEN's own text anyway — the check below reads
+// the copy rather than assuming it. Where a national copy of a CEN condition is
+// *not* CEN's text, this package does substitute it under that CIUS and says so on
+// the finding; see cius_overrides.go. Nothing in the Romanian rule set qualifies.
 var roCENIdentifiers = map[string]string{
 	"BR-27": "cbc:PriceAmount / (.) >=0 — CEN's Item net price rule, re-published verbatim",
 }
@@ -95,12 +96,14 @@ var roCENIdentifiers = map[string]string{
 // TestCIUSROArtefactCarriesExactlyOneCENIdentifier is the C40 check for this rule
 // set, stated so that a second one cannot arrive unnoticed.
 //
-// ANAF's copy of CEN's abstract, UBL and codelist files is *not* vendored — the
-// Makefile fetches cius-ro/RO16931-rules.sch and the wrapper beside it and nothing
-// else — precisely so that a survey of "the Romanian rule set" cannot come to count
-// CEN's three hundred rules as Romanian. The one CEN identifier that ANAF wrote into
-// its own file would defeat that, so it is named here rather than filtered by a
-// prefix nobody reads.
+// This test reads cius-ro/RO16931-rules.sch and nothing else, which is what keeps a
+// survey of "the Romanian rule set" from counting CEN's nine hundred rules as
+// Romanian. ANAF's copy of CEN's abstract and UBL files *is* vendored beside it now,
+// for the separate question of whether that copy edits any of CEN's conditions
+// (TestCIUSCopiesOfCENAreClassifiedFromTheArtefacts: it does not), so the scoping
+// here matters more than it did and not less. The one CEN identifier ANAF wrote into
+// its own file would defeat it, so it is named here rather than filtered by a prefix
+// nobody reads.
 func TestCIUSROArtefactCarriesExactlyOneCENIdentifier(t *testing.T) {
 	pub := roResolveArtefact(t, roVersion)
 	if pub == nil {

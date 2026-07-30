@@ -12,6 +12,18 @@ import (
 // si-ubl-2.0/si-ubl-2.0-nlcius.sch and nlcius-cii/NLCIUS-CII-validation.sch — and
 // the two are not the same rule set.
 //
+// SimplerInvoicing also *includes* CEN's Schematron from a copy of its own — a
+// CenPC434/ directory beside each binding, and a third copy under the G-account
+// extension whose abstract syntax file is even named EN16931-syntax-modified.sch.
+// Those copies were unfetched until PR 27 and so unmeasured, which left open whether
+// this package was reporting CEN's reading of a rule where SimplerInvoicing reports
+// its own (the audit's C40). They are fetched and read now: all three copies are
+// older releases of CEN's files — SI-UBL's still publishes BR-IG-*/BR-IP-* rather
+// than BR-AF-*/BR-AG-* — and every CEN condition in every one of them is a condition
+// CEN published at some commit. None is Dutch. So NLCIUS has no condition overrides,
+// and that is derived rather than assumed; see ciusCENCopyVerdicts. The "modified"
+// in the G-account file's name refers to CEN's own edits, not SimplerInvoicing's.
+//
 // The rules below are transcribed from those two files rather than from prose,
 // which is what they used to be. Reading the artefacts changed four things:
 //
