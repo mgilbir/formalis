@@ -220,8 +220,13 @@ land, the package makes it machine-readable:
 for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
     fmt.Printf("not evaluated: %s [%s] — %s\n", gap.Rules, gap.Severity, gap.Reason)
 }
-// not evaluated: BR-NL-19..35 [warning] — NLCIUS's "not recommended" rules,
+// not evaluated: BR-NL-19..21, 24..26, 27-1..27-4, 28-1..28-4, 29..31, 32-1..32-3,
+//                33, 35 (UBL) [warning] — SI-UBL 2.0's "not recommended" rules,
 //                which do not make an invoice non-conformant
+// not evaluated: BR-NL-19..26, 27-1..27-4, 28-1..28-4, 29..31, 32-and-34, 33, 35
+//                (CII) [warning] — the same advisory tier in
+//                NLCIUS-CII-validation.sch, which publishes two rules the UBL one
+//                does not
 ```
 
 Use `Conformant()` when you need the strong claim, and `len(r.Fatal()) == 0` when

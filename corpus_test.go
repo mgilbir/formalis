@@ -162,6 +162,17 @@ const (
 	minNLCIUSInstances    = 73
 	minNLCIUSErrorsCaught = 27
 
+	// The same suite read per rule rather than per family
+	// (TestNLCIUSPerRuleFixtures). SimplerInvoicing is the one of these five
+	// authorities that declares a verdict for a *named* rule, and this repository
+	// had those 95 files on disk since the corpus was first fetched without ever
+	// asking whether the rule a fixture names is the rule that fires — the same
+	// shape as the 242 KoSIT and 885 OpenPEPPOL verdicts PRs 19-21 found unread.
+	// The second number is the one that would fall if a rule stopped being
+	// evaluated while its neighbours covered for it.
+	minNLCIUSRuleVerdicts = 73
+	minNLCIUSRulesFired   = 12
+
 	// National formats. Most corpora hold one document kind and the oracle runs
 	// on all of them. Three do not: the OIOUBL fetch already content-filters,
 	// and the Svefaktura and UBL-TR sets mix in documents their predicate

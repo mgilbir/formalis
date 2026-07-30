@@ -155,14 +155,17 @@ func ExampleDetect() {
 //
 // The severity on each family is what a caller acts on: a fatal gap means a rule
 // that could have rejected this document was never evaluated, so Report.Conformant
-// cannot be true. NLCIUS is the one rule set here whose only gap is advisory.
+// cannot be true. NLCIUS is the one rule set here whose only gap is advisory, and
+// it is two entries rather than one because SimplerInvoicing publishes a UBL
+// binding and a CII binding that do not carry the same rules.
 func ExampleCoverage() {
 	for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
 		fmt.Printf("not evaluated: %s [%s] — %s\n", gap.Rules, gap.Severity, gap.Reason)
 	}
 
 	// Output:
-	// not evaluated: BR-NL-19..35 [warning] — NLCIUS's "not recommended" rules, which do not make an invoice non-conformant
+	// not evaluated: BR-NL-19..21, 24..26, 27-1..27-4, 28-1..28-4, 29..31, 32-1..32-3, 33, 35 (UBL) [warning] — SI-UBL 2.0's "not recommended" rules, which do not make an invoice non-conformant
+	// not evaluated: BR-NL-19..26, 27-1..27-4, 28-1..28-4, 29..31, 32-and-34, 33, 35 (CII) [warning] — the same advisory tier in NLCIUS-CII-validation.sch, which publishes two rules the UBL one does not
 }
 
 // ExampleIsCheckerViolation separates "the invoice is wrong" from "the checker
