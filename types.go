@@ -59,8 +59,10 @@
 // will not look at before deciding to call it. Report.NotEvaluated repeats those
 // gaps for the run that just happened; Report.Conformant is false whenever a rule
 // that could have rejected this document went unevaluated, and Report.Complete
-// whenever anything did. Today Conformant is false for every document. See Report,
-// Coverage and RuleLimit.
+// whenever anything did. Today the EN 16931 core is the one rule set with no
+// unevaluated *fatal* rule, so it is the one whose clean documents report
+// Conformant; every CIUS and national validator still names a fatal gap and so
+// reports false whatever the document. See Report, Coverage and RuleLimit.
 //
 // # Concurrency
 //

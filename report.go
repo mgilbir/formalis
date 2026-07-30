@@ -81,8 +81,8 @@ package formalis
 // predicate a caller can safely key on useless, and the fix is not to hide the
 // advisory gaps but to say which kind each one is.
 type RuleFamily struct {
-	// Rules is the identifier or range the authority uses — "UBL-CR-666,
-	// UBL-CR-673", "BR-CIUS-PT-24..63", "BR-NL-19..35". It is the machine-ish
+	// Rules is the identifier or range the authority uses — "BR-DE-23-a/b,
+	// BR-DE-24-a/b", "BR-CIUS-PT-24..63", "BR-NL-19..35". It is the machine-ish
 	// half, written the way the authority writes it, ranges included, so that the
 	// tests holding this table to the published Schematron can read identifiers
 	// out of it and a caller can search for one.
@@ -179,9 +179,18 @@ type Report struct {
 // quietly start depending on a severity someone could reclassify.
 //
 // A consequence worth stating plainly: every rule set in this package has gaps
-// today, and until the fatal ones are closed Conformant returns false for every
-// document. Coverage says why for any Source, and Report.NotEvaluated says why
-// for any particular run. A caller who wants the older, weaker claim writes
+// today, and a rule set with a *fatal* gap makes Conformant false for every
+// document it validates, however clean. One rule set no longer has one. The EN
+// 16931 core's fatal half is complete — every fatal rule of the semantic model,
+// of the UBL binding and of the CII binding is evaluated, bar the handful CEN's
+// own reference implementation cannot report — so a clean invoice validated
+// against the core alone, by Validate with ProfileEN16931 or by ValidateCIUS on a
+// document declaring no CIUS, is conformant. It is still not Complete: the
+// advisory binding rules are unevaluated, and that is the whole reason severity
+// is on the family. Every other Source still names a fatal gap, so Conformant is
+// still false for every document a CIUS or national validator is handed.
+// Coverage says why for any Source, and Report.NotEvaluated says why for any
+// particular run. A caller who wants the older, weaker claim writes
 // len(r.Fatal()) == 0 and now has r.NotEvaluated sitting beside it, naming
 // exactly what that claim omits.
 func (r Report) Conformant() bool {
@@ -348,16 +357,23 @@ var notEvaluated = map[Source][]RuleFamily{
 	// claiming the whole rule, which would send a caller to re-implement a check
 	// that already runs on every Factur-X document.
 	//
-	// Neither binding's fatal half is here any more. All 54 fatal UBL-SR-* rules
-	// are evaluated (en16931_ubl_rules.go) and so are all 42 fatal CII-SR-* and
+	// No fatal gap is left here at all, and this is the only Source of which that
+	// is true. All 54 fatal UBL-SR-* rules are evaluated, and so are the two
+	// fatal UBL-CR-* rules and the three fatal UBL-DT-* ones
+	// (en16931_ubl_rules.go, en16931_model.go); so are all 42 fatal CII-SR-* and
 	// 67 of the 70 fatal CII-DT-* rules (en16931_cii_rules.go). What is left
-	// under EN 16931 is advisory — rules CEN flags warning, which a reference
-	// validator reports and no authority rejects an invoice for — plus the three
-	// fatal CII datatype rules no reference validator can reach.
+	// below is advisory — rules CEN flags warning, which a reference validator
+	// reports and no authority rejects an invoice for — plus the two groups CEN
+	// flags fatal that no conforming validator can report.
 	//
-	// Report.Conformant is still false for every document, and deliberately so:
-	// this table is not empty, and a caller keying on Conformant is asking
-	// whether the rule set had holes rather than whether the holes mattered.
+	// So Report.Conformant is true for a clean document validated against this
+	// rule set, and Report.Complete is not. That is the outcome the severity
+	// column exists for: the question "did the checker have any hole an authority
+	// would reject this invoice over" is now answerable with yes for the core,
+	// while "did it see everything a reference validator would" is still no. The
+	// last thing standing between those two answers was C27 — two fatal UBL-CR-*
+	// rules that were unimplemented and were disclaimed inside an entry
+	// describing their family as advisory.
 	SourceEN16931: {
 		{
 			Rules:    "BR-51 other than in the CII binding",
@@ -379,17 +395,13 @@ var notEvaluated = map[Source][]RuleFamily{
 			Reason:   "the 21 advisory UBL datatype rules: attribute-level restrictions CEN flags warning",
 		},
 		{
-			Rules:    "UBL-CR-666, UBL-CR-673",
-			Severity: SeverityFatal,
-			Reason: "the two fatal rules of the 678-rule UBL-CR-* family — an invoice shall not include an AdditionalDocumentReference " +
-				"simultaneously referring to an Invoice Object identifier and other things. They are a fatal gap and are listed apart from the " +
-				"676 advisory rules of the same family for that reason: while the two sat inside one entry describing the family as \"all but two " +
-				"advisory\", a fatal hole was accounted for in a line a reader would skim as advisory",
-		},
-		{
-			Rules:    "the other 676 UBL-CR-* rules",
+			Rules:    "UBL-CR-* other than UBL-CR-666 and UBL-CR-673",
 			Severity: SeverityWarning,
-			Reason:   "advisory: UBL elements outside the EN 16931 core, which CEN flags warning to keep a document within the core subset",
+			Reason: "the 676 advisory rules of the 678-rule UBL-CR-* family: UBL elements outside the EN 16931 core, which CEN flags warning to " +
+				"keep a document within the core subset. The two CEN flags fatal are evaluated (en16931_ubl_rules.go). They were the last fatal gap " +
+				"in this rule set, and they were found because they had been filed inside one entry describing the whole family as \"all but two " +
+				"advisory\" (C27) — a fatal hole accounted for in a line a reader would skim as advisory, which is why the table now splits a family " +
+				"whose members do not share one flag",
 		},
 		{
 			Rules:    "the 440 advisory CII-SR-* rules",

@@ -49,6 +49,15 @@ const exampleUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd
 // The error is a separate question from the findings. It means the input could not
 // be read at all — malformed XML, an encoding this package does not implement —
 // and nothing about the invoice, which is why it is not a finding.
+//
+// The three lines it prints are three different facts, and the second is the one
+// worth reading. This document declares no CIUS, so it is validated against the
+// EN 16931 core: nothing was found, the core has no rule left that CEN would
+// reject this invoice over and that this package did not check, so it is
+// conformant — and there are still gaps, because the core's advisory rules are
+// unevaluated. Conformant and Complete are two questions for exactly this reason.
+// A document declaring a CIUS whose fatal rules are only partly implemented
+// prints conformant: false with the missing families in Report.NotEvaluated.
 func Example() {
 	report, err := formalis.ValidateCIUS(context.Background(), []byte(exampleUBL))
 	if err != nil {
@@ -66,7 +75,7 @@ func Example() {
 
 	// Output:
 	// nothing found: true
-	// conformant:    false
+	// conformant:    true
 	// gaps:          true
 }
 

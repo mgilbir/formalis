@@ -5,8 +5,9 @@ import (
 	"strings"
 )
 
-// This file evaluates the fatal half of CEN's UBL syntax binding — the
-// UBL-SR-* rules of EN16931-UBL-syntax.sch — against the parsed element tree.
+// This file evaluates the fatal half of CEN's UBL syntax binding — the 54
+// UBL-SR-* rules of EN16931-UBL-syntax.sch and the two UBL-CR-* rules of the
+// same file that CEN flags fatal — against the parsed element tree.
 //
 // Why not on the syntax-neutral model, which is where every BR-* rule in this
 // package lives? Because these are not statements about business terms. A BR-*
@@ -39,17 +40,25 @@ import (
 //
 // Severity. Every one of CEN's 54 UBL-SR-* assertions is flagged fatal — the
 // binding publishes no advisory cardinality rule — so none of them is filtered
-// out here. The advisory UBL-DT-* and UBL-CR-* rules of the same binding are not
-// evaluated; Coverage(SourceEN16931) names them.
+// out here. The UBL-CR-* family is the other way round: 676 of its 678 rules are
+// flagged warning and two, UBL-CR-666 and UBL-CR-673, are flagged fatal, and it
+// is the two that are here. That split is the whole of C27. While this file
+// evaluated "the fatal UBL rules" meaning the UBL-SR-* ones, the two fatal
+// UBL-CR-* rules sat unevaluated inside a coverage entry that described their
+// family as advisory, so a fatal gap was filed in a line a reader would skim
+// past. The remaining 676 advisory UBL-CR-* rules and the 21 advisory UBL-DT-*
+// rules are still not evaluated, and Coverage(SourceEN16931) names them as the
+// advisory gap they are.
 //
 // Source. These findings are stamped SourceEN16931, not a source of their own:
 // CEN publishes the syntax bindings as normative parts of EN 16931 itself, and
 // a caller filtering on the authority is asking who wrote the rule, not which
 // file it came out of.
 
-// validateUBLSyntaxRules evaluates the fatal UBL-SR-* rules against a UBL
-// document tree. It is a no-op for any other root, so a CII invoice passing
-// through the same entry point is never asked to answer a UBL rule.
+// validateUBLSyntaxRules evaluates the fatal rules of CEN's UBL syntax binding —
+// all 54 UBL-SR-* and the two fatal UBL-CR-* — against a UBL document tree. It
+// is a no-op for any other root, so a CII invoice passing through the same entry
+// point is never asked to answer a UBL rule.
 //
 // The rule bodies are grouped by the node population they read, which is also
 // how the Schematron groups them: one <rule context=...> per group, named in
@@ -79,11 +88,15 @@ func validateUBLSyntaxRules(r *run, root *ciiNode) []Violation {
 		return out
 	}
 	ublSyntaxReferenceRules(g, add)
+	if r.stopped() {
+		return out
+	}
+	ublCoreRestrictionRules(g, add)
 	return out
 }
 
-// ublSyntaxNodes is every node population the UBL-SR-* rules read, gathered in
-// one pass.
+// ublSyntaxNodes is every node population the rules in this file read, gathered
+// in one pass.
 //
 // The alternative — one findAll per rule — would walk the tree once per rule,
 // four dozen times over, and this package validates 1,680 UBL documents on every
@@ -98,9 +111,15 @@ type ublSyntaxNodes struct {
 	// document element.
 	isCreditNote bool
 
-	addresses        []*ciiNode // cac:PostalAddress | cac:Address
-	supplierParties  []*ciiNode // cac:AccountingSupplierParty/cac:Party
-	addDocRefs       []*ciiNode // cac:AdditionalDocumentReference
+	addresses       []*ciiNode // cac:PostalAddress | cac:Address
+	supplierParties []*ciiNode // cac:AccountingSupplierParty/cac:Party
+	// addDocRefs is `//cac:AdditionalDocumentReference`, document-wide, which is
+	// what UBL-SR-33/43 (context: the reference) and UBL-CR-666/673 (context: the
+	// document element, reaching down with `//`) both want. collectCommon in
+	// facturx_en16931.go walks the same element for BR-CL-07's scheme
+	// identifiers, but it collects a code-list value off the model rather than
+	// nodes, and this walk is already paid for.
+	addDocRefs       []*ciiNode
 	deliveries       []*ciiNode // cac:Delivery
 	allowanceCharges []*ciiNode // cac:AllowanceCharge
 	partyTaxSchemes  []*ciiNode // cac:PartyTaxScheme
@@ -674,6 +693,82 @@ func ublSyntaxReferenceRules(g *ublSyntaxNodes, add func(rule, msg string)) {
 		default:
 			add("UBL-SR-43", "A supporting document reference (BG-24) shall carry no scheme identifier and no document type code; only the Invoiced object identifier (BT-18, type code 130) may")
 		}
+	}
+}
+
+// ublCoreRestrictionRules are the two rules of CEN's 678-rule UBL-CR-* family
+// that CEN flags fatal:
+//
+//	UBL-CR-666  not(//cac:AdditionalDocumentReference[cbc:DocumentTypeCode = '130']/cac:Attachment)
+//	UBL-CR-673  not(//cac:AdditionalDocumentReference[cbc:DocumentTypeCode  = '130']/cbc:DocumentDescription)
+//
+// Both are asserted on the document element (`<rule context="/ubl:Invoice |
+// /cn:CreditNote">`) and reach document-wide from there with a `//` step, so each
+// is one verdict about the whole invoice however many references are at fault —
+// hence the two booleans below rather than a finding per reference. UBL-SR-33 and
+// UBL-SR-43, whose context is the reference itself, are the contrast.
+//
+// What they forbid. cac:AdditionalDocumentReference carries two unrelated
+// business terms, told apart by cbc:DocumentTypeCode: with the code 130 it is the
+// Invoiced object identifier (BT-18), a bare identifier of the thing being billed
+// for — a meter, a subscription, a contract line — and with no code it is a
+// supporting document (BG-24), which may carry a description (BT-123) and an
+// attachment (BT-125). The two must not be the same element. A reference that
+// says "type code 130" and also carries an attachment or a description is
+// claiming to be both terms at once, and a receiver has no way to tell which term
+// the cbc:ID was meant to be. UBL-SR-43 polices the same boundary from the other
+// direction, refusing a scheme identifier or a type code on a supporting
+// document; these two refuse the payload of a supporting document on an invoiced
+// object identifier.
+//
+// Why CEN needs two rules rather than one. They are not the Invoice and
+// CreditNote bindings of one constraint — the context `$Invoice` resolves to
+// `/ubl:Invoice | /cn:CreditNote`, so one assertion already covers both roots,
+// and UBL-CR-672 is what a CreditNote-specific rule looks like in this family.
+// They are two genuinely different shapes: cac:Attachment is an aggregate holding
+// the attachment itself (BT-125, or the external URI BT-124), cbc:DocumentDescription
+// is the free-text description (BT-123), and they are separate children of
+// cac:AdditionalDocumentReference. Written as one rule with an `or`, a violating
+// document would be told only that its reference is malformed; as two, it is told
+// which of the two things it has to remove. The family is generated one forbidden
+// path at a time — that is what makes 678 of them — so one path per rule is also
+// simply the shape of the family.
+//
+// Corpus. Neither rule fires on any of the 1,680 documents, and that is the
+// rules being right rather than the rules being wired to nothing. Of the 785
+// documents with a UBL Invoice or CreditNote root, 58 carry a BT-18 reference,
+// 235 carry a cac:AdditionalDocumentReference/cac:Attachment and 182 a
+// cbc:DocumentDescription — and in 50 of them a BT-18 reference and an attachment
+// or a description occur in the same invoice, on different
+// cac:AdditionalDocumentReference elements. So the corpus exercises both halves of
+// each predicate and the per-reference scoping that keeps them apart; a
+// transcription that lost that scoping — asking whether the document has a 130
+// reference and, anywhere, an attachment — would accuse those 50 conforming
+// invoices, which is how "fires on nothing" was told apart from "is wired to
+// nothing" here.
+func ublCoreRestrictionRules(g *ublSyntaxNodes, add func(rule, msg string)) {
+	var attachment, description bool
+	for _, d := range g.addDocRefs {
+		if !ublDocRefHasTypeCode(d, "130") {
+			continue
+		}
+		// Child steps, as CEN writes them: an attachment nested deeper (a
+		// supporting document's own cac:Attachment, in a document that has one)
+		// is a different reference's business.
+		if len(d.all("Attachment")) > 0 {
+			attachment = true
+		}
+		if len(d.all("DocumentDescription")) > 0 {
+			description = true
+		}
+	}
+	if attachment {
+		add("UBL-CR-666", "The Invoiced object identifier (BT-18) shall not be carried on a document reference that also carries an attachment (BG-24): "+
+			"a cac:AdditionalDocumentReference with document type code 130 shall have no cac:Attachment")
+	}
+	if description {
+		add("UBL-CR-673", "The Invoiced object identifier (BT-18) shall not be carried on a document reference that also carries a supporting document "+
+			"description (BT-123): a cac:AdditionalDocumentReference with document type code 130 shall have no cbc:DocumentDescription")
 	}
 }
 

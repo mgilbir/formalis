@@ -102,18 +102,25 @@ fatal gap means a rule that could have rejected this document was never run.
 
 ## What a clean report does and does not mean
 
-**`Conformant()` returns false for every document today.** That is not a bug and
-it is the first thing to understand about this package.
+**`Complete()` returns false for every document today, and `Conformant()` for
+every document except one validated against the EN 16931 core alone.** That is not
+a bug and it is the first thing to understand about this package.
 
 `len(report.Violations) == 0` means only *the checks that ran found nothing*. It
 is equally true of a run that checked everything, a run that was cancelled or hit
 a resource budget, and a run whose rule set does not implement every rule its
 authority publishes. No rule set here is in that last sense complete — each
-evaluates a documented subset — so `Complete()` is false everywhere. And every
-validator's report names at least one gap its authority flags **fatal**, so
-`Conformant()` is false too. (NLCIUS is the one rule set whose *own* gap is purely
-advisory; every CIUS validator also runs the EN 16931 core, whose two
-unimplemented fatal `UBL-CR-*` rules are a fatal gap.)
+evaluates a documented subset — so `Complete()` is false everywhere.
+
+`Conformant()` is the weaker and more useful question, because it passes over the
+gaps an authority would not reject a document for. The EN 16931 core is the one
+rule set with no **fatal** gap left: every fatal rule of the semantic model, of
+the UBL binding and of the CII binding is evaluated, bar the few CEN's own
+reference implementation cannot report, so `Validate` with `ProfileEN16931` — and
+`ValidateCIUS` on a document that declares no CIUS — returns `Conformant() == true`
+for a clean invoice, and `Complete() == false` because CEN's advisory binding
+rules are still unevaluated. Every CIUS and national validator still names a gap
+its authority flags fatal, so those return false whatever the document.
 
 Rather than hide that behind a number in this file that would drift as rules
 land, the package makes it machine-readable:
