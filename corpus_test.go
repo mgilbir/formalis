@@ -140,7 +140,18 @@ const (
 	// a validator that conflated them reports GR-R-009 against it.
 	minPeppolNationalExamples = 3
 	minCIUSPTInstances        = 20
-	minCIUSROInstances        = 44
+
+	// The 290 generated DT-CIUS-PT-* rules, over every UBL document in the corpus.
+	// They are the same kind of ratchet as minAdvisoryRulesFiring above and exist
+	// for the same reason: every FP=0 oracle in this suite asserts the *absence* of
+	// findings, so a rule set that silently stopped firing would leave all of them
+	// green. Most of the documents counted here are not Portuguese invoices — a
+	// Peppol or XRechnung invoice asked AT's datatype questions answers no to a
+	// great many of them — and that is what makes the number large enough to move
+	// when something breaks.
+	minCIUSPTDatatypeRulesFiring = 111
+	minCIUSPTDatatypeFindings    = 13600
+	minCIUSROInstances           = 44
 
 	// The CIUS-RO samples that write a Bucharest sector where ISO 3166-2:RO expects
 	// a county code, and the BR-RO-110/111/170 findings ANAF's own Schematron

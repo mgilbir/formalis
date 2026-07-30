@@ -220,11 +220,12 @@ func ciusFlagsBySource(t *testing.T) map[Source]map[string]map[string]bool {
 // NLCIUS publishes 22 advisory identifiers in each binding, so the rule set this
 // package draws from is demonstrably not uniformly fatal.
 var ciusEvaluated = map[Source]map[string]Severity{
-	// CIUS-PT is the one rule set here whose business-rule tier is complete: all 65
-	// published BR-CIUS-PT-* identifiers and all 8 BR-AA-*. What remains unevaluated
-	// is the 290-rule DT-CIUS-PT-* datatype tier, which Coverage(SourceCIUSPT) names.
-	// The absence of BR-CIUS-PT-31 from this list is not an omission — AT publishes
-	// no such identifier, and TestCIUSPTFamilyHasNoPhantom says so out of the file.
+	// CIUS-PT is the one rule set here that is complete: all 65 published
+	// BR-CIUS-PT-* identifiers, all 8 BR-AA-*, and — merged in by the init function
+	// in cius_pt_datatype_test.go rather than pasted here — all 290 DT-CIUS-PT-*
+	// identifiers of the generated datatype tier. The absence of BR-CIUS-PT-31 from
+	// this list is not an omission: AT publishes no such identifier, and
+	// TestCIUSPTFamilyHasNoPhantom says so out of the file.
 	SourceCIUSPT: {
 		"BR-CIUS-PT-01": SeverityFatal, "BR-CIUS-PT-02": SeverityFatal,
 		"BR-CIUS-PT-03": SeverityFatal, "BR-CIUS-PT-04": SeverityFatal,
@@ -522,11 +523,12 @@ func ciusOwnIdentifier(src Source, id string) bool {
 // of them.
 //
 // It is checked family by family rather than identifier by identifier, because the
-// coverage table names families ("BR-RO-L*", "DT-CIUS-PT-*") and expanding a
-// wildcard into 64 identifiers to compare them one at a time would only make the
-// failure message longer. A family with no entry is what this catches, and
-// DT-CIUS-PT-* — 290 fatal Portuguese datatype rules that no coverage entry named —
-// is what it caught.
+// coverage table names families ("BR-RO-L*", "BR-RO-DT*") and expanding a wildcard
+// into 64 identifiers to compare them one at a time would only make the failure
+// message longer. A family with no entry is what this catches, and DT-CIUS-PT-* —
+// 290 fatal Portuguese datatype rules that no coverage entry named — is what it
+// caught. Those are evaluated now, so the family no longer needs an entry; the
+// guard is unchanged and it is ciusEvaluated that grew.
 func TestEveryPublishedCIUSRuleIsEvaluatedOrDisclaimed(t *testing.T) {
 	flags := ciusFlagsBySource(t)
 	if flags == nil {
@@ -614,6 +616,13 @@ func TestEveryEvaluatedCIUSRuleFires(t *testing.T) {
 		for _, d := range s.extras {
 			record(d.xml)
 		}
+	}
+	// The 290 generated DT-CIUS-PT-* rules are covered by fixtures built from each
+	// rule's own context rather than by one mutation each; see
+	// cius_pt_datatype_fixtures_test.go for why 290 hand-written mutations would be
+	// weaker rather than stronger evidence. The property asserted is the same one.
+	for id := range ptDTBuiltFixtures() {
+		fired[SourceCIUSPT][id] = true
 	}
 	for src, evaluated := range ciusEvaluated {
 		var missing []string

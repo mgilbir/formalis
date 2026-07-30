@@ -609,20 +609,19 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
-	// CIUS-PT's business-rule tier is complete: all 65 published BR-CIUS-PT-*
-	// identifiers (the family is 65 and not the 66 its numbering suggests — AT/eSPap
-	// publishes no BR-CIUS-PT-31) and all 8 BR-AA-*. One entry remains.
-	SourceCIUSPT: {
-		{
-			Rules:    "DT-CIUS-PT-* (290 rules: the CIUS-PT datatype bindings)",
-			Severity: SeverityFatal,
-			Reason: "the attribute-level constraints urn_feap.gov.pt_CIUS-PT_2.1.1-UBL-datatype.sch and the " +
-				"condition file place on every typed element — mime codes, scheme identifiers, currency " +
-				"attributes — together with the arithmetic rules AT files under the same prefix " +
-				"(DT-CIUS-PT-157..176). Four fifths of the published rule set by count, and no entry in this " +
-				"table named them until the Schematron was vendored",
-		},
-	},
+	// CIUS-PT has no entry: it is the second rule set in this package, after
+	// NLCIUS's fatal half and Peppol's, whose published inventory is evaluated in
+	// full — all 65 BR-CIUS-PT-* identifiers (the family is 65 and not the 66 its
+	// numbering suggests, because AT/eSPap publishes no BR-CIUS-PT-31), all 8 of
+	// AT's own BR-AA-*, and all 290 DT-CIUS-PT-* identifiers over the 291 assertions
+	// that carry them. See completeSources in report_test.go, which is where that
+	// claim is registered.
+	//
+	// The DT-CIUS-PT-* family is four fifths of the Portuguese rule set by count and
+	// no entry in this table named it until PR 22 vendored the Schematron. It is
+	// generated from that Schematron rather than transcribed — see
+	// cius_pt_datatype.go — and cius_pt_datatype_test.go holds the generated tables
+	// to the artefact in both directions.
 
 	SourceCIUSRO: {
 		{

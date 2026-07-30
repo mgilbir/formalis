@@ -59,10 +59,20 @@ var allSources = []Source{
 // that trips each pair and one that does not, so this entry rests on verdicts
 // rather than on a count.
 //
+// SourceCIUSPT is here because the whole of AT/eSPap's published inventory is
+// evaluated: the 65 BR-CIUS-PT-* identifiers and AT's own 8 BR-AA-* by hand in
+// cius_pt_rules.go, and the 290 DT-CIUS-PT-* identifiers over the 291 assertions
+// that carry them, generated from the Schematron into cius_pt_datatype_table.go.
+// TestCIUSPTDatatypeTableHoldsThePublishedSet compares the generated set against
+// the artefact in both directions, TestCIUSPTDatatypeContextsAreReachable says
+// every one of them is asked of a real context node in the corpus, and
+// TestEveryCIUSPTDatatypeRuleFires says every one of them has a document that
+// makes it fire. It is the first CIUS whose *datatype* tier is implemented at all.
+//
 // If a Source is ever moved here it means someone finished implementing an
 // authority's rule set, which is exactly the change that should be hard to make
 // by accident.
-var completeSources = map[Source]bool{SourceChecker: true, SourceXRechnung: true, SourcePeppol: true}
+var completeSources = map[Source]bool{SourceChecker: true, SourceXRechnung: true, SourcePeppol: true, SourceCIUSPT: true}
 
 // TestConformantIsFalseForACancelledRun is the first of the five. It is the
 // case limits.go already solved with RuleLimit; Complete has to keep solving
@@ -173,33 +183,43 @@ func TestReportFromAnIgnoredErrorIsNotConformant(t *testing.T) {
 
 // TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet is the fifth, and
 // the one this whole file was written for. It is C12's failure scenario as a
-// test: a document that produces no findings at all from ValidateCIUSPT is not
-// a document that passed CIUS-PT. Before Report there was nothing a caller could
-// read that said so.
+// test: a document that produces no findings at all from a validator whose rule
+// set is partial is not a document that passed that rule set. Before Report there
+// was nothing a caller could read that said so.
 //
-// The family it names has changed once. It used to be BR-CIUS-PT-13/15/17/18 and
-// 24..63, which are now evaluated; the gap that keeps this Report non-conformant is
-// DT-CIUS-PT-*, the 290 fatal datatype and arithmetic rules AT publishes in the same
-// tree. That the specific family moved is the point of the test rather than a
-// weakening of it: the property is that a *named fatal gap* keeps Conformant false,
-// and the day CIUS-PT has no fatal gap left this test should be deleted rather than
-// re-pointed at something else.
+// It used to be asked of ValidateCIUSPT, whose fatal gap was first
+// BR-CIUS-PT-13/15/17/18 and 24..63 and then the 290 DT-CIUS-PT-* datatype and
+// arithmetic rules. Both are evaluated now, so CIUS-PT has no fatal gap left and
+// the question has to be asked of a rule set that still has one. It is asked of
+// ValidateCIUSRO, whose coverage names four Romanian families ANAF publishes and
+// this package does not evaluate — and the *positive* half of what CIUS-PT became
+// is asserted directly below, so nothing that was checked here stopped being
+// checked.
+//
+// The property is that a named fatal gap keeps Conformant false, and the rule set
+// it is demonstrated on is incidental. When ValidateCIUSRO's fatal half is
+// finished too, this moves again rather than being deleted:
+// TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is what keeps the choice of
+// validator honest, because it fails the moment the one named here stops having a
+// fatal gap.
 func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
-	r := mustReport(t, context.Background(), ValidateCIUSPT, []byte(minimalCIUSPTUBL))
-	if len(ptRuleViolations(r.Violations)) != 0 {
-		t.Fatalf("the fixture is no longer clean under the CIUS-PT rules, so this test proves nothing: %v", r.Violations)
+	r := mustReport(t, context.Background(), ValidateCIUSRO, []byte(minimalCIUSROUBL))
+	for _, v := range r.Violations {
+		if v.Source == SourceCIUSRO {
+			t.Fatalf("the fixture is no longer clean under the CIUS-RO rules, so this test proves nothing: %v", r.Violations)
+		}
 	}
 	if r.Complete() {
-		t.Error("ValidateCIUSPT reported Complete; it does not evaluate the DT-CIUS-PT-* rules")
+		t.Error("ValidateCIUSRO reported Complete; it does not evaluate the BR-RO-L*, BR-DEC-RO-*, BR-RO-A* or BR-RO-DT* rules")
 	}
 	if r.Conformant() {
-		t.Error("ValidateCIUSPT reported Conformant on a document whose Portuguese datatype rules were never checked")
+		t.Error("ValidateCIUSRO reported Conformant on a document whose Romanian length and decimal rules were never checked")
 	}
 	// The caller has to be able to find out *which* rules, not merely that some
-	// exist, or the report is no more actionable than the file comment was.
+	// exist, or the report is no more actionable than a file comment.
 	var found bool
 	for _, g := range r.NotEvaluated {
-		if strings.Contains(g.Rules, "DT-CIUS-PT-") {
+		if strings.Contains(g.Rules, "BR-RO-") || strings.Contains(g.Rules, "BR-DEC-RO-") {
 			found = true
 			if g.Severity != SeverityFatal {
 				t.Errorf("the family the integrator would be rejected on is reported as %s: %+v", g.Severity, g)
@@ -209,6 +229,54 @@ func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
 	if !found {
 		t.Errorf("NotEvaluated does not name the rule family the integrator would be rejected on: %v", r.NotEvaluated)
 	}
+}
+
+// TestCIUSPTReportsConformantAndCompleteForACleanInvoice is what the test above
+// used to assert the negative of, and it is the observable consequence of
+// generating AT/eSPap's datatype tier.
+//
+// A Portuguese invoice that breaks none of the 363 published CIUS-PT assertions
+// now reports Conformant() == true and Complete() == true. Before, it reported
+// false for every document, whatever it contained, because 290 fatal rules were
+// named as unevaluated — the trap D10 describes, and the reason a caller could not
+// use ValidateCIUSPT as a release gate at all.
+//
+// It is asserted on AT/eSPap's own sample instances rather than only on this
+// package's baseline, because a fixture written to be clean under the rules this
+// package implements is not evidence about the rules it implements.
+func TestCIUSPTReportsConformantAndCompleteForACleanInvoice(t *testing.T) {
+	ctx := context.Background()
+	docs := map[string][]byte{"baseline": []byte(minimalCIUSPTUBL)}
+	files, _ := filepath.Glob("testdata/cius-pt/testsuite/*.xml")
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs[filepath.Base(f)] = data
+	}
+	for name, data := range docs {
+		r := mustReport(t, ctx, ValidateCIUSPT, data)
+		if !r.Complete() {
+			var evaluable []string
+			for _, g := range r.NotEvaluated {
+				if !g.Unevaluable {
+					evaluable = append(evaluable, g.Rules)
+				}
+			}
+			t.Errorf("%s: ValidateCIUSPT is not Complete; the gaps it names that a validator could evaluate: %v",
+				name, evaluable)
+		}
+		// Conformant is asserted for the baseline alone. The AT instances trip
+		// EN 16931 code-list rules from the core — AT's own 'AA' and 'NA' VAT
+		// category codes are not in CEN's restricted BT-118 list — and settling
+		// those is EN 16931 work rather than CIUS-PT work, as TestCIUSPTCorpus
+		// records.
+		if name == "baseline" && !r.Conformant() {
+			t.Errorf("a clean Portuguese invoice is not Conformant: %v", r.Violations)
+		}
+	}
+	t.Logf("CIUS-PT: %d documents report Complete, and a clean Portuguese invoice reports Conformant", len(docs))
 }
 
 // TestNoAuthoritysRuleSetIsImplementedInFull records the state of the package, so
@@ -275,12 +343,12 @@ func TestEverySourceIsAccountedForInTheCoverageTable(t *testing.T) {
 // accessor. It is package state that every Report is built from, so a caller
 // that sorted the slice it got back would change what every later Report says.
 func TestCoverageReturnsACopy(t *testing.T) {
-	first := Coverage(SourceCIUSPT)
+	first := Coverage(SourceCIUSRO)
 	if len(first) == 0 {
-		t.Fatal("Coverage(SourceCIUSPT) is empty, so this test proves nothing")
+		t.Fatal("Coverage(SourceCIUSRO) is empty, so this test proves nothing")
 	}
 	first[0] = RuleFamily{Rules: "clobbered"}
-	second := Coverage(SourceCIUSPT)
+	second := Coverage(SourceCIUSRO)
 	if second[0].Rules == "clobbered" {
 		t.Error("Coverage returns the table's own slice; a caller can rewrite every later Report")
 	}
@@ -1510,12 +1578,19 @@ func coverageText(src Source) string {
 // family, so a clean Peppol invoice now reports Conformant() == true where before
 // it reported false for every document — the trap D10 describes, one rule set
 // later.
+// ValidateCIUSPT joined it when the 290 DT-CIUS-PT-* datatype and arithmetic rules
+// were generated from AT/eSPap's Schematron. That family was four fifths of the
+// Portuguese rule set by count and its only fatal gap, so a clean Portuguese
+// invoice now reports Conformant() == true and Complete() == true where before it
+// reported false for every document. It is the first *CIUS* whose datatype tier is
+// implemented at all.
 var validatorsWithNoFatalGap = map[string]bool{
 	"Validate":          true,
 	"ValidateNLCIUS":    true,
 	"ValidateCIUS":      true,
 	"ValidateXRechnung": true,
 	"ValidatePeppol":    true,
+	"ValidateCIUSPT":    true,
 }
 
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of
