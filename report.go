@@ -676,28 +676,55 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
+	// UBL.BE's fatal half is finished: all 15 identifiers the ubl-model-BE pattern
+	// of GLOBALUBL.BE.sch publishes are accounted for — 14 evaluated in cius_be.go
+	// and the one below, which the authority published and no conforming Schematron
+	// processor can report.
+	//
+	// The four that closed the gap were ubl-BE-01 and -04 (the two on the
+	// AdditionalDocumentReference group, which the file comment never mentioned
+	// until PR 22 read the artefact) and ubl-BE-06 and -12, the two bilingual
+	// free-text lists. The entry that named those last two had called them "not
+	// enforced", which described the rule rather than gave a reason: both are
+	// exact-match membership tests over sixteen and eighteen quoted sentences, and
+	// TestUBLBECodeListsQuoteTheArtefact re-derives all four of this rule set's
+	// tokenize() lists from the file.
 	SourceUBLBE: {
 		{
-			Rules:    "ubl-BE-06 and ubl-BE-12",
-			Severity: SeverityFatal,
-			Reason:   "the BELMText and BVERCText bilingual free-text description code lists",
-		},
-		{
-			// The one unevaluable family outside CEN's, and the reason it is here
-			// rather than in the residue below: it is not a rule this package has
-			// not got to, it is a rule the authority cannot report either.
+			// The one unevaluable family outside CEN's and CIUS-RO's, and the reason
+			// it is here rather than as a gap: it is not a rule this package has not
+			// got to, it is a rule the authority cannot report either.
 			Rules:       "ubl-BE-13",
 			Severity:    SeverityFatal,
 			Unevaluable: true,
 			Reason:      ublBE13Reason,
 		},
-		{
-			Rules:    "any other ubl-BE rule: this package emits only ubl-BE-02, 03, 05, 07, 08, 09, 10, 11, 14, 15",
-			Severity: SeverityFatal,
-			Reason:   "the rest of the published set — ubl-BE-01 and ubl-BE-04, on the AdditionalDocumentReference group",
-		},
 	},
 
+	// SRBDT's fatal half is finished: all 46 identifiers the Ministry of Finance
+	// publishes are accounted for — 31 evaluated in cius_rs.go (21 RSR business
+	// rules, the 3 RSE extension rules, and the 7 assertions of the abstract pdvcat
+	// pattern, which the validation schema instantiates four times) and the 15
+	// below, which the Ministry published and no conforming Schematron processor can
+	// report.
+	//
+	// The two families that had no entry until the Schematron was vendored are
+	// evaluated rather than named now: RSK-X-* is the Serbian zero-rate VAT-category
+	// tier and RSE-* the srbdtext extension tier.
+	//
+	// Every entry here is Unevaluable, so none of them holds Conformant down. All
+	// fifteen have the same cause and it is not a judgement:
+	// EN16931-UBL-srbdt.sch is one pattern, eleven of its rules repeat the context
+	// `/ubl:Invoice | /cn:CreditNote` and four more repeat three other contexts, and
+	// ISO Schematron gives a node to the first matching rule in a pattern and to no
+	// other. TestSRBDTUnevaluableRulesAreDerivedFromTheArtefact re-derives the whole
+	// list from the file, so a Ministry that splits its pattern turns these back into
+	// gaps on the day the artefact is re-fetched.
+	//
+	// Eight of them — RSR-09, 10, 13, 16, 17, 20, 22 and 25 — were being *emitted*
+	// until this was read, so recording them here is a false-positive fix and not a
+	// coverage reduction: they are findings the Ministry's own validator cannot
+	// produce. It is the same reading that put ubl-BE-13 in Coverage(SourceUBLBE).
 	SourceSRBDT: {
 		{
 			Rules:    "RSK-X-01, RSK-X-05..10",

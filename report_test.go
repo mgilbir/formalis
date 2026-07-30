@@ -1655,6 +1655,11 @@ func coverageText(src Source) string {
 // RO16931-rules.sch. The six of those ninety-six that no Schematron processor can
 // report are still in Coverage(SourceCIUSRO), carrying Unevaluable, which is what
 // makes them free: they are a defect in ANAF's artefact rather than a gap here.
+// ValidateUBLBE joined it when ubl-BE-01, -04, -06 and -12 were implemented — the
+// two rules on the AdditionalDocumentReference group that no file comment had ever
+// mentioned, and the two bilingual free-text code lists that had been called "not
+// enforced". Its only remaining entry is ubl-BE-13, which the authority binds to a
+// tautology.
 var validatorsWithNoFatalGap = map[string]bool{
 	"Validate":          true,
 	"ValidateNLCIUS":    true,
@@ -1663,6 +1668,7 @@ var validatorsWithNoFatalGap = map[string]bool{
 	"ValidatePeppol":    true,
 	"ValidateCIUSPT":    true,
 	"ValidateCIUSRO":    true,
+	"ValidateUBLBE":     true,
 }
 
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of

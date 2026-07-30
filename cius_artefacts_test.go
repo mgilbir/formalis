@@ -296,10 +296,11 @@ var ciusEvaluated = map[Source]map[string]Severity{
 		"BR-RO-212": SeverityFatal,
 	},
 	SourceUBLBE: {
-		"ubl-BE-02": SeverityFatal, "ubl-BE-03": SeverityFatal, "ubl-BE-05": SeverityFatal,
+		"ubl-BE-01": SeverityFatal, "ubl-BE-02": SeverityFatal, "ubl-BE-03": SeverityFatal,
+		"ubl-BE-04": SeverityFatal, "ubl-BE-05": SeverityFatal, "ubl-BE-06": SeverityFatal,
 		"ubl-BE-07": SeverityFatal, "ubl-BE-08": SeverityFatal, "ubl-BE-09": SeverityFatal,
-		"ubl-BE-10": SeverityFatal, "ubl-BE-11": SeverityFatal, "ubl-BE-14": SeverityFatal,
-		"ubl-BE-15": SeverityFatal,
+		"ubl-BE-10": SeverityFatal, "ubl-BE-11": SeverityFatal, "ubl-BE-12": SeverityFatal,
+		"ubl-BE-14": SeverityFatal, "ubl-BE-15": SeverityFatal,
 		// ubl-BE-13 is absent on purpose: the authority binds it to an expression
 		// that cannot be false, so it is Unevaluable rather than evaluated. See
 		// ublBE13Reason and TestUBLBE13IsBoundToATautology.
