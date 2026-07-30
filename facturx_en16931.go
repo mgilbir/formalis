@@ -538,6 +538,70 @@ func (n *ciiNode) findAll(name string) []*ciiNode {
 	return out
 }
 
+// matchPath returns every node in this subtree that an XSLT *relative* match
+// pattern of the given local names selects — "cac:PayeeParty/cac:PartyLegalEntity/
+// cbc:CompanyID" is matchPath("PayeeParty", "PartyLegalEntity", "CompanyID").
+//
+// It is not child() and it is not findAll(). child follows the first match at every
+// step and answers one node; findAll answers every descendant with one name,
+// whatever its parent. A Schematron rule context is neither: it is "every node
+// whose ancestor chain ends in this sequence of names", at any depth, and a rule
+// bound to cac:TaxRepresentativeParty/cac:PartyTaxScheme/cbc:CompanyID applies to
+// each such identifier and not merely to the first.
+//
+// Each result is produced exactly once, because a node reachable by a path of
+// length k has exactly one ancestor k steps above it.
+func (n *ciiNode) matchPath(names ...string) []*ciiNode {
+	if n == nil || len(names) == 0 {
+		return nil
+	}
+	var out []*ciiNode
+	var rec func(*ciiNode)
+	rec = func(c *ciiNode) {
+		cur := []*ciiNode{c}
+		for _, nm := range names {
+			var next []*ciiNode
+			for _, x := range cur {
+				next = append(next, x.all(nm)...)
+			}
+			if cur = next; len(cur) == 0 {
+				break
+			}
+		}
+		out = append(out, cur...)
+		for _, ch := range c.children {
+			rec(ch)
+		}
+	}
+	rec(n)
+	return out
+}
+
+// stringValue is the XPath string value of a node: the concatenation of every
+// descendant text node, in document order. ciiNode.text holds only the element's
+// own character data, which is the same thing for a leaf and is not for anything
+// else — and one rule in this package (SRBDT's RSR-02) is bound to normalize-space()
+// of a group element, where the difference is the whole rule.
+func (n *ciiNode) stringValue() string {
+	if n == nil {
+		return ""
+	}
+	var b strings.Builder
+	var rec func(*ciiNode)
+	rec = func(c *ciiNode) {
+		b.WriteString(c.text)
+		for _, ch := range c.children {
+			rec(ch)
+		}
+	}
+	rec(n)
+	return b.String()
+}
+
+// normSpace is XPath's normalize-space: leading and trailing whitespace removed,
+// internal runs collapsed to one space.
+func normSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
+
 // collectAttr gathers the values of the named attribute across all descendants.
 func (n *ciiNode) collectAttr(attr string) []string {
 	if n == nil {
