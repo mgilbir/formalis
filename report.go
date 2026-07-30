@@ -651,14 +651,24 @@ var notEvaluated = map[Source][]RuleFamily{
 			Reason:   "Romanian decimal limits",
 		},
 		{
+			Rules:    "BR-RO-A* (BR-RO-A020, A051, A052, A500, A999)",
+			Severity: SeverityFatal,
+			Reason:   "the aggregate rules — allowance, charge and line-total agreement in the Romanian profile",
+		},
+		{
+			Rules:    "BR-RO-DT001..BR-RO-DT006, and the credit-note variant of BR-RO-DT003",
+			Severity: SeverityFatal,
+			Reason:   "the Romanian datatype rules on the document identifier and dates",
+		},
+		{
 			Rules:    "BR-RO-065/120",
 			Severity: SeverityFatal,
 			Reason:   "allowance/charge-conditional VAT identifiers, which overlap the EN 16931 core",
 		},
 		{
-			Rules:    "any other BR-RO rule: this package emits only 010, 020, 030, 081, 082, 091, 092, 100, 101, 110, 111, 140, 150, 160, 170, 180, 201, 202, 211, 212",
+			Rules:    "any other BR-RO rule: this package emits only 010, 020_1, 020_2, 030, 081, 082, 091, 092, 100, 101, 110, 111, 140, 150, 160, 170, 180, 201, 202, 211, 212",
 			Severity: SeverityFatal,
-			Reason:   "the rest of the published set",
+			Reason:   "the rest of the published set, including BR-RO-001 and BR-RO-040",
 		},
 	},
 

@@ -141,8 +141,19 @@ const (
 	minPeppolNationalExamples = 3
 	minCIUSPTInstances        = 20
 	minCIUSROInstances        = 44
-	minUBLBEInstances         = 36
-	minSRBDTInstances         = 10
+
+	// The CIUS-RO samples that write a Bucharest sector where ISO 3166-2:RO expects
+	// a county code, and the BR-RO-110/111/170 findings ANAF's own Schematron
+	// therefore reports on them. They are ratcheted for the reason the NLCIUS pair
+	// above is: the FP=0 oracle for this corpus permits exactly these findings, so
+	// a number that fell would mean either that the corpus lost the documents the
+	// exception is scoped to — leaving a permission with nothing to permit — or
+	// that BR-RO-110/111/170 stopped firing, which is the false negative that
+	// implementing them faithfully was meant to close.
+	minCIUSROSectorDocs     = 7
+	minCIUSROSectorFindings = 11
+	minUBLBEInstances       = 36
+	minSRBDTInstances       = 10
 
 	// NLCIUS is the one suite that carries both verdicts: the instances named
 	// for a BR-NL rule, and the subset of those that are deliberately broken and
