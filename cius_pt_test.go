@@ -76,6 +76,11 @@ var ciusPTMutations = []ciusMutation{
 	{"no deliver-to street (21)", "<cbc:StreetName>DelivStreet</cbc:StreetName>", "", "BR-CIUS-PT-21"},
 	{"no deliver-to city (22)", "<cbc:CityName>DelivCity</cbc:CityName>", "", "BR-CIUS-PT-22"},
 	{"no deliver-to postcode (23)", "<cbc:PostalZone>4444-002</cbc:PostalZone>", "", "BR-CIUS-PT-23"},
+	// BR-CIUS-PT-64's four alternatives all absent: a cac:Delivery with no actual
+	// delivery date, no DeliveryParty, no location identifier and no address. The
+	// rule used to accept only two of the four, so an invoice that named the party
+	// it delivered to was reported; this leaves none of them.
+	{"delivery evidences nothing (64)", "<cac:DeliveryLocation><cac:Address><cbc:StreetName>DelivStreet</cbc:StreetName><cbc:CityName>DelivCity</cbc:CityName><cbc:PostalZone>4444-002</cbc:PostalZone><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:Address></cac:DeliveryLocation>", "", "BR-CIUS-PT-64"},
 }
 
 func TestCIUSPTMutations(t *testing.T) {

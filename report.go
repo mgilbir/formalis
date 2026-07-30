@@ -595,11 +595,23 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
-	// The four CIUS below publish their rule sets as prose or as a Schematron
-	// this repository does not vendor, so there is no flag to quote and the
-	// severities are this package's fail-safe reading: a gap it cannot show to be
-	// advisory is recorded fatal. Lowering one of these to a warning needs
-	// evidence from the authority, not an argument from plausibility.
+	// The five CIUS below used to be described here from prose, because this
+	// repository fetched their authorities' sample instances and not their
+	// Schematrons. Their severities were a fail-safe guess and their rule counts
+	// were nobody's measurement (C35). The Schematrons are vendored now, and the
+	// entries are a survey of them: cius_artefacts_test.go decodes every published
+	// identifier, checks that none of these entries names one the artefact does not
+	// carry, and fails if a published family is named neither here nor in
+	// ciusEvaluated.
+	//
+	// The severities survived unchanged, which is worth saying because it is not
+	// what C29 and C32 led one to expect: all 355 CIUS-PT, 125 CIUS-RO, 15 UBL.BE
+	// and 46 SRBDT identifiers are flagged fatal by their authorities, and NLCIUS's
+	// advisory half really is advisory. What did not survive was the *extent* of
+	// three of these tables — CIUS-PT publishes 290 datatype rules and CIUS-RO
+	// twelve aggregate and datatype rules that no entry named — and four
+	// identifiers that no artefact publishes.
+
 	SourceCIUSPT: {
 		{
 			Rules:    "BR-CIUS-PT-13/15/17/18",
@@ -607,14 +619,23 @@ var notEvaluated = map[Source][]RuleFamily{
 			Reason:   "the Portuguese VAT-category rate rules, which encode AT's rates rather than EN 16931's structure",
 		},
 		{
-			Rules:    "BR-CIUS-PT-24..63",
+			// 24..30 and 32..63, not 24..63: AT/eSPap publishes no BR-CIUS-PT-31.
+			Rules:    "BR-CIUS-PT-24..30, BR-CIUS-PT-32..63",
 			Severity: SeverityFatal,
 			Reason:   "conditional structural completeness: \"if this optional UBL group is present, its mandatory child must be too\"",
 		},
 		{
+			Rules:    "DT-CIUS-PT-* (290 rules: the CIUS-PT datatype bindings)",
+			Severity: SeverityFatal,
+			Reason: "the attribute-level constraints urn_feap.gov.pt_CIUS-PT_2.1.1-UBL-datatype.sch and the " +
+				"condition file place on every typed element — mime codes, scheme identifiers, currency " +
+				"attributes. Four fifths of the published rule set by count, and no entry in this table named " +
+				"them until the Schematron was vendored",
+		},
+		{
 			Rules:    "any other BR-CIUS-PT rule: this package emits only 01, 03, 05, 06, 07, 10, 11, 21, 22, 23, 64, 66",
 			Severity: SeverityFatal,
-			Reason:   "the rest of the published set",
+			Reason:   "the rest of the published set, which is 65 identifiers and not the 66 the numbering suggests",
 		},
 	},
 
