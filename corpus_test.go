@@ -124,10 +124,20 @@ const (
 	// a working rule from one bound to an element name no document contains.
 	minPeppolRuleDocuments = 354
 	minPeppolRuleVerdicts  = 350
-	minCIUSPTInstances     = 20
-	minCIUSROInstances     = 44
-	minUBLBEInstances      = 36
-	minSRBDTInstances      = 10
+
+	// rules/national-examples: the invoices OpenPEPPOL publishes as *conforming
+	// examples of its country-specific rule sets*. Three documents, and they are the
+	// only oracle in this repository that says a national rule does not over-fire on
+	// a document its own authority holds up as correct. The Greek pair in particular
+	// is what distinguishes $supplierCountry from $accountingSupplierCountry: the
+	// tax-representative example's seller has a Swedish postal address and no VAT
+	// identifier of its own, so it is Greek by one variable and not by the other, and
+	// a validator that conflated them reports GR-R-009 against it.
+	minPeppolNationalExamples = 3
+	minCIUSPTInstances        = 20
+	minCIUSROInstances        = 44
+	minUBLBEInstances         = 36
+	minSRBDTInstances         = 10
 
 	// NLCIUS is the one suite that carries both verdicts: the instances named
 	// for a BR-NL rule, and the subset of those that are deliberately broken and
