@@ -574,7 +574,7 @@ var notEvaluated = map[Source][]RuleFamily{
 				"DE-R-025-1, DE-R-025-2, DE-R-030, DE-R-031, DK-R-002, DK-R-004..011, DK-R-013, DK-R-014, DK-R-016, " +
 				"GR-R-001-1, GR-R-001-2, GR-R-001-3, GR-R-001-4, GR-R-001-5, GR-R-001-6, GR-R-001-7, GR-R-002, GR-R-003, " +
 				"GR-R-004-1, GR-R-004-2, GR-R-005, GR-R-006, GR-R-008-2, GR-R-008-3, GR-R-009, GR-R-010, IS-R-002..010, " +
-				"IT-R-001..004, NL-R-001..009, NO-R-001, SE-R-001..006, SE-R-013",
+				"NL-R-001..009, SE-R-001..006, SE-R-013",
 			Severity: SeverityFatal,
 			Reason: "the fatal half of the country-specific rules OpenPEPPOL publishes in the same two Schematron files, under the " +
 				"comment \"National rules\": German, Danish, Greek, Icelandic, Italian, Dutch, Norwegian and Swedish organisation-number " +
@@ -583,7 +583,7 @@ var notEvaluated = map[Source][]RuleFamily{
 				"therefore runs them, which is why they are a gap rather than a different product",
 		},
 		{
-			Rules:    "DE-R-017, DE-R-019, DE-R-020, DE-R-026..028, DK-R-003, DK-R-017, GR-S-008-1, GR-S-011, IS-R-001, NO-R-002, SE-R-007..012",
+			Rules:    "DE-R-017, DE-R-019, DE-R-020, DE-R-026..028, DK-R-003, DK-R-017, GR-S-008-1, GR-S-011, IS-R-001, SE-R-007..012",
 			Severity: SeverityWarning,
 			Reason:   "the advisory half of the same country-specific rule sets: recommendations rather than rejections",
 		},

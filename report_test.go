@@ -673,6 +673,12 @@ func severityTables() map[Source]map[string]map[Severity]bool {
 	for rule, r := range peppolRules {
 		record(SourcePeppol, rule, r.severity)
 	}
+	// The country-specific rules of the same two OpenPEPPOL files. They are a
+	// separate table because they are a separate rule set, and both are quotations
+	// of the same artefact.
+	for rule, r := range peppolCountryRules {
+		record(SourcePeppol, rule, r.severity)
+	}
 	for rule, sev := range peppolXRFlags {
 		record(SourcePeppol, rule, sev)
 	}

@@ -235,6 +235,20 @@ type peppolEval struct {
 	out   *[]Violation
 }
 
+// peppolPublished is the rule as the vendored OpenPEPPOL Schematron publishes it,
+// looked up across both tables: peppolRules for the PEPPOL-* identifiers and
+// peppolCountryRules for the country-specific ones in the same two files.
+//
+// The two are separate tables because they are separate rule sets with separate
+// guards, but every emission and every severity reads them through here, so a
+// country rule cannot reach a binding its file does not publish it in.
+func peppolPublished(rule string) peppolRule {
+	if r, ok := peppolRules[rule]; ok {
+		return r
+	}
+	return peppolCountryRules[rule]
+}
+
 // has reports whether the artefact this evaluation quotes publishes rule for this
 // binding. Every emission goes through it, so a rule cannot reach a document whose
 // syntax its authority did not bind it to, and an XRechnung validation cannot
@@ -244,7 +258,7 @@ func (e *peppolEval) has(rule string) bool {
 	if e.cii {
 		want = peppolCII
 	}
-	published := peppolRules[rule].bindings&want != 0
+	published := peppolPublished(rule).bindings&want != 0
 	if !e.xr {
 		return published
 	}
@@ -259,7 +273,7 @@ func (e *peppolEval) add(rule, msg string) {
 	if !e.has(rule) {
 		return
 	}
-	sev := peppolRules[rule].severity
+	sev := peppolPublished(rule).severity
 	if e.xr {
 		if s, ok := peppolXRFlags[rule]; ok {
 			sev = s
@@ -295,6 +309,20 @@ func validatePeppolRuleSet(r *run, p *parsed, xr bool) []Violation {
 		peppolCIIRules(e, r, p.root)
 	} else {
 		peppolUBLRules(e, r, p.root)
+	}
+	// The country-specific half of the same two files. It is skipped outright on
+	// the XRechnung path rather than left to has(): KoSIT imports no country rule,
+	// so every emission would be declined anyway, and the walk would be work done
+	// to reach a gate that is always shut.
+	if !xr {
+		if r.stopped() {
+			return out
+		}
+		if e.cii {
+			peppolCountryCIIRules(e, r, p.root)
+		} else {
+			peppolCountryUBLRules(e, r, p.root)
+		}
 	}
 	return out
 }
