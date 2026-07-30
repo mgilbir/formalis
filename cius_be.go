@@ -41,15 +41,63 @@ import (
 // the coverage table's fail-safe fatal turned out to be the authority's own flag.
 // cius_artefacts_test.go checks both directions.
 //
-// The bilingual free-text code lists (BELMText for ubl-BE-06, BVERCText for
-// ubl-BE-12) are exact-match lists of sentences and are not enforced; ubl-BE-01
-// and ubl-BE-04 are not evaluated either. See Coverage(SourceUBLBE).
+// The four that were left — ubl-BE-01, -04, -06 and -12 — are evaluated now, so
+// every identifier the ubl-model-BE pattern publishes is either evaluated here or
+// recorded as unevaluable. The two free-text lists (BELMText for ubl-BE-06,
+// BVERCText for ubl-BE-12) had been dismissed as "exact-match lists of sentences",
+// which is a description of the rule rather than a reason not to implement it: they
+// are quoted verbatim below, and TestUBLBECodeListsQuoteTheArtefact reads all four
+// $BELM/$BELMText/$BTCC/$BVERCText tokenize() calls back out of GLOBALUBL.BE.sch.
+//
+// The one place the transcription cannot be exact is one entry of $BELMText. The
+// file's bytes hold a tab between the fourth semicolon and "Special ruling - art
+// objects", and XML attribute-value normalisation (XML 1.0 §3.3.3) turns any tab in
+// an attribute value into a space before the Schematron processor ever sees it — so
+// the token an XSLT-based validator compares against is " Special ruling - art
+// objects", with a leading space, while the sentence the authority's own
+// documentation prints has none. ubl-BE-06 compares data(cbc:SpecialTerms) without
+// normalize-space, so the difference is load-bearing. beDeliverySpecialTerms
+// therefore accepts that one entry in both forms, which is the direction that
+// cannot accuse a document the authority means to accept. It is one entry of
+// sixteen and it is an upstream typo; see beSpecialTermsArtObjects.
 
 // beDeliveryTerms is the BELM delivery-terms code list (ubl-BE-05), quoted from
 // $BELM.
 var beDeliveryTerms = map[string]bool{
 	"BELM-001": true, "BELM-002": true, "BELM-003": true, "BELM-004": true,
 	"BELM-005": true, "BELM-006": true, "BELM-007": true, "BELM-008": true,
+}
+
+// beSpecialTermsArtObjects is the one $BELMText entry whose transcription is not a
+// quotation, kept apart from the list so the exception is visible. See the file
+// comment: the artefact's byte is a tab, XML attribute-value normalisation makes it
+// a space, and the sentence the authority publishes in prose has neither.
+const beSpecialTermsArtObjects = "Special ruling - art objects"
+
+// beDeliverySpecialTerms is the BELMText bilingual delivery-terms description list
+// (ubl-BE-06), quoted from $BELMText: eight terms, each in English and Dutch.
+//
+// ubl-BE-06 tests `some $code in $BELMText satisfies data(cbc:SpecialTerms) = $code`
+// — no normalize-space on either side, so the comparison is exact, and an absent
+// cbc:SpecialTerms is the empty sequence, which equals no member and fails.
+var beDeliverySpecialTerms = map[string]bool{
+	"Special ruling - travelagencies":                                           true,
+	"Bijzondere regeling - reisbureaus":                                         true,
+	"Special ruling - used goods":                                               true,
+	"Bijzondere regeling - gebruikte goederen":                                  true,
+	beSpecialTermsArtObjects:                                                    true,
+	" " + beSpecialTermsArtObjects:                                              true,
+	"Bijzondere regeling - kunstvoorwerpen":                                     true,
+	"Special ruling - antiques":                                                 true,
+	"Bijzondere regeling - antiquiteiten":                                       true,
+	"Small company under exempt from taxes ruling":                              true,
+	"Kleine onderneming onderworpen aan de vrijstellingsregeling van belasting": true,
+	"Invoice issued by the receiver":                                            true,
+	"Factuur uitgereikt door de afnemer":                                        true,
+	"Copy issued at request from the customer":                                  true,
+	"Dubbel uitgereikt op vraag van de klant":                                   true,
+	"VAT to be refunded to the state to the extent that it was deducted":        true,
+	"BTW terug te storten aan de staat in de mate waarin ze oorspronkelijk in aftrek werd gebracht": true,
 }
 
 // beTaxCategoryNames is the BTCC Belgian tax-category code list (ubl-BE-10).
@@ -67,6 +115,35 @@ var beExemptionReasonCodes = map[string]bool{
 	"BETE-03/SE": true, "BETE-MA": true, "BETE-46/GO": true, "BETE-47/TO": true, "BETE-47/AS": true,
 	"BETE-47/DI": true, "BETE-47/SE": true, "BETE-44": true, "BETE-46/TR": true, "BETE-47/EX": true,
 	"BETE-47/EI": true, "BETE-47/EE": true, "BETE-NS": true,
+}
+
+// beExemptionReasons is the BVERCText Belgian VAT-exemption reason description list
+// (ubl-BE-12), quoted from $BVERCText: one sentence per BVERC code, in the same
+// order.
+//
+// Unlike ubl-BE-06, ubl-BE-12 applies normalize-space to the document's value
+// before comparing, and it is guarded on the element's presence rather than on its
+// value — `if (cbc:TaxExemptionReason) then … else 1` — so an invoice that carries
+// no exemption reason satisfies it.
+var beExemptionReasons = map[string]bool{
+	"Reverse charge - Contractor":    true,
+	"Exempt":                         true,
+	"Financial discount":             true,
+	"Small company":                  true,
+	"0% Clause 44":                   true,
+	"Standard exchange":              true,
+	"Margin":                         true,
+	"Intra-community supply - Goods": true,
+	"Intra-community supply - Manufacturing cost": true,
+	"Intra-community supply - Assembly":           true,
+	"Intra-community supply - Distance":           true,
+	"Intra-community supply - Services":           true,
+	"Intra-community supply - Services B2B":       true,
+	"Intra-community supply - Triangle a-B-c":     true,
+	"Export non E.U.":                             true,
+	"Indirect export":                             true,
+	"Export via E.U.":                             true,
+	"Not subject to VAT":                          true,
 }
 
 // ublBE13Reason is the evidence for the one unevaluable family outside CEN's, kept
@@ -130,17 +207,39 @@ func validateUBLBE(r *run, p *parsed) []Violation {
 	if p.inv.syntax != "UBL" {
 		return out
 	}
-	return append(out, validateUBLBERules(p.root)...)
+	return append(out, validateUBLBERules(p.root, nil)...)
 }
 
-func validateUBLBERules(root *ciiNode) []Violation {
+// validateUBLBERules applies the ubl-model-BE pattern to a UBL document, in the
+// order GLOBALUBL.BE.sch writes its rules.
+//
+// seen is nil on every production path; the reachability test passes a map so that
+// "no ubl-BE finding over the corpus" can be told apart from "no ubl-BE rule was
+// ever asked". See ruleContexts.
+func validateUBLBERules(root *ciiNode, seen ruleContexts) []Violation {
 	var out []Violation
 	add := adder(&out, SourceUBLBE)
+
+	// ubl-BE-01, context /*: count(cac:AdditionalDocumentReference) >= 2.
+	//
+	// The context is the document element, so this applies to every UBL document
+	// unconditionally — it is the rule that makes UBL.BE's two markers mandatory,
+	// and ubl-BE-02/03 are what say what has to be in them. `cac:AdditionalDocument
+	// Reference` is relative to that context, so it counts the root's own children
+	// and not the whole tree, which is the difference between this rule and
+	// ubl-BE-02/03's `//` counts.
+	seen.reached("ubl-BE-01")
+	if len(root.all("AdditionalDocumentReference")) < 2 {
+		add("ubl-BE-01", "at least two AdditionalDocumentReference groups shall be present")
+	}
 
 	// ubl-BE-02/03, context //cac:AdditionalDocumentReference. Both are
 	// document-wide counts evaluated in that context, so they say nothing at all
 	// about a document that carries no additional document reference — which is
 	// why the guard is on the context and not on the count.
+	for range root.findAll("AdditionalDocumentReference") {
+		seen.reached("ubl-BE-02", "ubl-BE-03")
+	}
 	if len(root.findAll("AdditionalDocumentReference")) > 0 {
 		docType := 0
 		for _, d := range root.findAll("DocumentDescription") {
@@ -162,13 +261,41 @@ func validateUBLBERules(root *ciiNode) []Violation {
 		}
 	}
 
-	// ubl-BE-05, context //cac:Delivery/cac:DeliveryTerms:
-	//   some $code in $BELM satisfies normalize-space(data(cbc:ID)) = $code
-	// An absent cbc:ID normalizes to "", which is in no list, so it fails too.
+	// ubl-BE-04, context //cac:AdditionalDocumentReference/cbc:ID:
+	//   count(../cbc:DocumentDescription) = 1
+	// The context is the identifier and the test is about its parent, so a group
+	// with no cbc:ID at all is not reached and a group with two is asked twice.
+	for _, adr := range root.findAll("AdditionalDocumentReference") {
+		for range adr.all("ID") {
+			seen.reached("ubl-BE-04")
+			if len(adr.all("DocumentDescription")) != 1 {
+				add("ubl-BE-04", "an AdditionalDocumentReference carrying a cbc:ID shall carry exactly one cbc:DocumentDescription")
+			}
+		}
+	}
+
+	// ubl-BE-05/06, context //cac:Delivery/cac:DeliveryTerms:
+	//   05  some $code in $BELM     satisfies normalize-space(data(cbc:ID)) = $code
+	//   06  some $code in $BELMText satisfies data(cbc:SpecialTerms) = $code
+	// An absent cbc:ID normalizes to "", which is in no list, so 05 fails too; an
+	// absent cbc:SpecialTerms is the empty sequence, which equals no member, so 06
+	// fails for it as well. 06 is the one comparison in this file that is not
+	// normalize-space'd on the document's side, which is why the whitespace of the
+	// list entry it is compared against matters — see beSpecialTermsArtObjects.
 	for _, d := range root.findAll("Delivery") {
 		for _, dt := range d.all("DeliveryTerms") {
+			seen.reached("ubl-BE-05", "ubl-BE-06")
 			if id := strings.TrimSpace(dt.str("ID")); !beDeliveryTerms[id] {
 				add("ubl-BE-05", "the Delivery terms ID ("+id+") shall be in the BELM list")
+			}
+			matched := false
+			for _, st := range dt.all("SpecialTerms") {
+				if beDeliverySpecialTerms[st.text] {
+					matched = true
+				}
+			}
+			if !matched {
+				add("ubl-BE-06", "the Delivery terms special terms ("+dt.str("SpecialTerms")+") shall be one of the BELMText descriptions")
 			}
 		}
 	}
@@ -179,14 +306,22 @@ func validateUBLBERules(root *ciiNode) []Violation {
 	for _, tt := range root.findAll("TaxTotal") {
 		for _, ts := range tt.all("TaxSubtotal") {
 			for _, tc := range ts.all("TaxCategory") {
+				seen.reached("ubl-BE-10", "ubl-BE-11", "ubl-BE-12")
 				if nm := strings.TrimSpace(tc.str("Name")); !beTaxCategoryNames[nm] {
 					add("ubl-BE-10", "the VAT category name ("+nm+") shall be in the BTCC list")
 				}
-				// ubl-BE-11 is guarded on the element's presence, not on its value:
-				//   if (cbc:TaxExemptionReasonCode) then some $code in $BVERC … else 1
+				// ubl-BE-11 and ubl-BE-12 are guarded on their element's presence,
+				// not on its value:
+				//   if (cbc:TaxExemptionReasonCode) then some $code in $BVERC     … else 1
+				//   if (cbc:TaxExemptionReason)     then some $code in $BVERCText … else 1
 				if c := tc.child("TaxExemptionReasonCode"); c != nil {
 					if v := strings.TrimSpace(c.text); !beExemptionReasonCodes[v] {
 						add("ubl-BE-11", "the VAT exemption reason code ("+v+") shall be in the BVERC list")
+					}
+				}
+				if c := tc.child("TaxExemptionReason"); c != nil {
+					if v := strings.TrimSpace(c.text); !beExemptionReasons[v] {
+						add("ubl-BE-12", "the VAT exemption reason ("+v+") shall be one of the BVERCText descriptions")
 					}
 				}
 			}
@@ -198,6 +333,7 @@ func validateUBLBERules(root *ciiNode) []Violation {
 	// falls back to -1, which ubl-BE-07 permits, and the other two test it
 	// directly.
 	for _, pt := range root.findAll("PaymentTerms") {
+		seen.reached("ubl-BE-07", "ubl-BE-08", "ubl-BE-09")
 		sdp := strings.TrimSpace(pt.str("SettlementDiscountPercent"))
 		if sdp == "" {
 			continue
@@ -223,6 +359,7 @@ func validateUBLBERules(root *ciiNode) []Violation {
 	// it is bound to an expression that cannot be false. See ublBE13Reason.
 	lines := append(root.findAll("InvoiceLine"), root.findAll("CreditNoteLine")...)
 	for _, ln := range lines {
+		seen.reached("ubl-BE-14")
 		if len(ln.all("TaxTotal")) != 1 {
 			add("ubl-BE-14", "each invoice line shall have exactly one TaxTotal")
 		}
@@ -232,6 +369,7 @@ func validateUBLBERules(root *ciiNode) []Violation {
 	// not a non-empty test — an empty <cbc:Name/> satisfies it, and two of them do
 	// not.
 	for _, ctc := range root.findAll("ClassifiedTaxCategory") {
+		seen.reached("ubl-BE-15")
 		if len(ctc.all("Name")) != 1 {
 			add("ubl-BE-15", "each ClassifiedTaxCategory shall have exactly one Name")
 		}
