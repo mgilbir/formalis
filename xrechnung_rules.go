@@ -1,33 +1,40 @@
 package formalis
 
 import (
+	"fmt"
+	"math"
 	"regexp"
 	"strings"
 )
 
 // This file evaluates the XRechnung (KoSIT) rules that are statements about a
 // document *tree* rather than about the syntax-neutral model: the payment-means
-// group rules (BR-DE-19/20/23/24/25/30/31) and the settlement-discount text
-// format (BR-DE-18). xrechnung.go holds the entry point and the mandatory-term
-// rules that the shared model already answers.
+// group rules (BR-DE-19/20/23/24/25/30/31), the settlement-discount text format
+// (BR-DE-18) and the EXTENSION sub-profile (BR-DEX-*). xrechnung.go holds the
+// entry point and the mandatory-term rules that the shared model already answers.
 //
 // Fidelity. Every rule below is transcribed from the assertion KoSIT publishes in
 // testdata/xrechnung/schematron/src/validation/schematron/ubl/XRechnung-UBL-validation.sch
 // and .../cii/XRechnung-CII-validation.sch, with the variables of
 // .../common.sch resolved, and each cites its XPath. That is not ceremony: PR 14
 // found several CEN rule titles that describe a different rule than their XPath,
-// and KoSIT's own titles have the same problem. BR-DE-30's message asks for BT-90,
-// the bank assigned creditor identifier, and its XPath is
-// "((BT-89 or BT-91) and BT-90) or no BG-19" — so a creditor identifier with
-// neither a mandate reference nor a debited account fails the rule that asks for
-// it. The XPath is the rule.
+// and KoSIT's own titles have the same problem. BR-DEX-09's message reads
+// "BT-115 = BT-112 - BT-113 + BT-114 + Σ BT-DEX-002" while its XPath compares
+// `PayableAmount - PayableRoundingAmount` with
+// `TaxInclusiveAmount - PrepaidAmount + Σ PaidAmount`, i.e. the rounding amount
+// moves to the other side; the XPath is the rule.
 //
 // Both syntaxes, separately. KoSIT publishes two Schematron files and they are
-// not translations of each other. Where an identifier exists in both, its XPath
-// can still test a different thing: BG-19 ("DIRECT DEBIT") is one cac:PaymentMandate element in
+// not translations of each other. Eight of the fifteen BR-DEX-* identifiers exist
+// in one binding only — BR-DEX-02/03 and BR-DEX-09..14 are UBL-only, BR-DEX-15 is
+// CII-only — and where an identifier exists in both, its XPath can still test a
+// different thing: BG-19 ("DIRECT DEBIT") is one cac:PaymentMandate element in
 // UBL and, in CII, the *semantic* group KoSIT reconstructs from "any of BT-89,
 // BT-90, BT-91 is present", which is why BR-DE-30 and BR-DE-31 have two bodies
-// here rather than one over the model.
+// here rather than one over the model. Where a context names ubl:Invoice and not
+// cn:CreditNote — BR-DEX-02, BR-DEX-03 and BR-DEX-10..14 do — that is honoured,
+// because a rule that cannot match a credit note in KoSIT's Schematron must not
+// fire on one here.
 //
 // Severity is quoted, never chosen: xrechnungFlags in xrechnung.go carries
 // KoSIT's flag for every identifier this package evaluates, and xrAdder reads it.
@@ -35,15 +42,21 @@ import (
 // validateXRechnungTreeRules evaluates the tree-shaped half of the XRechnung
 // rule set against the document as parsed, dispatching on the binding the
 // invoice was expressed in.
-func validateXRechnungTreeRules(r *run, p *parsed) []Violation {
+func validateXRechnungTreeRules(r *run, p *parsed, ext bool) []Violation {
 	var out []Violation
 	add := xrAdder(&out)
 	root := p.root
 	if p.inv.syntax == "CII" {
 		xrCIIRules(r, root, add)
+		if ext {
+			xrCIIExtensionRules(r, root, add)
+		}
 		return out
 	}
 	xrUBLRules(r, root, add)
+	if ext {
+		xrUBLExtensionRules(r, root, add)
+	}
 	return out
 }
 
@@ -151,6 +164,176 @@ func xrUBLRules(r *run, root *ciiNode, add func(rule, msg string)) {
 	}
 }
 
+// xrUBLExtensionRules evaluates the ubl-extension-pattern. Its rules replace six
+// EN 16931 code-list and summation rules for a document whose BT-24 claims the
+// EXTENSION sub-profile — see xrechnungSuppressedForExtension for the other half
+// of that swap.
+func xrUBLExtensionRules(r *run, root *ciiNode, add func(rule, msg string)) {
+	if r.stopped() {
+		return
+	}
+	// BR-DEX-01, context cbc:EmbeddedDocumentBinaryObject[$isExtension]: the
+	// EN 16931 MIME list (BR-CL-24) plus application/xml.
+	for _, b := range root.findAll("EmbeddedDocumentBinaryObject") {
+		if !xrExtMIME[b.attr("mimeCode")] {
+			add("BR-DEX-01", fmt.Sprintf("Attached document (BT-125) MIME code %q is not one the EXTENSION permits",
+				b.attr("mimeCode")))
+		}
+	}
+	// BR-DEX-04..08 are BR-CL-10/11/21/25/26 with XR01, XR02 and XR03 added.
+	//
+	// BR-DEX-04 has a second arm the other four do not:
+	//
+	//	... or ((not(contains(normalize-space(@schemeID), ' ')) and
+	//	         contains(' SEPA ', concat(' ', normalize-space(@schemeID), ' '))) and
+	//	        ((ancestor::cac:AccountingSupplierParty) or (ancestor::cac:PayeeParty)))
+	//
+	// so the scheme 'SEPA' is legal on a Seller or Payee party identifier and
+	// nowhere else. That is BT-90, the creditor identifier BR-DE-30 requires — so
+	// without this arm every EXTENSION invoice carrying a direct debit would be
+	// refused for the identifier another XRechnung rule obliges it to carry, which
+	// is what one of KoSIT's own conforming business cases showed.
+	sepaOK := map[*ciiNode]bool{}
+	for _, party := range append(root.findAll("AccountingSupplierParty"), root.findAll("PayeeParty")...) {
+		for _, id := range xrFindAt(party, []string{"PartyIdentification", "ID"}) {
+			sepaOK[id] = true
+		}
+	}
+	for _, id := range xrFindAt(root, []string{"PartyIdentification", "ID"}) {
+		if normalizeSpace(id.attr("schemeID")) == "SEPA" && sepaOK[id] {
+			continue
+		}
+		xrCheckScheme(id, add, "BR-DEX-04", "party identifier (BT-29/BT-46/BT-60/BT-90)", xrISO6523Ext)
+	}
+	for _, id := range xrFindAt(root, []string{"PartyLegalEntity", "CompanyID"}) {
+		xrCheckScheme(id, add, "BR-DEX-05", "party legal registration identifier (BT-30/BT-47/BT-61)", xrISO6523Ext)
+	}
+	for _, id := range xrFindAt(root, []string{"StandardItemIdentification", "ID"}) {
+		xrCheckScheme(id, add, "BR-DEX-06", "item standard identifier (BT-157)", xrISO6523Ext)
+	}
+	for _, id := range root.findAll("EndpointID") {
+		xrCheckScheme(id, add, "BR-DEX-07", "electronic address (BT-34/BT-49)", xrCEFEASExt)
+	}
+	for _, id := range xrFindAt(root, []string{"DeliveryLocation", "ID"}) {
+		xrCheckScheme(id, add, "BR-DEX-08", "deliver-to location identifier (BT-71)", xrISO6523Ext)
+	}
+
+	// BR-DEX-09, context cac:LegalMonetaryTotal[$isExtension]:
+	//   round((PayableAmount - PayableRoundingAmount) * 100) div 100 =
+	//   round((TaxInclusiveAmount - PrepaidAmount + Σ ../cac:PrepaidPayment/cbc:PaidAmount) * 100) div 100
+	//
+	// It replaces BR-CO-16 for an EXTENSION document, adding the third-party
+	// payments BG-DEX-09 introduces. Note the sign: the sum is added to the right
+	// hand side, so a third-party payment *raises* the amount due. That is what
+	// the XPath says and the prose says the same, twice.
+	for _, tot := range root.findAll("LegalMonetaryTotal") {
+		payable, okP := parseAmount(tot.str("PayableAmount"))
+		inclusive, okI := parseAmount(tot.str("TaxInclusiveAmount"))
+		if !okP || !okI {
+			// An absent or unreadable BT-112 or BT-115 is BR-12/BR-14's finding to
+			// report, and xs:decimal() of it would stop a reference validator
+			// outright rather than produce a verdict on this rule.
+			continue
+		}
+		var prepaid, rounding, thirdParty float64
+		if v, ok := parseAmount(tot.str("PrepaidAmount")); ok {
+			prepaid = v
+		}
+		if v, ok := parseAmount(tot.str("PayableRoundingAmount")); ok {
+			rounding = v
+		}
+		for _, pp := range root.all("PrepaidPayment") {
+			if v, ok := parseAmount(pp.str("PaidAmount")); ok {
+				thirdParty += v
+			}
+		}
+		if math.Abs(round2(payable-rounding)-round2(inclusive-prepaid+thirdParty)) > 0.005 {
+			add("BR-DEX-09", fmt.Sprintf("Amount due for payment (BT-115=%.2f) shall equal Invoice total amount with VAT "+
+				"(BT-112) - Paid amount (BT-113) + Rounding amount (BT-114) + the sum of Third party payment amounts "+
+				"(BT-DEX-002), which is %.2f", payable, round2(inclusive-prepaid+thirdParty+rounding)))
+		}
+	}
+
+	// BR-DEX-02, BR-DEX-03 and BR-DEX-10..14 have contexts naming /ubl:Invoice and
+	// not /cn:CreditNote, so they cannot match a credit note. KoSIT wrote it that
+	// way; honouring it is what keeps this an implementation of their rule rather
+	// than of a rule with the same name.
+	if root.name != "Invoice" {
+		return
+	}
+
+	// BR-DEX-02, context /ubl:Invoice[$isExtension], two parts:
+	//   every $l in cac:InvoiceLine[exists(cac:SubInvoiceLine)] satisfies
+	//     $l/BT-131 = sum($l/cac:SubInvoiceLine/BT-131)
+	//   and the same over every //cac:SubInvoiceLine that itself has sub-lines.
+	bad := false
+	var check func(parent *ciiNode)
+	check = func(parent *ciiNode) {
+		subs := parent.all("SubInvoiceLine")
+		if len(subs) > 0 {
+			own, ok := parseAmount(parent.str("LineExtensionAmount"))
+			var sum float64
+			for _, s := range subs {
+				v, sok := parseAmount(s.str("LineExtensionAmount"))
+				ok = ok && sok
+				sum += v
+			}
+			if ok && math.Abs(round2(own)-round2(sum)) > 0.005 {
+				bad = true
+			}
+		}
+		for _, s := range subs {
+			check(s)
+		}
+	}
+	for _, li := range root.all("InvoiceLine") {
+		check(li)
+	}
+	if bad {
+		add("BR-DEX-02", "An Invoice line net amount (BT-131) should equal the sum of the Invoice line net amounts of "+
+			"the Sub invoice lines (BG-DEX-01) directly below it")
+	}
+
+	// BR-DEX-03, context /ubl:Invoice[$isExtension]:
+	//   not(exists(//cac:SubInvoiceLine/cac:Item[count(cac:ClassifiedTaxCategory) != 1]))
+	for _, sub := range root.findAll("SubInvoiceLine") {
+		for _, item := range sub.all("Item") {
+			if len(item.all("ClassifiedTaxCategory")) != 1 {
+				add("BR-DEX-03", "A Sub invoice line (BG-DEX-01) shall contain exactly one Sub invoice line VAT "+
+					"information group (BG-DEX-06)")
+			}
+		}
+	}
+
+	// BR-DEX-10..14, context /ubl:Invoice/cac:PrepaidPayment[$isExtension].
+	currency := normalizeSpace(root.str("DocumentCurrencyCode"))
+	for _, pp := range root.all("PrepaidPayment") {
+		if normalizeSpace(pp.str("ID")) == "" {
+			add("BR-DEX-10", "The Third party payment type (BT-DEX-001) shall be provided when a Third party payment "+
+				"group (BG-DEX-09) is present")
+		}
+		paid := pp.child("PaidAmount")
+		if normalizeSpace(pp.str("PaidAmount")) == "" {
+			add("BR-DEX-11", "The Third party payment amount (BT-DEX-002) shall be provided when a Third party payment "+
+				"group (BG-DEX-09) is present")
+		}
+		if normalizeSpace(pp.str("InstructionID")) == "" {
+			add("BR-DEX-12", "The Third party payment description (BT-DEX-003) shall be provided when a Third party "+
+				"payment group (BG-DEX-09) is present")
+		}
+		// BR-DEX-13: string-length(substring-after(cbc:PaidAmount, '.')) <= 2, which
+		// counts the characters after the first '.' and not the decimals of a number.
+		if _, frac, found := strings.Cut(pp.str("PaidAmount"), "."); found && len(frac) > 2 {
+			add("BR-DEX-13", "The Third party payment amount (BT-DEX-002) shall carry at most two decimals")
+		}
+		// BR-DEX-14: cbc:PaidAmount/@currencyID = parent::node()/cbc:DocumentCurrencyCode
+		if paid.attr("currencyID") != currency {
+			add("BR-DEX-14", fmt.Sprintf("The Third party payment amount (BT-DEX-002) currency (%q) shall be the "+
+				"Invoice currency code (BT-5=%q)", paid.attr("currencyID"), currency))
+		}
+	}
+}
+
 // ---------------------------------------------------------------------------
 // The CII binding
 // ---------------------------------------------------------------------------
@@ -246,9 +429,107 @@ func xrCIIRules(r *run, root *ciiNode, add func(rule, msg string)) {
 
 }
 
+// xrCIIExtensionRules evaluates the cii-extension-pattern. It is not the UBL
+// pattern's twin: KoSIT publishes seven of the fifteen BR-DEX-* identifiers for
+// CII, and BR-DEX-09 is not among them — an EXTENSION invoice in CII has its
+// amount due checked by CEN's BR-CO-16 and nothing else, which is why
+// xrechnungSuppressedForExtension suppresses BR-CO-16 for UBL alone.
+func xrCIIExtensionRules(r *run, root *ciiNode, add func(rule, msg string)) {
+	if r.stopped() {
+		return
+	}
+	// BR-DEX-01, context ram:AttachmentBinaryObject[$isExtension].
+	for _, b := range root.findAll("AttachmentBinaryObject") {
+		if !xrExtMIME[b.attr("mimeCode")] {
+			add("BR-DEX-01", fmt.Sprintf("Attached document (BT-125) MIME code %q is not one the EXTENSION permits",
+				b.attr("mimeCode")))
+		}
+	}
+	// BR-DEX-15, context ram:IncludedSupplyChainTradeLineItem/
+	//   ram:AssociatedDocumentLineDocument[$isExtension]: not(exists(//ram:ParentLineID)).
+	//
+	// The test is document-wide inside a per-line context, so KoSIT reports it once
+	// per line item; one finding says the same thing about the same document.
+	if len(root.findAll("ParentLineID")) > 0 &&
+		len(nodesAt(root, "SupplyChainTradeTransaction", "IncludedSupplyChainTradeLineItem", "AssociatedDocumentLineDocument")) > 0 {
+		add("BR-DEX-15", "This CII invoice uses Sub invoice lines (ram:ParentLineID), which XRechnung does not support")
+	}
+	// BR-DEX-04..08. The CII contexts are wider than the UBL ones and two of them
+	// are exclusions rather than paths: BR-DEX-04 is every ram:GlobalID with a
+	// scheme that is neither an item's nor a ship-to party's, and BR-DEX-05 is
+	// every ram:ID with a scheme that is not a tax registration's.
+	xrCIISchemeRule(r, root, add, "BR-DEX-04", "party identifier (BT-29/BT-46/BT-60)", xrISO6523Ext,
+		"GlobalID", []string{"SpecifiedTradeProduct", "ShipToTradeParty"})
+	xrCIISchemeRule(r, root, add, "BR-DEX-05", "identifier", xrISO6523Ext,
+		"ID", []string{"SpecifiedTaxRegistration"})
+	for _, id := range xrFindAt(root, []string{"SpecifiedTradeProduct", "GlobalID"}) {
+		xrCheckScheme(id, add, "BR-DEX-06", "item standard identifier (BT-157)", xrISO6523Ext)
+	}
+	for _, id := range xrFindAt(root, []string{"URIUniversalCommunication", "URIID"}) {
+		xrCheckScheme(id, add, "BR-DEX-07", "electronic address (BT-34/BT-49)", xrCEFEASExt)
+	}
+	for _, id := range xrFindAt(root, []string{"ApplicableHeaderTradeDelivery", "ShipToTradeParty", "GlobalID"}) {
+		xrCheckScheme(id, add, "BR-DEX-08", "deliver-to location identifier (BT-71)", xrISO6523Ext)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Shared rule bodies and code lists
 // ---------------------------------------------------------------------------
+
+// xrCIISchemeRule applies one CII EXTENSION scheme rule whose context is every
+// element with a given name that has no ancestor among excluded.
+func xrCIISchemeRule(r *run, root *ciiNode, add func(rule, msg string), rule, term string,
+	codes func(string) bool, name string, excluded []string) {
+	if r.stopped() {
+		return
+	}
+	skip := map[string]bool{}
+	for _, e := range excluded {
+		skip[e] = true
+	}
+	var walk func(n *ciiNode, blocked bool)
+	walk = func(n *ciiNode, blocked bool) {
+		if n.name == name && !blocked {
+			xrCheckScheme(n, add, rule, term, codes)
+		}
+		for _, c := range n.children {
+			walk(c, blocked || skip[n.name])
+		}
+	}
+	walk(root, false)
+}
+
+// xrCheckScheme is the assertion the five BR-DEX-04..08 rules share:
+//
+//	not(contains(normalize-space(@schemeID), ' ')) and
+//	contains($LIST, concat(' ', normalize-space(@schemeID), ' '))
+//
+// An element with no @schemeID is outside the rule's context and is not checked.
+func xrCheckScheme(node *ciiNode, add func(rule, msg string), rule, term string, codes func(string) bool) {
+	if !node.hasAttr("schemeID") {
+		return
+	}
+	s := normalizeSpace(node.attr("schemeID"))
+	if strings.Contains(s, " ") || !codes(s) {
+		add(rule, fmt.Sprintf("The scheme identifier %q on the %s is not in the code list the EXTENSION permits", s, term))
+	}
+}
+
+// xrFindAt returns every node the given chain of local names reaches from
+// anywhere in the tree — `//a/b` rather than `/root/a/b`, which is how the UBL
+// EXTENSION contexts are written.
+func xrFindAt(root *ciiNode, path []string) []*ciiNode {
+	var out []*ciiNode
+	for _, start := range root.findAll(path[0]) {
+		if len(path) == 1 {
+			out = append(out, start)
+			continue
+		}
+		out = append(out, nodesAt(start, path[1:]...)...)
+	}
+	return out
+}
 
 // xrHasChildValue is XPath's `child = 'v'` over a node set: true when any child
 // with that name has that value once normalized.
@@ -329,4 +610,30 @@ func xrSkontoRule(notes []string, add func(rule, msg string)) {
 			}
 		}
 	}
+}
+
+// xrExtMIME is the attachment MIME code set of the EXTENSION: the EN 16931 list
+// BR-CL-24 checks, plus application/xml.
+var xrExtMIME = func() map[string]bool {
+	m := map[string]bool{"application/xml": true}
+	for k := range en16931MIME {
+		m[k] = true
+	}
+	return m
+}()
+
+// xrDIGACodes are the three scheme identifiers the EXTENSION adds to both of the
+// code lists BR-DEX-04..08 draw on ($DIGA-CODES in common.sch). They identify
+// the German digital-health-application registers.
+var xrDIGACodes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
+
+// xrISO6523Ext is $ISO-6523-ICD-EXT-CODES.
+func xrISO6523Ext(s string) bool { return xrDIGACodes[s] || en16931ICD[s] }
+
+// xrCEFEASExt is $CEF-EAS-EXT-CODES. KoSIT's copy of the CEF EAS list carries
+// 0219 and 0220, which the list CEN's BR-CL-25 draws on does not, so they are
+// named here rather than left to disagree silently: an EXTENSION invoice with
+// either would otherwise be refused for a scheme its own authority publishes.
+func xrCEFEASExt(s string) bool {
+	return xrDIGACodes[s] || en16931EAS[s] || s == "0219" || s == "0220"
 }

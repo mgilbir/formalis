@@ -2,6 +2,8 @@ package formalis
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -161,7 +163,7 @@ func runXRechnungCases(t *testing.T, cases []xrCase) {
 }
 
 // TestXRechnungBaselinesAreClean is the conforming verdict for the whole rule set
-// at once, in both bindings.
+// at once, in both bindings and both sub-profiles the fixtures reach.
 //
 // It is what lets the table below hold only violating cases: a rule that fires on
 // one of these documents is over-firing, and there is no cheaper way to say that
@@ -173,6 +175,8 @@ func TestXRechnungBaselinesAreClean(t *testing.T) {
 	for _, tc := range []struct{ name, doc string }{
 		{"UBL CIUS", minimalXRechnungUBL},
 		{"CII CIUS", minimalXRechnungCII},
+		{"UBL EXTENSION", asExtension(minimalXRechnungUBL)},
+		{"CII EXTENSION", asExtension(minimalXRechnungCII)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if v := findings(t, context.Background(), ValidateXRechnung, []byte(tc.doc)); len(v) != 0 {
@@ -188,6 +192,7 @@ func TestXRechnungRules(t *testing.T) {
 	var cases []xrCase
 	cases = append(cases, xrSkontoCases(t)...)
 	cases = append(cases, xrPaymentMeansCases(t)...)
+	cases = append(cases, xrExtensionCases(t)...)
 	runXRechnungCases(t, cases)
 }
 
@@ -409,5 +414,241 @@ func xrMandatoryTermCases(t *testing.T) []xrCase {
 		{"UBL taxed category without a seller VAT identifier (BR-DE-16)",
 			ubl(`<cac:PartyTaxScheme><cbc:CompanyID>DE123456789</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>`, ""),
 			"BR-DE-16", true, SeverityFatal},
+	}
+}
+
+// xrExtensionCases covers the fifteen BR-DEX-* rules.
+func xrExtensionCases(t *testing.T) []xrCase {
+	ublExt := asExtension(minimalXRechnungUBL)
+	ciiExt := asExtension(minimalXRechnungCII)
+	// A third-party payment group, which is what BG-DEX-09 is and what BR-DEX-09
+	// adds to the amount-due formula. 119.00 + 10.00 = 129.00.
+	prepaid := func(id, amount, currency, descr string) string {
+		return `<cac:PrepaidPayment><cbc:ID>` + id + `</cbc:ID><cbc:PaidAmount currencyID="` + currency + `">` + amount +
+			`</cbc:PaidAmount><cbc:InstructionID>` + descr + `</cbc:InstructionID></cac:PrepaidPayment>`
+	}
+	// mutate is no use here: half these cases leave BT-115 at its baseline value,
+	// and a replacement that changes nothing is a failure to that helper rather
+	// than the identity it is here.
+	withPrepaid := func(pp, payable string) string {
+		const from = "<cbc:PayableAmount>119.00</cbc:PayableAmount>"
+		if !strings.Contains(ublExt, from) {
+			t.Fatalf("fixture does not contain %q", from)
+		}
+		doc := strings.Replace(ublExt, from, "<cbc:PayableAmount>"+payable+"</cbc:PayableAmount>", 1)
+		return xrBefore(t, doc, xrUBLAtBody, pp)
+	}
+	// Two sub invoice lines that add up to their parent, each with the one VAT
+	// group BR-DEX-03 requires.
+	subLine := func(id, amount, taxCategory string) string {
+		return `<cac:SubInvoiceLine><cbc:ID>` + id + `</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>` +
+			`<cbc:LineExtensionAmount>` + amount + `</cbc:LineExtensionAmount>` +
+			`<cac:Item><cbc:Name>Part</cbc:Name>` + taxCategory + `</cac:Item>` +
+			`<cac:Price><cbc:PriceAmount>` + amount + `</cbc:PriceAmount></cac:Price></cac:SubInvoiceLine>`
+	}
+	const subTax = `<cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory>`
+	withSubLines := func(a, b, tax string) string {
+		return mutate(t, ublExt, `<cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price>`,
+			`<cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price>`+subLine("1.1", a, tax)+subLine("1.2", b, tax))
+	}
+	ublAttach := func(mime string) string {
+		return xrBefore(t, ublExt, xrUBLAtBody, `<cac:AdditionalDocumentReference><cbc:ID>A</cbc:ID><cac:Attachment>`+
+			`<cbc:EmbeddedDocumentBinaryObject mimeCode="`+mime+`" filename="a.bin">eA==</cbc:EmbeddedDocumentBinaryObject>`+
+			`</cac:Attachment></cac:AdditionalDocumentReference>`)
+	}
+	ciiAttach := func(mime string) string {
+		return xrWith(t, ciiExt, xrCIIAtAgree, `<AdditionalReferencedDocument><IssuerAssignedID>A</IssuerAssignedID>`+
+			`<TypeCode>916</TypeCode><AttachmentBinaryObject mimeCode="`+mime+`" filename="a.bin">eA==</AttachmentBinaryObject>`+
+			`</AdditionalReferencedDocument>`)
+	}
+	ublScheme := func(scheme string) string {
+		return xrWith(t, ublExt, xrUBLAtSeller, `<cac:PartyIdentification><cbc:ID schemeID="`+scheme+`">X</cbc:ID></cac:PartyIdentification>`)
+	}
+	ciiGlobalID := func(scheme string) string {
+		return xrWith(t, ciiExt, `<SellerTradeParty><Name>Seller Co</Name>`,
+			`<GlobalID schemeID="`+scheme+`">X</GlobalID>`)
+	}
+	ublEndpoint := func(scheme string) string {
+		return xrWith(t, ublExt, xrUBLAtSeller, `<cbc:EndpointID schemeID="`+scheme+`">x@y.de</cbc:EndpointID>`)
+	}
+	ublItemScheme := func(scheme string) string {
+		return xrWith(t, ublExt, xrUBLAtItem,
+			`<cac:StandardItemIdentification><cbc:ID schemeID="`+scheme+`">X</cbc:ID></cac:StandardItemIdentification>`)
+	}
+	ublDeliverTo := func(scheme string) string {
+		return xrBefore(t, ublExt, xrUBLAtBody, `<cac:Delivery><cac:DeliveryLocation><cbc:ID schemeID="`+scheme+`">L</cbc:ID>`+
+			`<cac:Address><cbc:CityName>Koeln</cbc:CityName><cbc:PostalZone>50667</cbc:PostalZone>`+
+			`<cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:Address></cac:DeliveryLocation></cac:Delivery>`)
+	}
+	ublLegal := func(scheme string) string {
+		return mutate(t, ublExt, `<cac:PartyLegalEntity><cbc:RegistrationName>Seller Ltd</cbc:RegistrationName></cac:PartyLegalEntity>`,
+			`<cac:PartyLegalEntity><cbc:RegistrationName>Seller Ltd</cbc:RegistrationName><cbc:CompanyID schemeID="`+scheme+`">L</cbc:CompanyID></cac:PartyLegalEntity>`)
+	}
+
+	return []xrCase{
+		// BR-DEX-01: the EXTENSION's MIME list is the EN 16931 one plus
+		// application/xml, and BR-CL-24 is suppressed in its favour.
+		{"UBL extension attachment as XML (BR-DEX-01)", ublAttach("application/xml"), "BR-DEX-01", false, 0},
+		{"UBL extension attachment with a refused MIME code (BR-DEX-01)", ublAttach("application/zip"), "BR-DEX-01", true, SeverityFatal},
+		{"CII extension attachment as XML (BR-DEX-01)", ciiAttach("application/xml"), "BR-DEX-01", false, 0},
+		{"CII extension attachment with a refused MIME code (BR-DEX-01)", ciiAttach("application/zip"), "BR-DEX-01", true, SeverityFatal},
+
+		// BR-DEX-02 and BR-DEX-03, the sub-invoice-line rules. Both are UBL-only and
+		// their context names ubl:Invoice, so neither can reach a credit note.
+		{"UBL sub invoice lines that sum (BR-DEX-02)", withSubLines("60.00", "40.00", subTax), "BR-DEX-02", false, 0},
+		{"UBL sub invoice lines that do not sum (BR-DEX-02)", withSubLines("60.00", "30.00", subTax), "BR-DEX-02", true, SeverityWarning},
+		{"UBL sub invoice line with one VAT group (BR-DEX-03)", withSubLines("60.00", "40.00", subTax), "BR-DEX-03", false, 0},
+		{"UBL sub invoice line with no VAT group (BR-DEX-03)", withSubLines("60.00", "40.00", ""), "BR-DEX-03", true, SeverityFatal},
+
+		// BR-DEX-04..08, the five code lists the EXTENSION widens with XR01..XR03.
+		{"UBL extension party scheme XR01 (BR-DEX-04)", ublScheme("XR01"), "BR-DEX-04", false, 0},
+		{"UBL extension party scheme 0088 (BR-DEX-04)", ublScheme("0088"), "BR-DEX-04", false, 0},
+		{"UBL extension party scheme XR11 (BR-DEX-04)", ublScheme("XR11"), "BR-DEX-04", true, SeverityFatal},
+		{"UBL extension SEPA creditor identifier (BR-DEX-04)", ublScheme("SEPA"), "BR-DEX-04", false, 0},
+		{"CII extension party scheme XR01 (BR-DEX-04)", ciiGlobalID("XR01"), "BR-DEX-04", false, 0},
+		{"CII extension party scheme 0321 (BR-DEX-04)", ciiGlobalID("0321"), "BR-DEX-04", true, SeverityFatal},
+		// The CII binding has no SEPA arm, so the scheme UBL permits on a party
+		// identifier is refused here. That asymmetry is KoSIT's.
+		{"CII extension SEPA scheme (BR-DEX-04)", ciiGlobalID("SEPA"), "BR-DEX-04", true, SeverityFatal},
+		{"UBL extension legal scheme XR02 (BR-DEX-05)", ublLegal("XR02"), "BR-DEX-05", false, 0},
+		{"UBL extension legal scheme XR22 (BR-DEX-05)", ublLegal("XR22"), "BR-DEX-05", true, SeverityFatal},
+		{"UBL extension item scheme XR03 (BR-DEX-06)", ublItemScheme("XR03"), "BR-DEX-06", false, 0},
+		{"UBL extension item scheme XR33 (BR-DEX-06)", ublItemScheme("XR33"), "BR-DEX-06", true, SeverityFatal},
+		{"UBL extension endpoint scheme XR01 (BR-DEX-07)", ublEndpoint("XR01"), "BR-DEX-07", false, 0},
+		// 0219 is in KoSIT's copy of the CEF EAS list and not in the one CEN's
+		// BR-CL-25 draws on, and this is the case that says so.
+		{"UBL extension endpoint scheme 0219 (BR-DEX-07)", ublEndpoint("0219"), "BR-DEX-07", false, 0},
+		{"UBL extension endpoint scheme 0000 (BR-DEX-07)", ublEndpoint("0000"), "BR-DEX-07", true, SeverityFatal},
+		{"UBL extension deliver-to scheme XR01 (BR-DEX-08)", ublDeliverTo("XR01"), "BR-DEX-08", false, 0},
+		{"UBL extension deliver-to scheme XR88 (BR-DEX-08)", ublDeliverTo("XR88"), "BR-DEX-08", true, SeverityFatal},
+
+		// BR-DEX-09..14, the third-party payment group. BR-DEX-09 replaces BR-CO-16
+		// and adds the sum: 119.00 + 10.00 = 129.00.
+		{"UBL third-party payment in the amount due (BR-DEX-09)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "Mobiles Bezahlen"), "129.00"), "BR-DEX-09", false, 0},
+		{"UBL third-party payment left out of the amount due (BR-DEX-09)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "Mobiles Bezahlen"), "119.00"), "BR-DEX-09", true, SeverityFatal},
+		{"UBL third-party payment without a type (BR-DEX-10)",
+			withPrepaid(`<cac:PrepaidPayment><cbc:PaidAmount currencyID="EUR">10.00</cbc:PaidAmount><cbc:InstructionID>d</cbc:InstructionID></cac:PrepaidPayment>`, "129.00"),
+			"BR-DEX-10", true, SeverityFatal},
+		{"UBL third-party payment with a type (BR-DEX-10)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "d"), "129.00"), "BR-DEX-10", false, 0},
+		{"UBL third-party payment without an amount (BR-DEX-11)",
+			withPrepaid(`<cac:PrepaidPayment><cbc:ID>card</cbc:ID><cbc:InstructionID>d</cbc:InstructionID></cac:PrepaidPayment>`, "119.00"),
+			"BR-DEX-11", true, SeverityFatal},
+		{"UBL third-party payment with an amount (BR-DEX-11)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "d"), "129.00"), "BR-DEX-11", false, 0},
+		{"UBL third-party payment without a description (BR-DEX-12)",
+			withPrepaid(`<cac:PrepaidPayment><cbc:ID>card</cbc:ID><cbc:PaidAmount currencyID="EUR">10.00</cbc:PaidAmount></cac:PrepaidPayment>`, "129.00"),
+			"BR-DEX-12", true, SeverityFatal},
+		{"UBL third-party payment with a description (BR-DEX-12)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "d"), "129.00"), "BR-DEX-12", false, 0},
+		{"UBL third-party payment with three decimals (BR-DEX-13)",
+			withPrepaid(prepaid("card", "10.000", "EUR", "d"), "129.00"), "BR-DEX-13", true, SeverityFatal},
+		{"UBL third-party payment with two decimals (BR-DEX-13)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "d"), "129.00"), "BR-DEX-13", false, 0},
+		{"UBL third-party payment in another currency (BR-DEX-14)",
+			withPrepaid(prepaid("card", "10.00", "USD", "d"), "129.00"), "BR-DEX-14", true, SeverityFatal},
+		{"UBL third-party payment in the invoice currency (BR-DEX-14)",
+			withPrepaid(prepaid("card", "10.00", "EUR", "d"), "129.00"), "BR-DEX-14", false, 0},
+
+		// BR-DEX-15: CII has no sub invoice lines, so a ram:ParentLineID in an
+		// EXTENSION document is reported. KoSIT flags it warning.
+		{"CII extension with a parent line reference (BR-DEX-15)",
+			xrWith(t, ciiExt, `<AssociatedDocumentLineDocument><LineID>1</LineID>`, "<ParentLineID>0</ParentLineID>"),
+			"BR-DEX-15", true, SeverityWarning},
+		{"CII extension without a parent line reference (BR-DEX-15)", ciiExt, "BR-DEX-15", false, 0},
+	}
+}
+
+// TestEveryExtensionSuppressionHasAReplacement is the invariant that makes the
+// sub-profile overrides a swap and not a discount: for every EN 16931 rule
+// validateXRechnung stops applying to an EXTENSION document, KoSIT publishes the
+// rule that takes its place, and this package evaluates it.
+//
+// Without it, "the EXTENSION relaxes BR-CL-21" and "the EXTENSION is not checked
+// for item identifier schemes" are the same line of code. That is not
+// hypothetical: BR-CO-16 was suppressed for an EXTENSION document in favour of a
+// BR-DEX-09 that was never evaluated, so an EXTENSION invoice's amount due was
+// checked by neither rule and the coverage table said so in prose nothing read.
+func TestEveryExtensionSuppressionHasAReplacement(t *testing.T) {
+	published := kositExtensionRules(t)
+	for suppressed, replacement := range xrechnungSuppressedForExtension {
+		if !published[replacement] {
+			t.Errorf("%s is suppressed in favour of %s, which KoSIT's Schematron does not publish", suppressed, replacement)
+		}
+		if !xrEvaluated[replacement] {
+			t.Errorf("%s is suppressed in favour of %s, which this package does not evaluate", suppressed, replacement)
+		}
+	}
+	// BR-CO-16 is the one suppression that is not in the map, because it is
+	// conditional on the binding: BR-DEX-09 exists in KoSIT's UBL Schematron and not
+	// in its CII one, so a CII EXTENSION invoice keeps CEN's rule. If that ever
+	// changes upstream, the condition in validateXRechnung is the wrong way round.
+	ubl, cii := kositBindings(t, "BR-DEX-09")
+	if !ubl {
+		t.Error("BR-DEX-09 is not in KoSIT's UBL Schematron, so suppressing BR-CO-16 for a UBL EXTENSION invoice " +
+			"replaces it with nothing")
+	}
+	if cii {
+		t.Error("BR-DEX-09 is in KoSIT's CII Schematron now, so a CII EXTENSION invoice should have BR-CO-16 " +
+			"suppressed too and validateXRechnung does not")
+	}
+}
+
+// xrEvaluated is the set of replacement identifiers the case table above gives a
+// violating verdict, which is the operational meaning of "this package evaluates
+// it". Only the test above reads it.
+var xrEvaluated = map[string]bool{
+	"BR-DEX-01": true, "BR-DEX-04": true, "BR-DEX-05": true,
+	"BR-DEX-06": true, "BR-DEX-07": true, "BR-DEX-08": true, "BR-DEX-09": true,
+}
+
+// kositExtensionRules and kositBindings read the vendored XRechnung Schematron.
+// The full reader, which also carries each rule's flag, arrives with the last of
+// the rules.
+func kositExtensionRules(t *testing.T) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	for _, name := range kositSchematronFiles(t) {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for id := range assertFlags(t, name, data) {
+			out[id] = true
+		}
+	}
+	return out
+}
+
+func kositBindings(t *testing.T, id string) (ubl, cii bool) {
+	t.Helper()
+	for _, name := range kositSchematronFiles(t) {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, ok := assertFlags(t, name, data)[id]; !ok {
+			continue
+		}
+		if strings.Contains(name, string(filepath.Separator)+"ubl"+string(filepath.Separator)) {
+			ubl = true
+		} else {
+			cii = true
+		}
+	}
+	return ubl, cii
+}
+
+func kositSchematronFiles(t *testing.T) []string {
+	t.Helper()
+	dir := filepath.Join("testdata", "xrechnung", "schematron", "src", "validation", "schematron")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("KoSIT Schematron not present (make cius-oracles)")
+	}
+	return []string{
+		filepath.Join(dir, "ubl", "XRechnung-UBL-validation.sch"),
+		filepath.Join(dir, "cii", "XRechnung-CII-validation.sch"),
 	}
 }
