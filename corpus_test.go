@@ -197,6 +197,14 @@ const (
 	// the false-positive assertion looking healthy, so both are ratcheted.
 	minNLCIUSInstances    = 73
 	minNLCIUSErrorsCaught = 27
+	// The third verdict the same suite carries, and the one nothing read until the
+	// advisory tier was implemented: the instances SimplerInvoicing ships as
+	// conformant documents that a validator warns about. It is the compensating
+	// floor for the advisory half of this rule set, in the same sense as
+	// minAdvisoryRulesFiring above — every other NLCIUS assertion here is about the
+	// *absence* of findings, so a tier that silently stopped firing would leave them
+	// all green.
+	minNLCIUSWarningsReported = 24
 
 	// The same suite read per rule rather than per family
 	// (TestNLCIUSPerRuleFixtures). SimplerInvoicing is the one of these five
@@ -206,8 +214,11 @@ const (
 	// shape as the 242 KoSIT and 885 OpenPEPPOL verdicts PRs 19-21 found unread.
 	// The second number is the one that would fall if a rule stopped being
 	// evaluated while its neighbours covered for it.
+	// The second number went from 12 to 30 when the advisory tier was implemented:
+	// the twelve fatal identifiers, and the eighteen advisory ones SimplerInvoicing
+	// ships a _warning_ instance for.
 	minNLCIUSRuleVerdicts = 73
-	minNLCIUSRulesFired   = 12
+	minNLCIUSRulesFired   = 30
 
 	// National formats. Most corpora hold one document kind and the oracle runs
 	// on all of them. Three do not: the OIOUBL fetch already content-filters,

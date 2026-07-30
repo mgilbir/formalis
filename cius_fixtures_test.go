@@ -43,7 +43,7 @@ func ciusSuites() []ciusSuite {
 		{source: SourceCIUSRO, validate: ValidateCIUSRO, baseline: minimalCIUSROUBL, cases: ciusROMutations, extras: ciusROExtras},
 		{source: SourceUBLBE, validate: ValidateUBLBE, baseline: minimalUBLBE, cases: ublBEMutations},
 		{source: SourceSRBDT, validate: ValidateSRBDT, baseline: minimalSRBDT, cases: srbdtMutations, extras: srbdtExtras},
-		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, cases: nlciusMutations},
+		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, cases: nlciusMutations, extras: nlciusExtras},
 	}
 }
 

@@ -155,17 +155,29 @@ func ExampleDetect() {
 //
 // The severity on each family is what a caller acts on: a fatal gap means a rule
 // that could have rejected this document was never evaluated, so Report.Conformant
-// cannot be true. NLCIUS is the one rule set here whose only gap is advisory, and
-// it is two entries rather than one because SimplerInvoicing publishes a UBL
-// binding and a CII binding that do not carry the same rules.
+// cannot be true. Coverage(SourceFatturaPA) is one such gap — the SdI publishes a
+// whole XSD and this package checks the mandatory structure and Italian code lists
+// — which is why a clean FatturaPA document is reported as not conformant.
+//
+// Unevaluable is the other half of the answer, and it is the difference between a
+// rule this package has not implemented and one nobody can implement. Every entry
+// left under Coverage(SourceNLCIUS) carries it: SimplerInvoicing publishes four
+// assertions whose Schematron rule an earlier rule of the same pattern has already
+// claimed, so no validator — its own included — ever reaches them. Those do not
+// hold Conformant down, and they do not stop Report.Complete either.
 func ExampleCoverage() {
+	for _, gap := range formalis.Coverage(formalis.SourceFatturaPA) {
+		fmt.Printf("not evaluated: %s [%s]\n", gap.Rules, gap.Severity)
+	}
 	for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
-		fmt.Printf("not evaluated: %s [%s] — %s\n", gap.Rules, gap.Severity, gap.Reason)
+		fmt.Printf("not evaluated: %s [%s, unevaluable=%t]\n", gap.Rules, gap.Severity, gap.Unevaluable)
 	}
 
 	// Output:
-	// not evaluated: BR-NL-19..21, 24..26, 27-1..27-4, 28-1..28-4, 29..31, 32-1..32-3, 33, 35 (UBL) [warning] — SI-UBL 2.0's "not recommended" rules, which do not make an invoice non-conformant
-	// not evaluated: BR-NL-19..26, 27-1..27-4, 28-1..28-4, 29..31, 32-and-34, 33, 35 (CII) [warning] — the same advisory tier in NLCIUS-CII-validation.sch, which publishes two rules the UBL one does not
+	// not evaluated: the SdI FatturaPA XSD and the SdI's consistency checks [fatal]
+	// not evaluated: BR-NL-9, in the CII binding only [fatal, unevaluable=true]
+	// not evaluated: BR-NL-31, in the CII binding only [warning, unevaluable=true]
+	// not evaluated: BR-NL-32-2, BR-NL-32-3, in the UBL binding only [warning, unevaluable=true]
 }
 
 // ExampleIsCheckerViolation separates "the invoice is wrong" from "the checker

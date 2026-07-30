@@ -88,7 +88,7 @@ rule sets as well, whose severities used to be this package's fail-safe reading 
 prose. `SeverityFatal` is the zero value, so an unstamped
 finding reads as blocking rather than as advisory — the fail-safe direction.
 
-Three rule sets report warnings, and everything else this package implements is
+Four rule sets report warnings, and everything else this package implements is
 fatal:
 
 - the advisory halves of CEN's two EN 16931 syntax bindings — 676 `UBL-CR-*`, 21
@@ -96,6 +96,9 @@ fatal:
   Schematron into a table this package evaluates. Their job is to hold a document
   down to the EN 16931 core subset of UBL and CII, which is a thing a reference
   validator reports and no authority rejects an invoice for;
+- the advisory "not recommended" tier of both NLCIUS bindings — `BR-NL-19` to
+  `BR-NL-35`, twenty identifiers in the UBL binding and twenty-one in the CII one,
+  which SimplerInvoicing flags `warning`;
 - eleven of XRechnung's fifty-seven — the invoice type code, the specification
   identifier, the two IBAN checks, the telephone and email formats and five more,
   which KoSIT flags `warning` or `information`;
@@ -109,8 +112,9 @@ fatal:
   the Danish `DK-R-003`/`DK-R-017`, the Norwegian `NO-R-002`, the Icelandic
   `IS-R-001` and six German ones.
 
-(This section said "one rule set and one only" until the second and third arrived;
-the KoSIT half had been true for a release before anyone corrected the sentence.)
+(This section said "one rule set and one only" until the second and third arrived,
+and "three" until the Dutch advisory tier landed; the KoSIT half had been true for a
+release before anyone corrected the sentence.)
 
 That is checked rather than assumed, in both directions: one test sweeps the whole
 corpus and fails on any finding whose severity does not match the half of the
@@ -133,7 +137,10 @@ They also carry `Unevaluable`, which is a different fact and not a softer
 severity. It means the authority published a rule **nobody** can evaluate — CEN
 binds `BR-CO-05..08` to the XPath expression `true()`, so the assertion cannot
 fail, and `CII-DT-010/011/012` sit behind an earlier matching rule in CEN's own
-ISO Schematron pattern, so no processor reaches them. A rule nothing can check is
+ISO Schematron pattern, so no processor reaches them. That second shape turns out to
+be common: three CIUS-RO rules, fifteen of SRBDT's thirty-six `RSR-*` and four
+NLCIUS assertions are unreachable for exactly that reason, and eight of the Serbian
+ones were being reported here until the rule order was read. A rule nothing can check is
 not a rule this package skipped, so those do not cost a verdict and do not make a
 run incomplete. The field is deliberately narrow: it does not mean hard, low
 value, or not yet, and `go doc formalis.RuleFamily` spells out the boundary and
@@ -142,9 +149,9 @@ the two tests that hold the table to it.
 ## What a clean report does and does not mean
 
 **`Conformant()` returns false for most documents, whatever they contain.** That is
-not a bug and it is the first thing to understand about this package. Two rule sets
-are exceptions today — the EN 16931 core and XRechnung — and every other validator
-here returns false for a clean invoice.
+not a bug and it is the first thing to understand about this package. The EN 16931
+core and the seven CIUS layered on it are the exceptions today; every national
+format validator here returns false for a clean invoice.
 
 `len(report.Violations) == 0` means only *the checks that ran found nothing*. It
 is equally true of a run that checked everything, a run that was cancelled or hit
@@ -153,8 +160,8 @@ authority publishes. Every rule set here is a documented subset, and
 `Coverage(src)` is where each one says so.
 
 `Conformant()` is the weaker and more useful question, because it passes over the
-gaps an authority would not reject a document for. Four rule sets have no **fatal**
-gap left:
+gaps an authority would not reject a document for. Eight rule sets have no **fatal**
+gap left — the core and every CIUS:
 
 - the **EN 16931 core**: every fatal rule of the semantic model, of the UBL binding
   and of the CII binding is evaluated, bar the few CEN's own reference
@@ -182,12 +189,33 @@ gap left:
   vendored; it is generated from that Schematron rather than transcribed, the way
   CEN's advisory binding rules are. It is the first CIUS whose *datatype* tier is
   implemented at all.
+- **CIUS-RO**: all 121 identifiers ANAF publishes in release 1.0.9 — the 25
+  `BR-RO-NNN` business rules by hand, and 90 length, decimal, date-format and
+  occurrence rules generated from `RO16931-rules.sch`. The six that no Schematron
+  processor can report are marked `Unevaluable`;
+- **UBL.BE**: all 15 `ubl-BE-*` identifiers of the `ubl-model-BE` pattern, including
+  the two on the `cac:AdditionalDocumentReference` group and the two bilingual
+  free-text code lists. `ubl-BE-13` is `Unevaluable`: the authority binds it to
+  `abs($TaxAmount) >= 0` over a variable that falls back to `-1`, so it cannot fail;
+- **SRBDT**: all 46 identifiers the Serbian Ministry of Finance publishes — 21
+  reachable `RSR-*` business rules, the 3 `RSE-*` srbdtext extension rules, and the
+  7 assertions of the abstract `pdvcat` pattern, which the validation schema
+  instantiates once per zero-rate VAT category. Fifteen `RSR-*` are `Unevaluable`:
+  `EN16931-UBL-srbdt.sch` is a single pattern in which eleven rules repeat the
+  context `/ubl:Invoice | /cn:CreditNote` and four more repeat three other contexts,
+  and ISO Schematron gives a node to the first matching rule of a pattern only;
+- **NLCIUS**: all 34 identifiers of the UBL binding and all 33 of the CII one, both
+  halves — the twelve fatal rules and the twenty-two "not recommended" ones, which
+  are reported as warnings. Four are `Unevaluable` for the same rule-order reason,
+  and one of them was a live false positive: `BR-NL-9` has a rule of its own in the
+  CII binding, against a context `BR-NL-7`'s rule already holds, so no CII document
+  can be reported for it. This package reported it until the file was read that way.
 
-Every other CIUS and national validator still names a gap its authority flags fatal
-and a validator could close, so those return false whatever the document.
+Every national format validator still names a gap its authority flags fatal and a
+validator could close, so those return false whatever the document.
 
 `Complete()` is the stricter question — "did this package see everything a
-reference validator could see" — and the same four rule sets answer yes. The EN 16931
+reference validator could see" — and the same eight rule sets answer yes. The EN 16931
 core's 1,168 advisory binding rules used to be the reason it could not;
 they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
 rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
@@ -207,6 +235,10 @@ The CIUS-PT path answers yes for a fourth reason, and it is the one this package
 had been carrying longest: its only gap was 290 fatal rules that had never been
 named anywhere. `ValidateCIUSPT` reported `Conformant() == false` for every
 Portuguese invoice, whatever it contained, until they were implemented.
+
+NLCIUS answers yes for a fifth, and it is the only rule set here whose last gap was
+*advisory*: the "not recommended" tier is what `Complete()` was waiting on, and it
+had never cost `Conformant()` anything.
 
 The Peppol path answers yes for a third: its only gap was a rule set nobody had
 counted. Both binding files hold a second family of 101 country-specific rules
@@ -234,17 +266,24 @@ land, the package makes it machine-readable:
   **`Conformant()`** passes over the advisory holes as well.
 
 ```go
-for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
-    fmt.Printf("not evaluated: %s [%s] — %s\n", gap.Rules, gap.Severity, gap.Reason)
+for _, gap := range formalis.Coverage(formalis.SourceFatturaPA) {
+    fmt.Printf("not evaluated: %s [%s] unevaluable=%t\n", gap.Rules, gap.Severity, gap.Unevaluable)
 }
-// not evaluated: BR-NL-19..21, 24..26, 27-1..27-4, 28-1..28-4, 29..31, 32-1..32-3,
-//                33, 35 (UBL) [warning] — SI-UBL 2.0's "not recommended" rules,
-//                which do not make an invoice non-conformant
-// not evaluated: BR-NL-19..26, 27-1..27-4, 28-1..28-4, 29..31, 32-and-34, 33, 35
-//                (CII) [warning] — the same advisory tier in
-//                NLCIUS-CII-validation.sch, which publishes two rules the UBL one
-//                does not
+// not evaluated: the SdI FatturaPA XSD and the SdI's consistency checks [fatal] unevaluable=false
+
+for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
+    fmt.Printf("not evaluated: %s [%s] unevaluable=%t\n", gap.Rules, gap.Severity, gap.Unevaluable)
+}
+// not evaluated: BR-NL-9, in the CII binding only [fatal] unevaluable=true
+// not evaluated: BR-NL-31, in the CII binding only [warning] unevaluable=true
+// not evaluated: BR-NL-32-2, BR-NL-32-3, in the UBL binding only [warning] unevaluable=true
 ```
+
+The two answers are different in kind. The Italian entry is work: a rule the SdI
+would reject a document over, which this package does not run. The Dutch ones are
+facts about somebody else's file — assertions SimplerInvoicing publishes that no
+validator, its own included, ever reaches — so they cost neither `Conformant()` nor
+`Complete()`.
 
 Use `Conformant()` when you need the strong claim, and `len(r.Fatal()) == 0` when
 the weaker one will do — with `r.NotEvaluated` beside it saying exactly what it
