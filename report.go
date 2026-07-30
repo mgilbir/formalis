@@ -512,7 +512,7 @@ var notEvaluated = map[Source][]RuleFamily{
 
 	// XRechnung: the KoSIT Schematron publishes 57 identifiers, not the 54 this
 	// comment used to claim; this package emits BR-DE-1..11, 14..17, 19..22, 26..28
-	// and 30/31.
+	// and 30/31, plus BR-DE-18 and the payment-means group BR-DE-23/24/25.
 	//
 	// The three that were missing were missing from the *harness*, not from KoSIT:
 	// the regular expression that read the assertions stopped at the first '>', and
@@ -520,16 +520,6 @@ var notEvaluated = map[Source][]RuleFamily{
 	// rule the harness cannot see has no flag to disagree with, which is how the
 	// entry below came to describe BR-DEX-02 as fatal.
 	SourceXRechnung: {
-		{
-			Rules:    "BR-DE-18",
-			Severity: SeverityFatal,
-			Reason:   "the settlement-discount payment-terms text format (a regular expression over BT-20)",
-		},
-		{
-			Rules:    "BR-DE-23-a/b, BR-DE-24-a/b, BR-DE-25-a/b",
-			Severity: SeverityFatal,
-			Reason:   "the payment-means group BG-17/18/19 must match BT-81, exclusively",
-		},
 		{
 			Rules:    "BR-DEX-01, BR-DEX-03..14",
 			Severity: SeverityFatal,
