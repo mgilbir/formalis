@@ -11,6 +11,13 @@ import (
 
 // minimalXRechnungUBL is a small but complete, conforming XRechnung (UBL) invoice
 // carrying every term XRechnung makes mandatory on top of EN 16931.
+//
+// It also carries BT-72, the actual delivery date, which XRechnung does not make
+// mandatory. BR-DE-TMP-32 asks for one of BT-72, BG-14 or a period on every line
+// at flag="information", so an invoice with none of the three is conforming and
+// still draws a finding — and a fixture the whole file asserts is finding-free
+// has to satisfy the advisory rules too, or every case built from it would be
+// asserting around a permanent warning.
 const minimalXRechnungUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 	xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 	xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
@@ -30,6 +37,7 @@ const minimalXRechnungUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:s
     <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
   <cac:PartyLegalEntity><cbc:RegistrationName>Buyer Ltd</cbc:RegistrationName></cac:PartyLegalEntity>
 </cac:Party></cac:AccountingCustomerParty>
+<cac:Delivery><cbc:ActualDeliveryDate>2024-01-10</cbc:ActualDeliveryDate></cac:Delivery>
 <cac:PaymentMeans><cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>
   <cac:PayeeFinancialAccount><cbc:ID>DE75512108001245126199</cbc:ID></cac:PayeeFinancialAccount></cac:PaymentMeans>
 <cac:TaxTotal><cbc:TaxAmount>19.00</cbc:TaxAmount>
@@ -136,7 +144,12 @@ func TestValidateXRechnungCorpus(t *testing.T) {
 	// The other half of the loosened assertion: this corpus is the one place in
 	// the suite where a real, published, conforming invoice trips CEN's advisory
 	// bindings, so it is where a regression that stopped emitting them would show.
+	//
+	// It counts KoSIT's own advisory tier too now, which is most of the number:
+	// eleven of the fifty-seven identifiers KoSIT publishes are flagged warning or
+	// information rather than fatal, and BR-DE-TMP-32 — "an invoice should state
+	// its delivery date" — is a finding on a conforming invoice that does not.
 	atLeast(t, "XRechnung corpus advisory findings", advisory, minXRechnungAdvisory)
 	t.Logf("XRechnung corpus: %d/%d instances clean (FP=0)", clean, files)
-	t.Logf("XRechnung corpus: %d advisory EN 16931 binding findings (baseline %d)", advisory, minXRechnungAdvisory)
+	t.Logf("XRechnung corpus: %d advisory findings, CEN's binding rules and KoSIT's own (baseline %d)", advisory, minXRechnungAdvisory)
 }

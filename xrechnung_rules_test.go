@@ -1,7 +1,10 @@
 package formalis
 
 import (
+	"bytes"
 	"context"
+	"encoding/xml"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -230,6 +233,7 @@ func TestXRechnungRules(t *testing.T) {
 	cases = append(cases, xrPaymentMeansCases(t)...)
 	cases = append(cases, xrExtensionCases(t)...)
 	cases = append(cases, xrCVDCases(t)...)
+	cases = append(cases, xrProvisionalCases(t)...)
 	runXRechnungCases(t, cases)
 }
 
@@ -657,6 +661,68 @@ func xrCVDCases(t *testing.T) []xrCase {
 	}
 }
 
+// xrProvisionalCases covers BR-DE-TMP-32, BR-TMP-2 and BR-TMP-3.
+func xrProvisionalCases(t *testing.T) []xrCase {
+	noUBLDate := mutate(t, minimalXRechnungUBL, xrUBLDelivery, "")
+	noCIIDate := mutate(t, minimalXRechnungCII, xrCIIDelivery, "")
+	ublURI := func(uri string) string {
+		return xrBefore(t, minimalXRechnungUBL, xrUBLAtBody,
+			`<cac:AdditionalDocumentReference><cbc:ID>A</cbc:ID><cac:Attachment><cac:ExternalReference>`+
+				`<cbc:URI>`+uri+`</cbc:URI></cac:ExternalReference></cac:Attachment></cac:AdditionalDocumentReference>`)
+	}
+	ciiURI := func(uri string) string {
+		return xrWith(t, minimalXRechnungCII, xrCIIAtAgree,
+			`<AdditionalReferencedDocument><IssuerAssignedID>A</IssuerAssignedID><TypeCode>916</TypeCode>`+
+				`<URIID>`+uri+`</URIID></AdditionalReferencedDocument>`)
+	}
+	ciiPrices := func(gross, net string) string {
+		return mutate(t, minimalXRechnungCII,
+			`<SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>`,
+			`<SpecifiedLineTradeAgreement>`+
+				`<GrossPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount>`+gross+`</GrossPriceProductTradePrice>`+
+				`<NetPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount>`+net+`</NetPriceProductTradePrice>`+
+				`</SpecifiedLineTradeAgreement>`)
+	}
+	return []xrCase{
+		// BR-DE-TMP-32, flag="information": one of BT-72, BG-14 or a period on every
+		// line. The three arms are separate cases because the rule is a disjunction
+		// and a fixture that satisfies two of them would not say which one worked.
+		{"UBL with no delivery date or period (BR-DE-TMP-32)", noUBLDate, "BR-DE-TMP-32", true, SeverityWarning},
+		{"UBL with a delivery date (BR-DE-TMP-32)", minimalXRechnungUBL, "BR-DE-TMP-32", false, 0},
+		{"UBL with an invoicing period (BR-DE-TMP-32)",
+			xrBefore(t, noUBLDate, xrUBLAtBody, `<cac:InvoicePeriod><cbc:StartDate>2024-01-01</cbc:StartDate><cbc:EndDate>2024-01-31</cbc:EndDate></cac:InvoicePeriod>`),
+			"BR-DE-TMP-32", false, 0},
+		{"UBL with a period on every line (BR-DE-TMP-32)",
+			xrWith(t, noUBLDate, `<cac:InvoiceLine><cbc:ID>1</cbc:ID>`,
+				`<cac:InvoicePeriod><cbc:StartDate>2024-01-01</cbc:StartDate><cbc:EndDate>2024-01-31</cbc:EndDate></cac:InvoicePeriod>`),
+			"BR-DE-TMP-32", false, 0},
+		{"CII with no delivery date or period (BR-DE-TMP-32)", noCIIDate, "BR-DE-TMP-32", true, SeverityWarning},
+		{"CII with a delivery date (BR-DE-TMP-32)", minimalXRechnungCII, "BR-DE-TMP-32", false, 0},
+		{"CII with a billing period (BR-DE-TMP-32)",
+			xrWith(t, noCIIDate, xrCIIAtSettle, `<BillingSpecifiedPeriod><StartDateTime><DateTimeString>20240101</DateTimeString></StartDateTime></BillingSpecifiedPeriod>`),
+			"BR-DE-TMP-32", false, 0},
+
+		// BR-TMP-2, flag="warning": BT-124 is an absolute URL with a scheme.
+		{"UBL external document location without a scheme (BR-TMP-2)", ublURI("www.example.de"), "BR-TMP-2", true, SeverityWarning},
+		{"UBL external document location with a scheme (BR-TMP-2)", ublURI("https://www.example.de/a.pdf"), "BR-TMP-2", false, 0},
+		{"CII external document location without a scheme (BR-TMP-2)", ciiURI("www.example.de"), "BR-TMP-2", true, SeverityWarning},
+		{"CII external document location with a scheme (BR-TMP-2)", ciiURI("https://www.example.de/a.pdf"), "BR-TMP-2", false, 0},
+
+		// BR-TMP-3, CII only and fatal: BT-149 given twice must agree, and so must
+		// BT-150 when both paths carry it.
+		{"CII price base quantity on one path only (BR-TMP-3)",
+			ciiPrices(`<BasisQuantity unitCode="C62">1</BasisQuantity>`, ""), "BR-TMP-3", false, 0},
+		{"CII price base quantity equal on both paths (BR-TMP-3)",
+			ciiPrices(`<BasisQuantity unitCode="C62">1</BasisQuantity>`, `<BasisQuantity unitCode="C62">1</BasisQuantity>`), "BR-TMP-3", false, 0},
+		{"CII price base quantity differing (BR-TMP-3)",
+			ciiPrices(`<BasisQuantity unitCode="C62">2</BasisQuantity>`, `<BasisQuantity unitCode="C62">1</BasisQuantity>`), "BR-TMP-3", true, SeverityFatal},
+		{"CII price base quantity with differing units (BR-TMP-3)",
+			ciiPrices(`<BasisQuantity unitCode="C62">1</BasisQuantity>`, `<BasisQuantity unitCode="NAR">1</BasisQuantity>`), "BR-TMP-3", true, SeverityFatal},
+		{"CII price base quantity with a unit on one path only (BR-TMP-3)",
+			ciiPrices(`<BasisQuantity unitCode="C62">1</BasisQuantity>`, `<BasisQuantity>1</BasisQuantity>`), "BR-TMP-3", false, 0},
+	}
+}
+
 // TestEveryExtensionSuppressionHasAReplacement is the invariant that makes the
 // sub-profile overrides a swap and not a discount: for every EN 16931 rule
 // validateXRechnung stops applying to a sub-profile document, KoSIT publishes the
@@ -750,4 +816,64 @@ func kositSchematronFiles(t *testing.T) []string {
 		filepath.Join(dir, "ubl", "XRechnung-UBL-validation.sch"),
 		filepath.Join(dir, "cii", "XRechnung-CII-validation.sch"),
 	}
+}
+
+// TestXRechnungCoverageNamesTheImportedRules is the honesty check on the one entry
+// left in Coverage(SourceXRechnung): the identifiers it names have to be the ones
+// KoSIT's whitelist names, and no others.
+//
+// The whitelist is a vendored file — src/xsl/rule-list.xml — and reading it here is
+// what stops the entry from being prose that drifts. It is also the answer to
+// "why is a Peppol identifier an XRechnung gap": because that file puts it in
+// XRechnung's released Schematron.
+func TestXRechnungCoverageNamesTheImportedRules(t *testing.T) {
+	path := filepath.Join("testdata", "xrechnung", "schematron", "src", "xsl", "rule-list.xml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Skip("KoSIT Schematron not present (make cius-oracles)")
+	}
+	// The file lists every candidate and comments out the ones not taken, so the
+	// decoder's dropping of comments is what makes this read the live set.
+	want := map[string]bool{}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || se.Name.Local != "rule" {
+			continue
+		}
+		var id string
+		if err := dec.DecodeElement(&id, &se); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		want[strings.TrimSpace(id)] = true
+	}
+	if len(want) < 21 {
+		t.Fatalf("read %d whitelisted Peppol rules from %s, want at least 21", len(want), path)
+	}
+	got := map[string]bool{}
+	for _, e := range Coverage(SourceXRechnung) {
+		for _, id := range coverageIdentifiers(e.Rules) {
+			if strings.HasPrefix(id, "PEPPOL-") {
+				got[id] = true
+			}
+		}
+	}
+	for id := range want {
+		if !got[id] {
+			t.Errorf("KoSIT's whitelist merges %s into the XRechnung Schematron and Coverage(SourceXRechnung) does not name it", id)
+		}
+	}
+	for id := range got {
+		if !want[id] {
+			t.Errorf("Coverage(SourceXRechnung) names %s as an imported rule, and KoSIT's whitelist does not merge it in", id)
+		}
+	}
+	t.Logf("XRechnung imports %d Peppol rules; the coverage entry names all of them", len(want))
 }

@@ -10,8 +10,9 @@ import (
 // This file evaluates the XRechnung (KoSIT) rules that are statements about a
 // document *tree* rather than about the syntax-neutral model: the payment-means
 // group rules (BR-DE-19/20/23/24/25/30/31), the settlement-discount text format
-// (BR-DE-18) and the two sub-profiles — EXTENSION (BR-DEX-*) and CVD
-// (BR-DE-CVD-*, BR-TMP-CVD-01). xrechnung.go holds the entry point and the
+// (BR-DE-18), the two sub-profiles — EXTENSION (BR-DEX-*) and CVD
+// (BR-DE-CVD-*) — and KoSIT's provisional rules (BR-DE-TMP-32, BR-TMP-2,
+// BR-TMP-3, BR-TMP-CVD-01). xrechnung.go holds the entry point and the
 // mandatory-term rules that the shared model already answers.
 //
 // Fidelity. Every rule below is transcribed from the assertion KoSIT publishes in
@@ -26,8 +27,8 @@ import (
 // moves to the other side; the XPath is the rule.
 //
 // Both syntaxes, separately. KoSIT publishes two Schematron files and they are
-// not translations of each other. Eight of the fifteen BR-DEX-* identifiers exist
-// in one binding only — BR-DEX-02/03 and BR-DEX-09..14 are UBL-only, BR-DEX-15 is
+// not translations of each other. Nine identifiers exist in one binding only —
+// BR-DEX-02/03 and BR-DEX-09..14 are UBL-only, BR-DEX-15 and BR-TMP-3 are
 // CII-only — and where an identifier exists in both, its XPath can still test a
 // different thing: BG-19 ("DIRECT DEBIT") is one cac:PaymentMandate element in
 // UBL and, in CII, the *semantic* group KoSIT reconstructs from "any of BT-89,
@@ -37,8 +38,12 @@ import (
 // because a rule that cannot match a credit note in KoSIT's Schematron must not
 // fire on one here.
 //
-// Severity is quoted, never chosen: xrechnungFlags in xrechnung.go carries
-// KoSIT's flag for every identifier this package evaluates, and xrAdder reads it.
+// Severity is quoted, never chosen: xrechnungFlags carries KoSIT's flag for every
+// identifier this package evaluates, and TestXRechnungSeveritiesQuoteKoSIT reads
+// the flags back out of the Schematron and fails on any divergence in either
+// direction. Seven of the rules that were already implemented were being reported
+// fatal against KoSIT's warning, which is how a conforming invoice could be
+// refused for a rule its own authority only warns about.
 
 // validateXRechnungTreeRules evaluates the tree-shaped half of the XRechnung
 // rule set against the document as parsed, dispatching on the binding the
@@ -110,6 +115,32 @@ func xrUBLRules(r *run, root *ciiNode, add func(rule, msg string)) {
 		//           (cac:PaymentMeans/cac:PaymentMandate/cac:PayerFinancialAccount/cbc:ID)
 		if len(nodesAt(root, "PaymentMeans", "PaymentMandate", "PayerFinancialAccount", "ID")) == 0 {
 			add("BR-DE-31", "A direct debit (BG-19) shall carry the Debited account identifier (BT-91)")
+		}
+	}
+
+	// BR-DE-TMP-32, context /ubl:Invoice | /cn:CreditNote:
+	//   cac:Delivery/cbc:ActualDeliveryDate or cac:InvoicePeriod or
+	//   (every $line in (cac:InvoiceLine | cac:CreditNoteLine) satisfies $line/cac:InvoicePeriod)
+	lines := append(root.all("InvoiceLine"), root.all("CreditNoteLine")...)
+	everyLinePeriod := true
+	for _, li := range lines {
+		if li.child("InvoicePeriod") == nil {
+			everyLinePeriod = false
+		}
+	}
+	if len(nodesAt(root, "Delivery", "ActualDeliveryDate")) == 0 && root.child("InvoicePeriod") == nil && !everyLinePeriod {
+		add("BR-DE-TMP-32", xrTMP32Message)
+	}
+
+	// BR-TMP-2, context /ubl:Invoice/cac:AdditionalDocumentReference/cac:Attachment/
+	//   cac:ExternalReference: matches(cbc:URI, $XR-URL-REGEX).
+	//
+	// The URI is read untouched rather than trimmed, because the assertion is
+	// matches() over the element's string value with no normalize-space around it
+	// and the pattern is anchored at the start.
+	for _, ref := range nodesAt(root, "AdditionalDocumentReference", "Attachment", "ExternalReference") {
+		if !xrURLRE.MatchString(ref.child("URI").rawText()) {
+			add("BR-TMP-2", "The External document location (BT-124) shall be an absolute URL with a valid scheme")
 		}
 	}
 
@@ -434,6 +465,7 @@ func xrCIIRules(r *run, root *ciiNode, add func(rule, msg string)) {
 	}
 	tx := root.child("SupplyChainTradeTransaction").orNil()
 	settle := tx.child("ApplicableHeaderTradeSettlement").orNil()
+	agree := tx.child("ApplicableHeaderTradeAgreement").orNil()
 
 	// BR-DE-18, context /rsm:CrossIndustryInvoice, over
 	// ram:SpecifiedTradePaymentTerms/ram:Description[1].
@@ -457,6 +489,35 @@ func xrCIIRules(r *run, root *ciiNode, add func(rule, msg string)) {
 		}
 		if !((bt89 || bt90) && bt91) {
 			add("BR-DE-31", "A direct debit (BG-19) shall carry the Debited account identifier (BT-91)")
+		}
+	}
+
+	// BR-DE-TMP-32, context /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction,
+	// so a document with no transaction group is outside the rule.
+	lines := tx.all("IncludedSupplyChainTradeLineItem")
+	if root.child("SupplyChainTradeTransaction") != nil {
+		everyLinePeriod := true
+		for _, li := range lines {
+			if li.child("SpecifiedLineTradeSettlement", "BillingSpecifiedPeriod") == nil {
+				everyLinePeriod = false
+			}
+		}
+		hasDeliveryDate := len(nodesAt(tx, "ApplicableHeaderTradeDelivery", "ActualDeliverySupplyChainEvent", "OccurrenceDateTime")) > 0
+		if !hasDeliveryDate && len(settle.all("BillingSpecifiedPeriod")) == 0 && !everyLinePeriod {
+			add("BR-DE-TMP-32", xrTMP32Message)
+		}
+	}
+
+	// BR-TMP-2, context ram:ApplicableHeaderTradeAgreement/
+	//   ram:AdditionalReferencedDocument[ram:TypeCode = '916']:
+	//   not(exists(ram:URIID)) or matches(ram:URIID, $XR-URL-REGEX)
+	for _, d := range agree.all("AdditionalReferencedDocument") {
+		if !xrHasChildValue(d, "TypeCode", "916") {
+			continue
+		}
+		uri := d.child("URIID")
+		if uri != nil && !xrURLRE.MatchString(uri.rawText()) {
+			add("BR-TMP-2", "The External document location (BT-124) shall be an absolute URL with a valid scheme")
 		}
 	}
 
@@ -515,6 +576,30 @@ func xrCIIRules(r *run, root *ciiNode, add func(rule, msg string)) {
 		}
 	}
 
+	// BR-TMP-3, context ram:IncludedSupplyChainTradeLineItem:
+	//   not(gross/ram:BasisQuantity and net/ram:BasisQuantity) or
+	//   (gross/ram:BasisQuantity = net/ram:BasisQuantity and
+	//    (not(net/ram:BasisQuantity/@unitCode and gross/ram:BasisQuantity/@unitCode) or
+	//     gross/ram:BasisQuantity/@unitCode = net/ram:BasisQuantity/@unitCode))
+	//
+	// The comparison is between untyped nodes, so it is a string comparison: "1"
+	// and "1.0" are two different item price base quantities to this rule, as they
+	// are to a reference validator.
+	for _, li := range lines {
+		if r.stopped() {
+			return
+		}
+		gross := li.child("SpecifiedLineTradeAgreement", "GrossPriceProductTradePrice", "BasisQuantity")
+		net := li.child("SpecifiedLineTradeAgreement", "NetPriceProductTradePrice", "BasisQuantity")
+		if gross == nil || net == nil {
+			continue
+		}
+		sameUnit := !(net.hasAttr("unitCode") && gross.hasAttr("unitCode")) || gross.attr("unitCode") == net.attr("unitCode")
+		if strings.TrimSpace(gross.text) != strings.TrimSpace(net.text) || !sameUnit {
+			add("BR-TMP-3", "An Item price base quantity (BT-149) given on both the gross and the net price shall "+
+				"carry the same value and the same unit of measure (BT-150)")
+		}
+	}
 }
 
 // xrCIIExtensionRules evaluates the cii-extension-pattern. It is not the UBL
@@ -766,6 +851,8 @@ var (
 	xrSkontoLineRE  = regexp.MustCompile(`\r?\n`)
 	xrSkontoEntryRE = regexp.MustCompile(`#[^\n]+#`)
 	xrSkontoTailRE  = regexp.MustCompile(`^[ \t\r\n]*\n`)
+	// $XR-URL-REGEX: ^([a-zA-Z])([a-zA-Z0-9+.-])+:.*
+	xrURLRE = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]+:`)
 )
 
 // xrSkontoRule is BR-DE-18 over the payment-terms notes of either binding.
@@ -800,6 +887,9 @@ func xrSkontoRule(notes []string, add func(rule, msg string)) {
 		}
 	}
 }
+
+const xrTMP32Message = "An Invoice should state the delivery date with either an Actual delivery date (BT-72), an " +
+	"Invoicing period (BG-14), or an Invoice line period (BG-26) on every line"
 
 // xrExtMIME is the attachment MIME code set of the EXTENSION: the EN 16931 list
 // BR-CL-24 checks, plus application/xml.
