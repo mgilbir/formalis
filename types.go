@@ -312,7 +312,15 @@ const (
 	// BT-118's restricted list. CEN publishes no BR-AA-* family, so the identifier
 	// looks like CEN's and is not, and this Source is where it belongs.
 	SourceCIUSPT Source = "CIUS-PT"
-	// SourceCIUSRO is the Romanian ANAF RO e-Factura CIUS (BR-RO-*).
+	// SourceCIUSRO is the Romanian ANAF RO e-Factura CIUS. Its identifiers are
+	// BR-RO-* — the business rules, the BR-RO-L* length limits, the BR-RO-DT* date
+	// formats and the BR-RO-A* occurrence limits — and BR-DEC-RO-*, ANAF's
+	// decimal-place limits, which are the one family here whose prefix is not
+	// BR-RO. A reader scoping on "BR-RO-" alone misses a fifth of the rule set.
+	//
+	// BR-27 is not among them although ANAF re-publishes it inside its own national
+	// file: it is a CEN identifier and this package reports CEN's under
+	// SourceEN16931, with CEN's condition.
 	SourceCIUSRO Source = "CIUS-RO"
 	// SourceUBLBE is the Belgian UBL.BE CIUS (ubl-BE-*).
 	SourceUBLBE Source = "UBL.BE"

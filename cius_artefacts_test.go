@@ -88,11 +88,23 @@ var ciusArtefacts = []ciusArtefact{{
 	// codelist/ siblings that are CEN's cannot be read by accident. BR-27 is in
 	// this file too — CIUS-RO re-publishes one CEN identifier verbatim — and the
 	// prefix filter excludes it, because an identifier CEN minted stays CEN's.
+	//
+	// The glob names **one release**, and that is the substantive part. ANAF ships
+	// four and they are not the same rule set; the union of them is 125 identifiers
+	// and no release publishes 125. Reading all four made the guard below —
+	// "every published rule is evaluated or disclaimed" — ask this package to
+	// account for four identifiers ANAF withdrew (BR-RO-020, BR-RO-A999,
+	// BR-RO-L0301 and BR-RO-L0309), and a withdrawn rule is not a coverage gap; it
+	// also let a family pass that guard by *prefix accident*, because "BR-RO-A051"
+	// in a coverage entry contains the string "BR-RO". Scoping to the release this
+	// package evaluates makes the question exact, and TestCIUSROVersionsDiffer pins
+	// what all four publish and names each withdrawn rule's successor — which is
+	// more information than the union count was, not less.
 	source:  SourceCIUSRO,
 	binding: "UBL",
-	globs:   []string{"cius-ro/schematron/*/cius-ro/*.sch"},
+	globs:   []string{"cius-ro/schematron/1.0.9/cius-ro/*.sch"},
 	own:     regexp.MustCompile(`^BR-(?:RO|DEC-RO)-`),
-	minIDs:  125,
+	minIDs:  121,
 }, {
 	source:  SourceUBLBE,
 	binding: "UBL",
@@ -265,14 +277,23 @@ var ciusEvaluated = map[Source]map[string]Severity{
 		"BR-AA-05": SeverityFatal, "BR-AA-06": SeverityFatal,
 		"BR-AA-07": SeverityFatal, "BR-AA-10": SeverityFatal,
 	},
+	// CIUS-RO is the second complete rule set here: the 25 BR-RO-NNN business rules
+	// below by hand in cius_ro.go, and — merged in by the init function in
+	// cius_ro_rules_test.go rather than pasted here — the 90 evaluable assertions of
+	// the generated length, decimal, date-format and occurrence tier. The six ANAF
+	// publishes that no processor can report are in Coverage(SourceCIUSRO) with
+	// Unevaluable set, and TestCIUSROUnevaluableAssertsAreDerivedFromTheArtefact is
+	// the evidence.
 	SourceCIUSRO: {
-		"BR-RO-010": SeverityFatal, "BR-RO-020_1": SeverityFatal, "BR-RO-020_2": SeverityFatal,
-		"BR-RO-030": SeverityFatal, "BR-RO-081": SeverityFatal, "BR-RO-082": SeverityFatal,
+		"BR-RO-001": SeverityFatal, "BR-RO-010": SeverityFatal, "BR-RO-020_1": SeverityFatal,
+		"BR-RO-020_2": SeverityFatal, "BR-RO-030": SeverityFatal, "BR-RO-040": SeverityFatal,
+		"BR-RO-065": SeverityFatal, "BR-RO-081": SeverityFatal, "BR-RO-082": SeverityFatal,
 		"BR-RO-091": SeverityFatal, "BR-RO-092": SeverityFatal, "BR-RO-100": SeverityFatal,
 		"BR-RO-101": SeverityFatal, "BR-RO-110": SeverityFatal, "BR-RO-111": SeverityFatal,
-		"BR-RO-140": SeverityFatal, "BR-RO-150": SeverityFatal, "BR-RO-160": SeverityFatal,
-		"BR-RO-170": SeverityFatal, "BR-RO-180": SeverityFatal, "BR-RO-201": SeverityFatal,
-		"BR-RO-202": SeverityFatal, "BR-RO-211": SeverityFatal, "BR-RO-212": SeverityFatal,
+		"BR-RO-120": SeverityFatal, "BR-RO-140": SeverityFatal, "BR-RO-150": SeverityFatal,
+		"BR-RO-160": SeverityFatal, "BR-RO-170": SeverityFatal, "BR-RO-180": SeverityFatal,
+		"BR-RO-201": SeverityFatal, "BR-RO-202": SeverityFatal, "BR-RO-211": SeverityFatal,
+		"BR-RO-212": SeverityFatal,
 	},
 	SourceUBLBE: {
 		"ubl-BE-02": SeverityFatal, "ubl-BE-03": SeverityFatal, "ubl-BE-05": SeverityFatal,
@@ -376,7 +397,11 @@ func TestCIUSPublishedInventory(t *testing.T) {
 		// the BR-CIUS-PT and DT-CIUS-PT prefixes and did not admit AT's own eight
 		// BR-AA-* rules.
 		{SourceCIUSPT, "UBL", 363, 363, 0},
-		{SourceCIUSRO, "UBL", 125, 125, 0},
+		// 121, not the 125 PR 22 recorded: 125 is the union of ANAF's four vendored
+		// releases and no release publishes it. This row is release 1.0.9, the one
+		// this package evaluates; TestCIUSROVersionsDiffer holds all four to
+		// 112/112/113/121 and names the four withdrawn identifiers.
+		{SourceCIUSRO, "UBL", 121, 121, 0},
 		{SourceUBLBE, "UBL", 15, 15, 0},
 		{SourceSRBDT, "UBL", 46, 46, 0},
 		{SourceNLCIUS, "UBL", 34, 12, 22},
@@ -623,6 +648,11 @@ func TestEveryEvaluatedCIUSRuleFires(t *testing.T) {
 	// weaker rather than stronger evidence. The property asserted is the same one.
 	for id := range ptDTBuiltFixtures() {
 		fired[SourceCIUSPT][id] = true
+	}
+	// And CIUS-RO's 90 generated ones, for the same reason and by the same means;
+	// see cius_ro_rules_test.go.
+	for id := range roBuiltFixtures() {
+		fired[SourceCIUSRO][id] = true
 	}
 	for src, evaluated := range ciusEvaluated {
 		var missing []string

@@ -623,36 +623,56 @@ var notEvaluated = map[Source][]RuleFamily{
 	// cius_pt_datatype.go — and cius_pt_datatype_test.go holds the generated tables
 	// to the artefact in both directions.
 
+	// CIUS-RO's fatal half is finished: all 121 identifiers ANAF publishes in
+	// release 1.0.9 are accounted for — 115 evaluated (the 25 BR-RO-NNN business
+	// rules by hand in cius_ro.go, and 90 length, decimal, date-format and
+	// occurrence rules generated into cius_ro_rules_table.go) and the six below,
+	// which ANAF published and no conforming Schematron processor can report.
+	//
+	// Every entry here is Unevaluable, so none of them holds Conformant down; each
+	// records a defect in somebody else's artefact rather than a gap in this
+	// package, and TestCIUSROUnevaluableAssertsAreDerivedFromTheArtefact re-derives
+	// all six from the Schematron so the claims cannot rot.
+	//
+	// Not listed, deliberately: BR-RO-020, BR-RO-A999, BR-RO-L0301 and BR-RO-L0309,
+	// which releases 1.0.3 and 1.0.4 publish and which ANAF withdrew. A withdrawn
+	// rule is not a coverage gap — the same reading that removed two phantom Peppol
+	// entries in PR 20 — and TestCIUSROVersionsDiffer names each one's successor.
 	SourceCIUSRO: {
 		{
-			Rules:    "BR-RO-L*",
-			Severity: SeverityFatal,
-			Reason:   "per-field maximum-length limits",
+			Rules:       "BR-DEC-RO-13, BR-DEC-RO-15",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "cius-ro/RO16931-rules.sch binds their rule to the context `/ubl:Invoice | cac:CreditNote`, " +
+				"and both branches are dead: " +
+				"the invoice is claimed by the earlier rule `/ubl:Invoice | /cn:CreditNote` and ISO " +
+				"Schematron gives a node to the first matching rule only, and cac:CreditNote is a name " +
+				"UBL does not define in the CommonAggregateComponents namespace",
 		},
 		{
-			Rules:    "BR-DEC-RO-*",
-			Severity: SeverityFatal,
-			Reason:   "Romanian decimal limits",
+			Rules:       "BR-DEC-RO-23",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "in cius-ro/RO16931-rules.sch its rule repeats the context " +
+				"`cac:InvoiceLine | cac:CreditNoteLine` of an earlier rule in the same pattern, so no " +
+				"invoice line ever reaches it",
 		},
 		{
-			Rules:    "BR-RO-A* (BR-RO-A020, A051, A052, A500, A999)",
-			Severity: SeverityFatal,
-			Reason:   "the aggregate rules — allowance, charge and line-total agreement in the Romanian profile",
+			Rules:       "BR-RO-L1019",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "in cius-ro/RO16931-rules.sch its rule's context " +
+				"`/ubl:Invoice/cac:TaxTotal/cac:TaxSubtotal` selects a subset of the earlier rule's " +
+				"`cac:TaxTotal/cac:TaxSubtotal`, which claims every VAT breakdown first",
 		},
 		{
-			Rules:    "BR-RO-DT001..BR-RO-DT006, and the credit-note variant of BR-RO-DT003",
-			Severity: SeverityFatal,
-			Reason:   "the Romanian datatype rules on the document identifier and dates",
-		},
-		{
-			Rules:    "BR-RO-065/120",
-			Severity: SeverityFatal,
-			Reason:   "allowance/charge-conditional VAT identifiers, which overlap the EN 16931 core",
-		},
-		{
-			Rules:    "any other BR-RO rule: this package emits only 010, 020_1, 020_2, 030, 081, 082, 091, 092, 100, 101, 110, 111, 140, 150, 160, 170, 180, 201, 202, 211, 212",
-			Severity: SeverityFatal,
-			Reason:   "the rest of the published set, including BR-RO-001 and BR-RO-040",
+			Rules:       "BR-RO-A051, BR-RO-A052",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "cius-ro/RO16931-rules.sch binds both to `count(.) <= 50`, and count(.) counts the " +
+				"context node, which is one " +
+				"node: the assertion cannot be false. ANAF wrote a document-wide occurrence limit as a " +
+				"per-occurrence one",
 		},
 	},
 
