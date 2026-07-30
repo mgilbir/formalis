@@ -585,32 +585,29 @@ var notEvaluated = map[Source][]RuleFamily{
 	// holds it up: every one of the 244 published (identifier, binding) pairs has a
 	// document that trips it and one that does not.
 
-	// NLCIUS is the one CIUS whose fatal rule set is implemented in full
-	// (BR-NL-1..5 and 7..13; there is no BR-NL-6). Its gap is advisory only.
+	// NLCIUS is the one CIUS whose fatal rule set is implemented in full, and the
+	// one whose authority publishes both syntax bindings. The two do not publish
+	// the same identifiers, so the advisory gap is written per binding.
+	//
+	// It used to read "BR-NL-19..35", which is a range and not a set: SI-UBL
+	// publishes no BR-NL-22, -23 or -34 at all, and its BR-NL-27, -28 and -32 exist
+	// only as numbered sub-rules (BR-NL-27-1 … -4). Four of the seventeen
+	// identifiers that range expands to are published by neither binding, and
+	// BR-NL-34 is stranger than the others: the UBL file carries three assertions
+	// whose message text reads "[BR-NL-34]" under the identifiers BR-NL-32-1/2/3,
+	// so the rule exists and its identifier does not.
 	SourceNLCIUS: {
 		{
-			Rules:    "BR-NL-19..35",
+			Rules:    "BR-NL-19..21, 24..26, 27-1..27-4, 28-1..28-4, 29..31, 32-1..32-3, 33, 35 (UBL)",
 			Severity: SeverityWarning,
-			Reason:   "NLCIUS's \"not recommended\" rules, which do not make an invoice non-conformant",
+			Reason:   "SI-UBL 2.0's \"not recommended\" rules, which do not make an invoice non-conformant",
+		},
+		{
+			Rules:    "BR-NL-19..26, 27-1..27-4, 28-1..28-4, 29..31, 32-and-34, 33, 35 (CII)",
+			Severity: SeverityWarning,
+			Reason:   "the same advisory tier in NLCIUS-CII-validation.sch, which publishes two rules the UBL one does not",
 		},
 	},
-
-	// The five CIUS below used to be described here from prose, because this
-	// repository fetched their authorities' sample instances and not their
-	// Schematrons. Their severities were a fail-safe guess and their rule counts
-	// were nobody's measurement (C35). The Schematrons are vendored now, and the
-	// entries are a survey of them: cius_artefacts_test.go decodes every published
-	// identifier, checks that none of these entries names one the artefact does not
-	// carry, and fails if a published family is named neither here nor in
-	// ciusEvaluated.
-	//
-	// The severities survived unchanged, which is worth saying because it is not
-	// what C29 and C32 led one to expect: all 355 CIUS-PT, 125 CIUS-RO, 15 UBL.BE
-	// and 46 SRBDT identifiers are flagged fatal by their authorities, and NLCIUS's
-	// advisory half really is advisory. What did not survive was the *extent* of
-	// three of these tables — CIUS-PT publishes 290 datatype rules and CIUS-RO
-	// twelve aggregate and datatype rules that no entry named — and four
-	// identifiers that no artefact publishes.
 
 	SourceCIUSPT: {
 		{

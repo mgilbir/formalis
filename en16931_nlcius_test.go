@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -73,6 +74,87 @@ func TestNLCIUSConformanceSuite(t *testing.T) {
 	atLeast(t, "NLCIUS BR-NL instances", instances, minNLCIUSInstances)
 	atLeast(t, "NLCIUS error instances caught", caught, minNLCIUSErrorsCaught)
 	t.Logf("NLCIUS conformance: %d error instances caught, %d false positives", caught, len(falsePositives))
+}
+
+// TestNLCIUSPerRuleFixtures reads the verdict each SimplerInvoicing instance
+// declares *for the rule it names*, which is the oracle PRs 19–21 built for KoSIT's
+// <?xmute?> fixtures and OpenPEPPOL's unit-test directories, and which this suite
+// had on disk and was not using.
+//
+// TestNLCIUSConformanceSuite above asks the weaker question: an _error_ instance
+// must make *some* BR-NL rule fire. That passes for an engine that reports the
+// wrong rule, and it passes for an engine in which one over-eager rule fires on
+// everything. This one asks whether BR-NL-10's fixture makes BR-NL-10 fire, which
+// is the question that tells a working rule from a coincidence — and it is what
+// makes the twelve fatal identifiers individually load-bearing rather than
+// collectively.
+//
+// One fixture is excused and the exception is derived rather than named: SI-UBL
+// ships BR-NL-7_error_381_invoice.xml, whose document is an Invoice carrying type
+// code 381. 381 is in BR-NL-7's permitted set, so BR-NL-7 does not fire; what fires
+// is BR-NL-8, the neighbouring assertion in the same Schematron rule, which is what
+// forbids a credit-note code in an Invoice. The fixture's *name* is wrong and its
+// document is not. The test therefore accepts BR-NL-8 for it, and asserts that the
+// document really is an Invoice with type code 381 so the excuse cannot widen.
+func TestNLCIUSPerRuleFixtures(t *testing.T) {
+	files, _ := filepath.Glob("testdata/nlcius/testsuite/*.xml")
+	if len(files) == 0 {
+		t.Skip("NLCIUS test suite not present (make cius-oracles)")
+	}
+	named := regexp.MustCompile(`(BR-NL-[0-9]+)_(ok|error|warning)`)
+	checked, verdicts := map[string]bool{}, 0
+	for _, f := range files {
+		m := named.FindStringSubmatch(filepath.Base(f))
+		if m == nil {
+			continue
+		}
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		rule := m[1]
+		var nl []string
+		for _, v := range findings(t, context.Background(), ValidateNLCIUS, data) {
+			if strings.HasPrefix(v.Rule, "BR-NL-") {
+				nl = append(nl, v.Rule)
+			}
+		}
+		verdicts++
+		if m[2] != "error" {
+			// _ok_ and _warning_: no fatal BR-NL rule may fire. The advisory rules
+			// this package does not evaluate are why a _warning_ instance is in the
+			// same bucket as an _ok_ one.
+			if len(nl) != 0 {
+				t.Errorf("%s: SimplerInvoicing declares this instance %s for %s, and this package reports %v",
+					filepath.Base(f), m[2], rule, nl)
+			}
+			continue
+		}
+		want := rule
+		if strings.Contains(filepath.Base(f), "BR-NL-7_error_381_invoice") {
+			if !strings.Contains(string(data), "<cbc:InvoiceTypeCode>381<") {
+				t.Errorf("%s is excused as a mis-named BR-NL-8 fixture, but it is not an Invoice with type code "+
+					"381 any more; re-derive the exception rather than widening it", filepath.Base(f))
+			}
+			want = "BR-NL-8"
+		}
+		hit := false
+		for _, r := range nl {
+			if r == want {
+				hit = true
+			}
+		}
+		if !hit {
+			t.Errorf("%s: SimplerInvoicing declares this instance invalid against %s, and this package reports %v",
+				filepath.Base(f), want, nl)
+			continue
+		}
+		checked[want] = true
+	}
+	atLeast(t, "NLCIUS per-rule verdicts", verdicts, minNLCIUSRuleVerdicts)
+	atLeast(t, "NLCIUS rules with a fixture that fires them", len(checked), minNLCIUSRulesFired)
+	t.Logf("NLCIUS per-rule fixtures: %d verdicts read, %d distinct rules made to fire by the fixture that names them",
+		verdicts, len(checked))
 }
 
 // minimalNLCIUSUBL is a small SI-UBL 2.0 invoice from a Dutch supplier that
