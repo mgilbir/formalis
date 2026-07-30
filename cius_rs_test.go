@@ -62,35 +62,23 @@ const minimalSRBDT = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:x
 <cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cac:Item><cbc:Name>Roba</cbc:Name><cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>20</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </Invoice>`
 
+var srbdtMutations = []ciusMutation{
+	{"bad type code (03)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>999</cbc:InvoiceTypeCode>", "RSR-03"},
+	{"has tax point date (04)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode><cbc:TaxPointDate>2024-01-15</cbc:TaxPointDate>", "RSR-04"},
+	{"no seller VAT (09)", "<cbc:CompanyID>RS100000005</cbc:CompanyID>", "", "RSR-09"},
+	{"bad seller PIB (11)", "<cbc:CompanyID>RS100000005</cbc:CompanyID>", "<cbc:CompanyID>100000005</cbc:CompanyID>", "RSR-11"},
+	{"no seller tax reg (10)", "<cac:PartyTaxScheme><cbc:CompanyID>Obveznik PDV-a</cbc:CompanyID><cac:TaxScheme><cbc:ID>RS-VAT-STATUS</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>", "", "RSR-10"},
+	{"no seller endpoint (13)", "<cbc:EndpointID schemeID=\"9948\">100000005</cbc:EndpointID>", "", "RSR-13"},
+	{"bad seller endpoint scheme (14)", "schemeID=\"9948\">100000005", "schemeID=\"0088\">100000005", "RSR-14"},
+	{"no seller city (16)", "<cbc:CityName>SellerCity</cbc:CityName>", "", "RSR-16"},
+	{"no buyer registration (17)", "<cbc:CompanyID>20000000</cbc:CompanyID>", "", "RSR-17"},
+	{"no buyer VAT (20)", "<cbc:CompanyID>RS222222222</cbc:CompanyID>", "", "RSR-20"},
+	{"bad buyer PIB (21)", "<cbc:CompanyID>RS222222222</cbc:CompanyID>", "<cbc:CompanyID>222222222</cbc:CompanyID>", "RSR-21"},
+	{"no buyer endpoint (22)", "<cbc:EndpointID schemeID=\"9948\">222222222</cbc:EndpointID>", "", "RSR-22"},
+	{"bad buyer endpoint scheme (23)", "schemeID=\"9948\">222222222", "schemeID=\"0088\">222222222", "RSR-23"},
+	{"no buyer city (25)", "<cbc:CityName>BuyerCity</cbc:CityName>", "", "RSR-25"},
+}
+
 func TestSRBDTMutations(t *testing.T) {
-	if rs := rsRuleViolations(findings(t, context.Background(), ValidateSRBDT, []byte(minimalSRBDT))); len(rs) != 0 {
-		t.Fatalf("baseline SRBDT invoice not clean: %v", rs)
-	}
-	cases := []struct{ name, from, to, want string }{
-		{"bad type code (03)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>999</cbc:InvoiceTypeCode>", "RSR-03"},
-		{"has tax point date (04)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode><cbc:TaxPointDate>2024-01-15</cbc:TaxPointDate>", "RSR-04"},
-		{"no seller VAT (09)", "<cbc:CompanyID>RS100000005</cbc:CompanyID>", "", "RSR-09"},
-		{"bad seller PIB (11)", "<cbc:CompanyID>RS100000005</cbc:CompanyID>", "<cbc:CompanyID>100000005</cbc:CompanyID>", "RSR-11"},
-		{"no seller tax reg (10)", "<cac:PartyTaxScheme><cbc:CompanyID>Obveznik PDV-a</cbc:CompanyID><cac:TaxScheme><cbc:ID>RS-VAT-STATUS</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>", "", "RSR-10"},
-		{"no seller endpoint (13)", "<cbc:EndpointID schemeID=\"9948\">100000005</cbc:EndpointID>", "", "RSR-13"},
-		{"bad seller endpoint scheme (14)", "schemeID=\"9948\">100000005", "schemeID=\"0088\">100000005", "RSR-14"},
-		{"no seller city (16)", "<cbc:CityName>SellerCity</cbc:CityName>", "", "RSR-16"},
-		{"no buyer registration (17)", "<cbc:CompanyID>20000000</cbc:CompanyID>", "", "RSR-17"},
-		{"no buyer VAT (20)", "<cbc:CompanyID>RS222222222</cbc:CompanyID>", "", "RSR-20"},
-		{"bad buyer PIB (21)", "<cbc:CompanyID>RS222222222</cbc:CompanyID>", "<cbc:CompanyID>222222222</cbc:CompanyID>", "RSR-21"},
-		{"no buyer endpoint (22)", "<cbc:EndpointID schemeID=\"9948\">222222222</cbc:EndpointID>", "", "RSR-22"},
-		{"bad buyer endpoint scheme (23)", "schemeID=\"9948\">222222222", "schemeID=\"0088\">222222222", "RSR-23"},
-		{"no buyer city (25)", "<cbc:CityName>BuyerCity</cbc:CityName>", "", "RSR-25"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			broken := strings.Replace(minimalSRBDT, tc.from, tc.to, 1)
-			if broken == minimalSRBDT {
-				t.Fatalf("mutation string not found: %q", tc.from)
-			}
-			if !hasFacturXRule(findings(t, context.Background(), ValidateSRBDT, []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, rsRuleViolations(findings(t, context.Background(), ValidateSRBDT, []byte(broken))))
-			}
-		})
-	}
+	runCIUSSuite(t, ciusSuites()[3])
 }
