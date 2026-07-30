@@ -74,6 +74,22 @@ import "strings"
 // entry and one that does not.
 var peppolCountryRules = map[string]peppolRule{
 
+	// Denmark — 12 fatal, 2 advisory. DK-R-017 is the one the CII file omits.
+	"DK-R-002": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-003": {peppolUBL | peppolCII, SeverityWarning},
+	"DK-R-004": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-005": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-006": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-007": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-008": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-009": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-010": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-011": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-013": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-014": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-016": {peppolUBL | peppolCII, SeverityFatal},
+	"DK-R-017": {peppolUBL, SeverityWarning},
+
 	// The Netherlands — 9 fatal, both bindings. Distinct from the BR-NL-* of
 	// SourceNLCIUS: this is OpenPEPPOL's Dutch rule set, not NLCIUS's.
 	"NL-R-001": {peppolUBL | peppolCII, SeverityFatal},
@@ -245,6 +261,10 @@ func peppolCountryUBLRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolDutchUBLRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolDanishUBLRules(e, root)
 }
 
 // peppolCountryCIIRules evaluates the country-specific rules of
@@ -262,6 +282,10 @@ func peppolCountryCIIRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolDutchCIIRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolDanishCIIRules(e, root)
 }
 
 // ---------------------------------------------------------------------------
@@ -737,4 +761,383 @@ var peppolDutchPaymentMeans = map[string]bool{
 // credit-note root element.
 var peppolDutchCreditNoteTypes = map[string]bool{
 	"81": true, "83": true, "381": true, "396": true, "532": true,
+}
+
+// ---------------------------------------------------------------------------
+// Denmark
+// ---------------------------------------------------------------------------
+
+// peppolDanishPaymentMeans is DK-R-005's permitted set of BT-81 values, from
+// `contains(' 1 10 31 42 48 49 50 58 59 93 97 ', concat(' ', <code>, ' '))`.
+var peppolDanishPaymentMeans = map[string]bool{
+	"1": true, "10": true, "31": true, "42": true, "48": true, "49": true,
+	"50": true, "58": true, "59": true, "93": true, "97": true,
+}
+
+// peppolDanishUNSPSC is DK-R-003's permitted UNSPSC versions.
+var peppolDanishUNSPSC = map[string]bool{
+	"19.05.01": true, "19.0501": true, "26.08.01": true, "26.0801": true,
+}
+
+// peppolDanishUBLRules is the Danish pattern of the UBL binding: 14 rules across
+// six contexts, gated on two pattern variables.
+//
+//	$DKSupplierCountry = concat(cn:CreditNote/…/cac:PostalAddress/cac:Country/cbc:IdentificationCode,
+//	                            ubl:Invoice/…/cac:PostalAddress/cac:Country/cbc:IdentificationCode)
+//	$DKCustomerCountry   the same over cac:AccountingCustomerParty
+//
+// The concat is how OpenPEPPOL writes "whichever root this document has"; only one
+// arm can be non-empty. The comparison is `= 'DK'` against the untrimmed string
+// value, so a padded country code does not select the family — transcribed as
+// written rather than normalized, because the German and Dutch patterns *do*
+// normalize and the difference is the artefact's.
+//
+// Nine of the fourteen are domestic-only (both parties Danish); DK-R-002, DK-R-014
+// and DK-R-016 need only a Danish seller. And the payment-means rules are bound to
+// `ubl:Invoice[…]/cac:PaymentMeans` with no credit-note arm, so a Danish credit
+// note's payment means answers to none of DK-R-005..011. That asymmetry is
+// OpenPEPPOL's; reading the family as "all Danish documents" would report seven
+// rules against credit notes the authority does not check.
+func peppolDanishUBLRules(e *peppolEval, root *ciiNode) {
+	if peppolUBLPostalCountry(root, "AccountingSupplierParty") != "DK" {
+		return
+	}
+	domestic := peppolUBLPostalCountry(root, "AccountingCustomerParty") == "DK"
+	seller := root.child("AccountingSupplierParty", "Party")
+	customer := root.child("AccountingCustomerParty", "Party")
+
+	// DK-R-002: normalize-space(…/cac:PartyLegalEntity/cbc:CompanyID/text()) != ''
+	sellerLegal := seller.child("PartyLegalEntity", "CompanyID")
+	if normalizeSpace(sellerLegal.rawText()) == "" {
+		e.add("DK-R-002", "Danish suppliers MUST provide a legal registration identifier (BT-30, the CVR number)")
+	}
+	// DK-R-014: not(boolean(<id>) and normalize-space(<id>/@schemeID) != '0184')
+	if sellerLegal != nil && normalizeSpace(sellerLegal.attr("schemeID")) != "0184" {
+		e.add("DK-R-014", "For Danish suppliers the Seller legal registration identifier (BT-30) MUST declare "+
+			"scheme 0184 (DK CVR)")
+	}
+	// DK-R-016: not((boolean(/cn:CreditNote) and $DKCustomerCountry = 'DK') and
+	//               (number(cac:LegalMonetaryTotal/cbc:PayableAmount/text()) < 0))
+	if root.name == "CreditNote" && domestic {
+		if due, ok := parseAmount(root.child("LegalMonetaryTotal", "PayableAmount").rawText()); ok && due < 0 {
+			e.addf("DK-R-016", "For Danish suppliers a credit note's Amount due for payment (BT-115=%s) MUST NOT be "+
+				"negative", normalizeSpace(root.child("LegalMonetaryTotal", "PayableAmount").rawText()))
+		}
+	}
+	if !domestic {
+		return
+	}
+	// DK-R-013, context …/cac:Party/cac:PartyIdentification on either party:
+	//   not(boolean(cbc:ID) and normalize-space(cbc:ID/@schemeID) = '')
+	//
+	// An identifier with no @schemeID at all normalizes to '' and is reported, which
+	// is the case the rule exists for.
+	for _, party := range []*ciiNode{seller, customer} {
+		for _, pi := range party.orNil().all("PartyIdentification") {
+			if id := pi.child("ID"); id != nil && normalizeSpace(id.attr("schemeID")) == "" {
+				e.add("DK-R-013", "For Danish suppliers a Party identification identifier (BT-29/BT-46) MUST declare "+
+					"a scheme identifier")
+			}
+		}
+	}
+	// DK-R-017, context …/cac:AccountingCustomerParty/cac:Party.
+	if customerLegal := customer.child("PartyLegalEntity", "CompanyID"); customerLegal != nil &&
+		normalizeSpace(customerLegal.attr("schemeID")) != "0184" {
+		e.add("DK-R-017", "For Danish customers the Buyer legal registration identifier (BT-47) MUST declare "+
+			"scheme 0184 (DK CVR)")
+	}
+	// DK-R-003, context …/cac:InvoiceLine | …/cac:CreditNoteLine.
+	lineName := "InvoiceLine"
+	if root.name == "CreditNote" {
+		lineName = "CreditNoteLine"
+	}
+	for _, li := range root.all(lineName) {
+		peppolDanishClassification(e, nodesAt(li, "Item", "CommodityClassification", "ItemClassificationCode"))
+	}
+	// DK-R-004, context cac:AllowanceCharge[$DKSupplierCountry = 'DK' and
+	// $DKCustomerCountry = 'DK'] — every allowance or charge in the document, at any
+	// level, unlike the CII binding where the whole rule is one document-level test.
+	for _, ac := range root.findAll("AllowanceCharge") {
+		if !peppolAnyChildValue(ac, "AllowanceChargeReasonCode", "ZZZ") {
+			continue
+		}
+		if peppolDanishTaxReasonOK(ac.child("AllowanceChargeReason").rawText()) {
+			continue
+		}
+		e.add("DK-R-004", "For Danish domestic invoices a non-VAT tax (AllowanceChargeReasonCode ZZZ) MUST state "+
+			"the four-digit tax category or a value containing an internal '#' in the reason (BT-97/BT-104)")
+	}
+	// DK-R-005..011, context ubl:Invoice[both]/cac:PaymentMeans.
+	if root.name != "Invoice" {
+		return
+	}
+	for _, pm := range root.all("PaymentMeans") {
+		code := pm.child("PaymentMeansCode").rawText()
+		if !peppolDanishPaymentMeans[code] {
+			e.addf("DK-R-005", "For Danish suppliers the Payment means type code (BT-81=%q) MUST be one of "+
+				"1, 10, 31, 42, 48, 49, 50, 58, 59, 93 or 97", normalizeSpace(code))
+		}
+		account := pm.child("PayeeFinancialAccount")
+		paymentID := pm.child("PaymentID").rawText()
+		switch code {
+		case "31", "42":
+			// DK-R-006: both the account (BT-84) and the branch identifier (BT-85).
+			if normalizeSpace(account.child("ID").rawText()) == "" ||
+				normalizeSpace(account.child("FinancialInstitutionBranch", "ID").rawText()) == "" {
+				e.add("DK-R-006", "For Danish suppliers a payment means of 31 or 42 requires both the Payment account "+
+					"identifier (BT-84) and the Payment service provider identifier (BT-85)")
+			}
+		case "49":
+			// DK-R-007: the mandate reference (BT-89) and the debited account (BT-91).
+			mandate := pm.child("PaymentMandate")
+			if normalizeSpace(mandate.child("ID").rawText()) == "" ||
+				normalizeSpace(mandate.child("PayerFinancialAccount", "ID").rawText()) == "" {
+				e.add("DK-R-007", "For Danish suppliers a payment means of 49 requires both the Mandate reference "+
+					"identifier (BT-89) and the Debited account identifier (BT-91)")
+			}
+		case "50":
+			// DK-R-008: a Giro card code prefix and a 7-or-8-digit Giro account.
+			if !peppolDanishCardCode(paymentID, "01#", "04#", "15#") ||
+				!peppolDanishGiroAccount(account.child("ID").rawText(), 7, 8) {
+				e.add("DK-R-008", "For Danish suppliers a payment means of 50 (Giro) requires a Payment reference "+
+					"(BT-83) beginning 01#, 04# or 15# and a 7 or 8 digit Giro account (BT-84)")
+			}
+			// DK-R-009: those two prefixes carry a 16-digit instruction identifier.
+			if peppolDanishCardCode(paymentID, "04#", "15#") && len([]rune(paymentID)) != 19 {
+				e.add("DK-R-009", "For Danish suppliers a Payment reference (BT-83) prefixed 04# or 15# MUST be "+
+					"nineteen characters — the prefix and a sixteen digit instruction identifier")
+			}
+		case "93":
+			// DK-R-010: an FIK card code prefix and an 8-character account.
+			if !peppolDanishCardCode(paymentID, "71#", "73#", "75#") ||
+				len([]rune(account.child("ID").rawText())) != 8 {
+				e.add("DK-R-010", "For Danish suppliers a payment means of 93 (FIK) requires a Payment reference "+
+					"(BT-83) beginning 71#, 73# or 75# and an eight character account (BT-84)")
+			}
+			// DK-R-011: two of those prefixes carry a 15-or-16-digit identifier.
+			if peppolDanishCardCode(paymentID, "71#", "75#") {
+				if n := len([]rune(paymentID)); n != 18 && n != 19 {
+					e.add("DK-R-011", "For Danish suppliers a Payment reference (BT-83) prefixed 71# or 75# MUST be "+
+						"eighteen or nineteen characters")
+				}
+			}
+		}
+	}
+}
+
+// peppolDanishCIIRules is the Danish pattern of the CII binding — 13 rules, all of
+// DK-R-017 absent.
+//
+// Two differences from the UBL binding are structural rather than incidental:
+// DK-R-004 and DK-R-013 are single document-level tests here, where UBL binds them
+// to each allowance/charge and each party identification; and DK-R-016 tells a
+// credit note from an invoice by BT-3 = '381', CII having one root for both.
+//
+// A third is worth naming because it looks like a transcription error and is not.
+// DK-R-007's XPath reads `ram:SpecifiedTradePaymentTerms/ram:DirectDebitMandateID`
+// as a *child* of the payment means, where the CII schema puts payment terms beside
+// it under the settlement. OpenPEPPOL's own nine fixtures for the rule are written
+// the same way — the passing one nests SpecifiedTradePaymentTerms inside
+// SpecifiedTradeSettlementPaymentMeans — so this is the artefact's reading of its
+// own rule, and the XPath is transcribed rather than corrected. The consequence for
+// a schema-valid Danish CII invoice using payment means 49 is that DK-R-007 fires,
+// and a reference Peppol validation reports it too.
+func peppolDanishCIIRules(e *peppolEval, root *ciiNode) {
+	if peppolCIIPostalCountry(root, "SellerTradeParty") != "DK" {
+		return
+	}
+	domestic := peppolCIIPostalCountry(root, "BuyerTradeParty") == "DK"
+	seller := peppolCIIParty(root, "SellerTradeParty")
+	buyer := peppolCIIParty(root, "BuyerTradeParty")
+	settlements := nodesAt(root, "SupplyChainTradeTransaction", "ApplicableHeaderTradeSettlement")
+
+	// DK-R-002: normalize-space(…/ram:SpecifiedLegalOrganization/ram:ID/text()) != ''
+	sellerLegal := seller.child("SpecifiedLegalOrganization", "ID")
+	if normalizeSpace(sellerLegal.rawText()) == "" {
+		e.add("DK-R-002", "Danish suppliers MUST provide a legal registration identifier (BT-30)")
+	}
+	// DK-R-014.
+	if sellerLegal != nil && normalizeSpace(sellerLegal.attr("schemeID")) != "0184" {
+		e.add("DK-R-014", "For Danish suppliers the Seller legal registration identifier (BT-30) MUST declare "+
+			"scheme 0184 (DK CVR)")
+	}
+	if domestic {
+		// DK-R-013: either party's ram:GlobalID present with an empty @schemeID. It is
+		// one test over two named elements here, not a per-node rule.
+		for _, party := range []*ciiNode{seller, buyer} {
+			if id := party.orNil().child("GlobalID"); id != nil && normalizeSpace(id.attr("schemeID")) == "" {
+				e.add("DK-R-013", "For Danish suppliers a Party identification identifier (BT-29/BT-46) MUST declare "+
+					"a scheme identifier")
+				break
+			}
+		}
+		// DK-R-016: BT-3 = '381' and a negative BT-115.
+		credit := false
+		for _, doc := range root.all("ExchangedDocument") {
+			if normalizeSpace(doc.child("TypeCode").rawText()) == "381" {
+				credit = true
+			}
+		}
+		if credit {
+			for _, st := range settlements {
+				amt := st.child("SpecifiedTradeSettlementHeaderMonetarySummation", "DuePayableAmount")
+				if due, ok := parseAmount(amt.rawText()); ok && due < 0 {
+					e.addf("DK-R-016", "For Danish suppliers a credit note's Amount due for payment (BT-115=%s) MUST "+
+						"NOT be negative", normalizeSpace(amt.rawText()))
+				}
+			}
+		}
+		// DK-R-004: one document-level test over the header allowances and charges.
+		for _, st := range settlements {
+			charges := st.all("SpecifiedTradeAllowanceCharge")
+			zzz := false
+			reason := ""
+			for _, ac := range charges {
+				if peppolAnyChildValue(ac, "ReasonCode", "ZZZ") {
+					zzz = true
+				}
+				if reason == "" {
+					reason = ac.child("Reason").rawText()
+				}
+			}
+			if zzz && !peppolDanishTaxReasonOK(reason) {
+				e.add("DK-R-004", "For Danish domestic invoices a non-VAT tax (ReasonCode ZZZ) MUST state the "+
+					"four-digit tax category or a value containing an internal '#' in the reason (BT-97/BT-104)")
+			}
+		}
+		// DK-R-003, context ram:IncludedSupplyChainTradeLineItem.
+		for _, li := range nodesAt(root, "SupplyChainTradeTransaction", "IncludedSupplyChainTradeLineItem") {
+			peppolDanishClassification(e, nodesAt(li, "SpecifiedTradeProduct", "DesignatedProductClassification", "ClassCode"))
+		}
+		// DK-R-005..011, context ram:SpecifiedTradeSettlementPaymentMeans.
+		for _, st := range settlements {
+			// `../ram:PaymentReference` and `../ram:CreditorReferenceID` are the
+			// settlement's, which is the payment means' parent.
+			paymentRef := st.child("PaymentReference").rawText()
+			creditorRef := st.child("CreditorReferenceID").rawText()
+			for _, pm := range st.all("SpecifiedTradeSettlementPaymentMeans") {
+				code := pm.child("TypeCode").rawText()
+				if !peppolDanishPaymentMeans[code] {
+					e.addf("DK-R-005", "For Danish suppliers the Payment means type code (BT-81=%q) MUST be one of "+
+						"1, 10, 31, 42, 48, 49, 50, 58, 59, 93 or 97", normalizeSpace(code))
+				}
+				iban := pm.child("PayeePartyCreditorFinancialAccount", "IBANID").rawText()
+				switch code {
+				case "31", "42":
+					if normalizeSpace(iban) == "" ||
+						normalizeSpace(pm.child("PayeeSpecifiedCreditorFinancialInstitution", "BICID").rawText()) == "" {
+						e.add("DK-R-006", "For Danish suppliers a payment means of 31 or 42 requires both the Payment "+
+							"account identifier (BT-84) and the Payment service provider identifier (BT-86)")
+					}
+				case "49":
+					if normalizeSpace(creditorRef) == "" ||
+						normalizeSpace(pm.child("SpecifiedTradePaymentTerms", "DirectDebitMandateID").rawText()) == "" {
+						e.add("DK-R-007", "For Danish suppliers a payment means of 49 requires both the Mandate "+
+							"reference identifier (BT-89) and the Bank assigned creditor identifier (BT-90)")
+					}
+				case "50":
+					// substring(../ram:PaymentReference, 0, 4) is the first three characters:
+					// XPath keeps the positions p where 0 <= p < 4, and there is no position 0.
+					if !peppolDanishCardCode(paymentRef, "01#", "04#", "15#") || len([]rune(iban)) != 7 {
+						e.add("DK-R-008", "For Danish suppliers a payment means of 50 (Giro) requires a Payment "+
+							"reference (BT-83) beginning 01#, 04# or 15# and a seven character Giro account (BT-84)")
+					}
+					if peppolDanishCardCode(paymentRef, "04#", "15#") && len([]rune(paymentRef)) != 19 {
+						e.add("DK-R-009", "For Danish suppliers a Payment reference (BT-83) prefixed 04# or 15# MUST "+
+							"be nineteen characters — the prefix and a sixteen digit instruction identifier")
+					}
+				case "93":
+					if !peppolDanishCardCode(paymentRef, "71#", "73#", "75#") || len([]rune(iban)) != 8 {
+						e.add("DK-R-010", "For Danish suppliers a payment means of 93 (FIK) requires a Payment "+
+							"reference (BT-83) beginning 71#, 73# or 75# and an eight character account (BT-84)")
+					}
+					if peppolDanishCardCode(paymentRef, "71#", "75#") {
+						if n := len([]rune(paymentRef)); n != 18 && n != 19 {
+							e.add("DK-R-011", "For Danish suppliers a Payment reference (BT-83) prefixed 71# or 75# "+
+								"MUST be eighteen or nineteen characters")
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// peppolDanishClassification is DK-R-003 over one line's item classification codes:
+//
+//	not((…/@listID = 'TST') and not((…/@listVersionID = '19.05.01') or … ))
+//
+// Both halves are node-set comparisons, so the rule passes when *any* code carries
+// a permitted version, whichever code carried the TST list identifier.
+func peppolDanishClassification(e *peppolEval, codes []*ciiNode) {
+	tst, version := false, false
+	for _, c := range codes {
+		if c.attr("listID") == "TST" {
+			tst = true
+		}
+		if peppolDanishUNSPSC[c.attr("listVersionID")] {
+			version = true
+		}
+	}
+	if tst && !version {
+		e.add("DK-R-003", "If a Danish supplier provides an Item classification identifier (BT-158) it should use "+
+			"UNSPSC version 19.05.01 or 26.08.01")
+	}
+}
+
+// peppolDanishTaxReasonOK is DK-R-004's inner disjunction over the
+// allowance/charge reason (BT-97/BT-104):
+//
+//	(string-length(normalize-space(<reason>/text())) = 4 and number(<reason>) >= 0
+//	   and number(<reason>) <= 9999)
+//	or (<reason> and contains(<reason>, '#') and not(starts-with(<reason>, '#'))
+//	   and not(ends-with(<reason>, '#')))
+//
+// Either a four-character Danish tax category in 0000..9999, or a value carrying a
+// '#' that is neither its first nor its last character.
+//
+// The CII wording of the first arm is `number(<reason> <= 9999)` — a comparison
+// wrapped in number(), so it yields 1 or 0 and its effective boolean value is the
+// comparison's. The two bindings therefore agree despite the typo, and one function
+// serves both.
+func peppolDanishTaxReasonOK(reason string) bool {
+	trimmed := normalizeSpace(reason)
+	if len([]rune(trimmed)) == 4 {
+		if v, ok := parseAmount(trimmed); ok && v >= 0 && v <= 9999 {
+			return true
+		}
+	}
+	return reason != "" && strings.Contains(reason, "#") &&
+		!strings.HasPrefix(reason, "#") && !strings.HasSuffix(reason, "#")
+}
+
+// peppolDanishCardCode is `substring(<ref>, 1, 3) = '01#' or …` — the Danish
+// "kortartkode" prefix test DK-R-008..011 share. The CII binding writes it
+// substring(<ref>, 0, 4), which selects the same three characters.
+func peppolDanishCardCode(ref string, codes ...string) bool {
+	prefix := peppolSubstring(ref, 1, 3)
+	for _, c := range codes {
+		if prefix == c {
+			return true
+		}
+	}
+	return false
+}
+
+// peppolDanishGiroAccount is DK-R-008's `matches(<account>, '^[0-9]{7,8}$')`.
+func peppolDanishGiroAccount(account string, lo, hi int) bool {
+	n := len(account)
+	return n >= lo && n <= hi && peppolAllDigits(account)
+}
+
+// peppolAnyChildValue is a node-set comparison against a literal:
+// `<parent>/<name> = <value>`, which is true when any such child's string value
+// matches. The value is untrimmed, as the artefact's comparisons are.
+func peppolAnyChildValue(parent *ciiNode, name, value string) bool {
+	for _, c := range parent.orNil().all(name) {
+		if c.rawText() == value {
+			return true
+		}
+	}
+	return false
 }
