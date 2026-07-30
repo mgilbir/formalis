@@ -10,8 +10,9 @@ import (
 // This file evaluates the XRechnung (KoSIT) rules that are statements about a
 // document *tree* rather than about the syntax-neutral model: the payment-means
 // group rules (BR-DE-19/20/23/24/25/30/31), the settlement-discount text format
-// (BR-DE-18) and the EXTENSION sub-profile (BR-DEX-*). xrechnung.go holds the
-// entry point and the mandatory-term rules that the shared model already answers.
+// (BR-DE-18) and the two sub-profiles — EXTENSION (BR-DEX-*) and CVD
+// (BR-DE-CVD-*, BR-TMP-CVD-01). xrechnung.go holds the entry point and the
+// mandatory-term rules that the shared model already answers.
 //
 // Fidelity. Every rule below is transcribed from the assertion KoSIT publishes in
 // testdata/xrechnung/schematron/src/validation/schematron/ubl/XRechnung-UBL-validation.sch
@@ -42,7 +43,7 @@ import (
 // validateXRechnungTreeRules evaluates the tree-shaped half of the XRechnung
 // rule set against the document as parsed, dispatching on the binding the
 // invoice was expressed in.
-func validateXRechnungTreeRules(r *run, p *parsed, ext bool) []Violation {
+func validateXRechnungTreeRules(r *run, p *parsed, ext, cvd bool) []Violation {
 	var out []Violation
 	add := xrAdder(&out)
 	root := p.root
@@ -51,11 +52,17 @@ func validateXRechnungTreeRules(r *run, p *parsed, ext bool) []Violation {
 		if ext {
 			xrCIIExtensionRules(r, root, add)
 		}
+		if cvd {
+			xrCIICVDRules(r, root, add)
+		}
 		return out
 	}
 	xrUBLRules(r, root, add)
 	if ext {
 		xrUBLExtensionRules(r, root, add)
+	}
+	if cvd {
+		xrUBLCVDRules(r, root, add)
 	}
 	return out
 }
@@ -334,6 +341,87 @@ func xrUBLExtensionRules(r *run, root *ciiNode, add func(rule, msg string)) {
 	}
 }
 
+// xrUBLCVDRules evaluates the ubl-cvd-pattern: the Clean Vehicles Directive
+// sub-profile, which makes the contract and tender references mandatory and
+// requires at least one line to carry a vehicle category and a clean-vehicle
+// attribute.
+func xrUBLCVDRules(r *run, root *ciiNode, add func(rule, msg string)) {
+	if r.stopped() {
+		return
+	}
+	// context (/ubl:Invoice | /cn:CreditNote)[$isCVD]
+	if normalizeSpace(root.str("ContractDocumentReference", "ID")) == "" {
+		add("BR-DE-CVD-01", "The Contract reference (BT-12) shall be provided in a CVD invoice")
+	}
+	if normalizeSpace(root.str("OriginatorDocumentReference", "ID")) == "" {
+		add("BR-DE-CVD-02", "The Tender or lot reference (BT-17) shall be provided in a CVD invoice")
+	}
+	items := append(nodesAt(root, "InvoiceLine", "Item"), nodesAt(root, "CreditNoteLine", "Item")...)
+	// BR-DE-CVD-03: at least one item carries both a 'CVD' classification scheme
+	// and a 'cva' attribute name.
+	found := false
+	for _, item := range items {
+		if xrUBLHasCVDClass(item) && xrUBLHasCVA(item) {
+			found = true
+		}
+	}
+	if !found {
+		add("BR-DE-CVD-03", "A CVD invoice shall contain at least one Invoice line (BG-25) whose Item classification "+
+			"identifier (BT-158) uses the scheme 'CVD' and whose Item attribute name (BT-160) is 'cva'")
+	}
+	for _, item := range items {
+		if r.stopped() {
+			return
+		}
+		// BR-DE-CVD-06-a / -06-b: the two halves of "'CVD' and 'cva' come in pairs,
+		// exactly one of each per line".
+		if xrUBLHasCVDClass(item) && xrCountCVA(item) != 1 {
+			add("BR-DE-CVD-06-a", "An Invoice line whose Item classification identifier (BT-158) uses the scheme 'CVD' "+
+				"shall carry exactly one Item attribute name (BT-160) with the value 'cva'")
+		}
+		if xrUBLHasCVA(item) && xrCountUBLCVDClass(item) != 1 {
+			add("BR-DE-CVD-06-b", "An Invoice line carrying the Item attribute name (BT-160) 'cva' shall carry exactly "+
+				"one Item classification identifier (BT-158) with the scheme 'CVD'")
+		}
+		for _, code := range nodesAt(item, "CommodityClassification", "ItemClassificationCode") {
+			xrItemClassificationRules(code, add)
+		}
+		for _, prop := range item.all("AdditionalItemProperty") {
+			if !xrHasChildValue(prop, "Name", "cva") {
+				continue
+			}
+			if !xrCVACodes[normalizeSpace(prop.str("Value"))] {
+				add("BR-DE-CVD-05", fmt.Sprintf("The Item attribute value (BT-161) for the attribute 'cva' (%q) is not "+
+					"one of the permitted values", normalizeSpace(prop.str("Value"))))
+			}
+		}
+	}
+}
+
+func xrUBLHasCVDClass(item *ciiNode) bool { return xrCountUBLCVDClass(item) > 0 }
+
+func xrCountUBLCVDClass(item *ciiNode) int {
+	n := 0
+	for _, c := range nodesAt(item, "CommodityClassification", "ItemClassificationCode") {
+		if normalizeSpace(c.attr("listID")) == "CVD" {
+			n++
+		}
+	}
+	return n
+}
+
+func xrUBLHasCVA(item *ciiNode) bool { return xrCountCVA(item) > 0 }
+
+func xrCountCVA(item *ciiNode) int {
+	n := 0
+	for _, p := range item.all("AdditionalItemProperty") {
+		if xrHasChildValue(p, "Name", "cva") {
+			n++
+		}
+	}
+	return n
+}
+
 // ---------------------------------------------------------------------------
 // The CII binding
 // ---------------------------------------------------------------------------
@@ -473,9 +561,110 @@ func xrCIIExtensionRules(r *run, root *ciiNode, add func(rule, msg string)) {
 	}
 }
 
+// xrCIICVDRules evaluates the cii-cvd-pattern.
+func xrCIICVDRules(r *run, root *ciiNode, add func(rule, msg string)) {
+	if r.stopped() {
+		return
+	}
+	tx := root.child("SupplyChainTradeTransaction").orNil()
+	agree := tx.child("ApplicableHeaderTradeAgreement")
+	// context .../ram:ApplicableHeaderTradeAgreement, so an invoice with no
+	// agreement group is outside these two rules entirely.
+	if agree != nil {
+		if normalizeSpace(agree.str("ContractReferencedDocument", "IssuerAssignedID")) == "" {
+			add("BR-DE-CVD-01", "The Contract reference (BT-12) shall be provided in a CVD invoice")
+		}
+		tender := false
+		for _, d := range agree.all("AdditionalReferencedDocument") {
+			if xrHasChildValue(d, "TypeCode", "50") && normalizeSpace(d.str("IssuerAssignedID")) != "" {
+				tender = true
+			}
+		}
+		if !tender {
+			add("BR-DE-CVD-02", "The Tender or lot reference (BT-17) shall be provided in a CVD invoice")
+		}
+	}
+	products := nodesAt(tx, "IncludedSupplyChainTradeLineItem", "SpecifiedTradeProduct")
+	found := false
+	for _, prod := range products {
+		if xrCIIHasCVDClass(prod) && xrCIIHasCVA(prod) {
+			found = true
+		}
+	}
+	if !found {
+		add("BR-DE-CVD-03", "A CVD invoice shall contain at least one Invoice line (BG-25) whose Item classification "+
+			"identifier (BT-158) uses the scheme 'CVD' and whose Item attribute name (BT-160) is 'cva'")
+	}
+	for _, prod := range products {
+		if r.stopped() {
+			return
+		}
+		if xrCIIHasCVDClass(prod) && xrCountCIICVA(prod) != 1 {
+			add("BR-DE-CVD-06-a", "An Invoice line whose Item classification identifier (BT-158) uses the scheme 'CVD' "+
+				"shall carry exactly one Item attribute name (BT-160) with the value 'cva'")
+		}
+		if xrCIIHasCVA(prod) && xrCountCIICVDClass(prod) != 1 {
+			add("BR-DE-CVD-06-b", "An Invoice line carrying the Item attribute name (BT-160) 'cva' shall carry exactly "+
+				"one Item classification identifier (BT-158) with the scheme 'CVD'")
+		}
+		for _, code := range nodesAt(prod, "DesignatedProductClassification", "ClassCode") {
+			xrItemClassificationRules(code, add)
+		}
+		for _, ch := range prod.all("ApplicableProductCharacteristic") {
+			if !xrHasChildValue(ch, "Description", "cva") {
+				continue
+			}
+			if !xrCVACodes[normalizeSpace(ch.str("Value"))] {
+				add("BR-DE-CVD-05", fmt.Sprintf("The Item attribute value (BT-161) for the attribute 'cva' (%q) is not "+
+					"one of the permitted values", normalizeSpace(ch.str("Value"))))
+			}
+		}
+	}
+}
+
+func xrCIIHasCVDClass(prod *ciiNode) bool { return xrCountCIICVDClass(prod) > 0 }
+
+func xrCountCIICVDClass(prod *ciiNode) int {
+	n := 0
+	for _, c := range nodesAt(prod, "DesignatedProductClassification", "ClassCode") {
+		if normalizeSpace(c.attr("listID")) == "CVD" {
+			n++
+		}
+	}
+	return n
+}
+
+func xrCIIHasCVA(prod *ciiNode) bool { return xrCountCIICVA(prod) > 0 }
+
+func xrCountCIICVA(prod *ciiNode) int {
+	n := 0
+	for _, ch := range prod.all("ApplicableProductCharacteristic") {
+		if xrHasChildValue(ch, "Description", "cva") {
+			n++
+		}
+	}
+	return n
+}
+
 // ---------------------------------------------------------------------------
 // Shared rule bodies and code lists
 // ---------------------------------------------------------------------------
+
+// xrItemClassificationRules is BR-TMP-CVD-01 and BR-DE-CVD-04, which share a
+// context — the item classification code element — in both bindings.
+func xrItemClassificationRules(code *ciiNode, add func(rule, msg string)) {
+	list := normalizeSpace(code.attr("listID"))
+	// BR-TMP-CVD-01: the scheme is UNTDID 7143 with 'CVD' added.
+	if strings.Contains(list, " ") || !(list == "CVD" || en16931ItemClassCodes[list]) {
+		add("BR-TMP-CVD-01", fmt.Sprintf("Item classification identifier (BT-158) scheme %q is not in UNTDID 7143 "+
+			"extended with 'CVD'", list))
+	}
+	// BR-DE-CVD-04: not(@listID = 'CVD') or the value is a vehicle category.
+	if list == "CVD" && !xrCVDVehicleCategories[normalizeSpace(code.text)] {
+		add("BR-DE-CVD-04", fmt.Sprintf("Item classification identifier (BT-158) %q with the scheme 'CVD' is not one of "+
+			"the permitted vehicle categories", normalizeSpace(code.text)))
+	}
+}
 
 // xrCIISchemeRule applies one CII EXTENSION scheme rule whose context is every
 // element with a given name that has no ancestor among excluded.
@@ -637,3 +826,9 @@ func xrISO6523Ext(s string) bool { return xrDIGACodes[s] || en16931ICD[s] }
 func xrCEFEASExt(s string) bool {
 	return xrDIGACodes[s] || en16931EAS[s] || s == "0219" || s == "0220"
 }
+
+// xrCVDVehicleCategories is $CVD-VEHICLE-CATEGORY and xrCVACodes is $CVA-CODES.
+var (
+	xrCVDVehicleCategories = map[string]bool{"M1": true, "M2": true, "M3": true, "N1": true, "N2": true, "N3": true}
+	xrCVACodes             = map[string]bool{"clean": true, "zero-emission": true, "other": true}
+)

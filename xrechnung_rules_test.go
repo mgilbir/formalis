@@ -163,7 +163,7 @@ func runXRechnungCases(t *testing.T, cases []xrCase) {
 }
 
 // TestXRechnungBaselinesAreClean is the conforming verdict for the whole rule set
-// at once, in both bindings and both sub-profiles the fixtures reach.
+// at once, in both bindings and all three sub-profiles.
 //
 // It is what lets the table below hold only violating cases: a rule that fires on
 // one of these documents is over-firing, and there is no cheaper way to say that
@@ -177,6 +177,8 @@ func TestXRechnungBaselinesAreClean(t *testing.T) {
 		{"CII CIUS", minimalXRechnungCII},
 		{"UBL EXTENSION", asExtension(minimalXRechnungUBL)},
 		{"CII EXTENSION", asExtension(minimalXRechnungCII)},
+		{"UBL CVD", xrCVDUBL(t)},
+		{"CII CVD", xrCVDCII(t)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if v := findings(t, context.Background(), ValidateXRechnung, []byte(tc.doc)); len(v) != 0 {
@@ -186,6 +188,40 @@ func TestXRechnungBaselinesAreClean(t *testing.T) {
 	}
 }
 
+// xrCVDUBL and xrCVDCII are the CVD sub-profile's conforming fixtures: BT-24 for
+// the sub-profile, the contract reference (BT-12) and tender reference (BT-17) it
+// makes mandatory, and one line carrying a vehicle category and a clean-vehicle
+// attribute.
+func xrCVDUBL(t *testing.T) string {
+	t.Helper()
+	doc := asCVD(minimalXRechnungUBL)
+	doc = mutate(t, doc, xrUBLAtBody,
+		`<cac:ContractDocumentReference><cbc:ID>C-1</cbc:ID></cac:ContractDocumentReference>`+
+			`<cac:OriginatorDocumentReference><cbc:ID>T-1</cbc:ID></cac:OriginatorDocumentReference>`+xrUBLAtBody)
+	return xrWith(t, doc, xrUBLAtItem, xrUBLCVDItem("M1", "clean"))
+}
+
+// xrUBLCVDItem is the pair of item elements the CVD rules are about.
+func xrUBLCVDItem(category, cva string) string {
+	return `<cac:CommodityClassification><cbc:ItemClassificationCode listID="CVD">` + category +
+		`</cbc:ItemClassificationCode></cac:CommodityClassification>` +
+		`<cac:AdditionalItemProperty><cbc:Name>cva</cbc:Name><cbc:Value>` + cva + `</cbc:Value></cac:AdditionalItemProperty>`
+}
+
+func xrCVDCII(t *testing.T) string {
+	t.Helper()
+	doc := asCVD(minimalXRechnungCII)
+	doc = xrWith(t, doc, xrCIIAtAgree,
+		`<ContractReferencedDocument><IssuerAssignedID>C-1</IssuerAssignedID></ContractReferencedDocument>`+
+			`<AdditionalReferencedDocument><IssuerAssignedID>T-1</IssuerAssignedID><TypeCode>50</TypeCode></AdditionalReferencedDocument>`)
+	return xrWith(t, doc, xrCIIAtProduct, xrCIICVDItem("M1", "clean"))
+}
+
+func xrCIICVDItem(category, cva string) string {
+	return `<DesignatedProductClassification><ClassCode listID="CVD">` + category + `</ClassCode></DesignatedProductClassification>` +
+		`<ApplicableProductCharacteristic><Description>cva</Description><Value>` + cva + `</Value></ApplicableProductCharacteristic>`
+}
+
 // TestXRechnungRules is the violating half of the table, grouped as
 // xrechnung_rules.go groups the rule bodies.
 func TestXRechnungRules(t *testing.T) {
@@ -193,6 +229,7 @@ func TestXRechnungRules(t *testing.T) {
 	cases = append(cases, xrSkontoCases(t)...)
 	cases = append(cases, xrPaymentMeansCases(t)...)
 	cases = append(cases, xrExtensionCases(t)...)
+	cases = append(cases, xrCVDCases(t)...)
 	runXRechnungCases(t, cases)
 }
 
@@ -561,9 +598,68 @@ func xrExtensionCases(t *testing.T) []xrCase {
 	}
 }
 
+// xrCVDCases covers the seven BR-DE-CVD-* rules and BR-TMP-CVD-01.
+func xrCVDCases(t *testing.T) []xrCase {
+	ubl, cii := xrCVDUBL(t), xrCVDCII(t)
+	dropUBL := func(from string) string { return mutate(t, ubl, from, "") }
+	dropCII := func(from string) string { return mutate(t, cii, from, "") }
+	return []xrCase{
+		{"UBL CVD without a contract reference (BR-DE-CVD-01)",
+			dropUBL(`<cac:ContractDocumentReference><cbc:ID>C-1</cbc:ID></cac:ContractDocumentReference>`), "BR-DE-CVD-01", true, SeverityFatal},
+		{"UBL CVD without a tender reference (BR-DE-CVD-02)",
+			dropUBL(`<cac:OriginatorDocumentReference><cbc:ID>T-1</cbc:ID></cac:OriginatorDocumentReference>`), "BR-DE-CVD-02", true, SeverityFatal},
+		{"CII CVD without a contract reference (BR-DE-CVD-01)",
+			dropCII(`<ContractReferencedDocument><IssuerAssignedID>C-1</IssuerAssignedID></ContractReferencedDocument>`), "BR-DE-CVD-01", true, SeverityFatal},
+		{"CII CVD without a tender reference (BR-DE-CVD-02)",
+			dropCII(`<AdditionalReferencedDocument><IssuerAssignedID>T-1</IssuerAssignedID><TypeCode>50</TypeCode></AdditionalReferencedDocument>`),
+			"BR-DE-CVD-02", true, SeverityFatal},
+
+		// BR-DE-CVD-03: no line carries the pair at all. Removing the attribute takes
+		// BR-DE-CVD-06-a with it, which is why each case names its own rule.
+		{"UBL CVD with no clean-vehicle line (BR-DE-CVD-03)",
+			mutate(t, ubl, xrUBLCVDItem("M1", "clean"), ""), "BR-DE-CVD-03", true, SeverityFatal},
+		{"CII CVD with no clean-vehicle line (BR-DE-CVD-03)",
+			mutate(t, cii, xrCIICVDItem("M1", "clean"), ""), "BR-DE-CVD-03", true, SeverityFatal},
+
+		// BR-DE-CVD-04 and BR-TMP-CVD-01 share the classification element: the first
+		// is about its value, the second about its scheme.
+		{"UBL CVD with an unknown vehicle category (BR-DE-CVD-04)",
+			mutate(t, ubl, ">M1<", ">M9<"), "BR-DE-CVD-04", true, SeverityFatal},
+		{"CII CVD with an unknown vehicle category (BR-DE-CVD-04)",
+			mutate(t, cii, ">M1<", ">M9<"), "BR-DE-CVD-04", true, SeverityFatal},
+		{"UBL CVD with a classification scheme outside UNTDID 7143 (BR-TMP-CVD-01)",
+			mutate(t, ubl, `listID="CVD"`, `listID="ZZ9"`), "BR-TMP-CVD-01", true, SeverityFatal},
+		{"UBL CVD with a UNTDID 7143 classification scheme (BR-TMP-CVD-01)",
+			mutate(t, ubl, `listID="CVD"`, `listID="MP"`), "BR-TMP-CVD-01", false, 0},
+		{"CII CVD with a classification scheme outside UNTDID 7143 (BR-TMP-CVD-01)",
+			mutate(t, cii, `listID="CVD"`, `listID="ZZ9"`), "BR-TMP-CVD-01", true, SeverityFatal},
+
+		// BR-DE-CVD-05: the attribute value is one of three codes.
+		{"UBL CVD with an unknown clean-vehicle value (BR-DE-CVD-05)",
+			mutate(t, ubl, "<cbc:Value>clean</cbc:Value>", "<cbc:Value>dirty</cbc:Value>"), "BR-DE-CVD-05", true, SeverityFatal},
+		{"CII CVD with an unknown clean-vehicle value (BR-DE-CVD-05)",
+			mutate(t, cii, "<Value>clean</Value>", "<Value>dirty</Value>"), "BR-DE-CVD-05", true, SeverityFatal},
+
+		// BR-DE-CVD-06-a and -06-b are the two halves of "one 'CVD' scheme and one
+		// 'cva' attribute per line, or neither".
+		{"UBL CVD classification without the attribute (BR-DE-CVD-06-a)",
+			mutate(t, ubl, `<cac:AdditionalItemProperty><cbc:Name>cva</cbc:Name><cbc:Value>clean</cbc:Value></cac:AdditionalItemProperty>`, ""),
+			"BR-DE-CVD-06-a", true, SeverityFatal},
+		{"UBL CVD attribute without the classification (BR-DE-CVD-06-b)",
+			mutate(t, ubl, `<cac:CommodityClassification><cbc:ItemClassificationCode listID="CVD">M1</cbc:ItemClassificationCode></cac:CommodityClassification>`, ""),
+			"BR-DE-CVD-06-b", true, SeverityFatal},
+		{"CII CVD classification without the attribute (BR-DE-CVD-06-a)",
+			mutate(t, cii, `<ApplicableProductCharacteristic><Description>cva</Description><Value>clean</Value></ApplicableProductCharacteristic>`, ""),
+			"BR-DE-CVD-06-a", true, SeverityFatal},
+		{"CII CVD attribute without the classification (BR-DE-CVD-06-b)",
+			mutate(t, cii, `<DesignatedProductClassification><ClassCode listID="CVD">M1</ClassCode></DesignatedProductClassification>`, ""),
+			"BR-DE-CVD-06-b", true, SeverityFatal},
+	}
+}
+
 // TestEveryExtensionSuppressionHasAReplacement is the invariant that makes the
 // sub-profile overrides a swap and not a discount: for every EN 16931 rule
-// validateXRechnung stops applying to an EXTENSION document, KoSIT publishes the
+// validateXRechnung stops applying to a sub-profile document, KoSIT publishes the
 // rule that takes its place, and this package evaluates it.
 //
 // Without it, "the EXTENSION relaxes BR-CL-21" and "the EXTENSION is not checked
@@ -573,12 +669,14 @@ func xrExtensionCases(t *testing.T) []xrCase {
 // checked by neither rule and the coverage table said so in prose nothing read.
 func TestEveryExtensionSuppressionHasAReplacement(t *testing.T) {
 	published := kositExtensionRules(t)
-	for suppressed, replacement := range xrechnungSuppressedForExtension {
-		if !published[replacement] {
-			t.Errorf("%s is suppressed in favour of %s, which KoSIT's Schematron does not publish", suppressed, replacement)
-		}
-		if !xrEvaluated[replacement] {
-			t.Errorf("%s is suppressed in favour of %s, which this package does not evaluate", suppressed, replacement)
+	for _, swap := range []map[string]string{xrechnungSuppressedForExtension, xrechnungSuppressedForCVD} {
+		for suppressed, replacement := range swap {
+			if !published[replacement] {
+				t.Errorf("%s is suppressed in favour of %s, which KoSIT's Schematron does not publish", suppressed, replacement)
+			}
+			if !xrEvaluated[replacement] {
+				t.Errorf("%s is suppressed in favour of %s, which this package does not evaluate", suppressed, replacement)
+			}
 		}
 	}
 	// BR-CO-16 is the one suppression that is not in the map, because it is
@@ -602,6 +700,7 @@ func TestEveryExtensionSuppressionHasAReplacement(t *testing.T) {
 var xrEvaluated = map[string]bool{
 	"BR-DEX-01": true, "BR-DEX-04": true, "BR-DEX-05": true,
 	"BR-DEX-06": true, "BR-DEX-07": true, "BR-DEX-08": true, "BR-DEX-09": true,
+	"BR-TMP-CVD-01": true,
 }
 
 // kositExtensionRules and kositBindings read the vendored XRechnung Schematron.
