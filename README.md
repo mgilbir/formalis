@@ -430,6 +430,7 @@ make en16931-ubl                   # the EN 16931 UBL example invoices
 make en16931-genericode            # the official code lists (needs unzip)
 make en16931-syntax-rules          # regenerate the advisory binding table
 make cius-pt-rules                 # regenerate the CIUS-PT datatype table
+make cius-ro-rules                 # regenerate the CIUS-RO length/decimal table
 make test
 ```
 
@@ -437,11 +438,12 @@ Each target is stamped, so re-running it is a no-op rather than an error; the
 matching `clean-*` target removes the stamp and the data, and is how you force a
 re-fetch.
 
-Three targets go one step further and *regenerate* committed source. `make
+Four targets go one step further and *regenerate* committed source. `make
 en16931-codelists` rewrites the code-list tables from the genericode bundle,
 `make en16931-syntax-rules` rewrites the advisory syntax-binding table from the CEN
-Schematron, and `make cius-pt-rules` rewrites the CIUS-PT datatype table from
-AT/eSPap's. All three are deliberate acts and none is part of running the tests,
+Schematron, `make cius-pt-rules` rewrites the CIUS-PT datatype table from
+AT/eSPap's, and `make cius-ro-rules` rewrites the CIUS-RO length, decimal,
+date-format and occurrence table from ANAF's. All four are deliberate acts and none is part of running the tests,
 which is why fetching each oracle is its own target — and in both cases a test
 re-derives the same data from the same source on every run and fails if the
 committed table has drifted. The generators refuse to write anything they cannot

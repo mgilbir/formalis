@@ -26,6 +26,7 @@ URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
 	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron cius-pt-rules \
+	cius-ro-rules \
 	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles
 
 # Run the tests. Oracle-backed tests skip when their (gitignored) data is absent;
@@ -129,6 +130,19 @@ CIUS_PT_RULES_DIR := testdata/cius-pt-rules
 cius-pt-rules: cius-schematron
 	python3 $(CIUS_PT_RULES_DIR)/gen.py
 	go test -count=1 -run 'TestCIUSPTDatatype|TestEveryCIUSPTDatatype' .
+
+# ANAF's CIUS-RO length, decimal, date-format and occurrence tier, generated from
+# the vendored Schematron into cius_ro_rules_table.go by the same arrangement, and
+# with one gate the two targets above do not need: this generator also decides which
+# published assertions no Schematron processor can report, and writes them out with
+# the reason. gofmt runs because the emitter writes keyed struct literals whose
+# alignment gofmt owns; the drift test compares decoded fields and not bytes, so the
+# formatting is cosmetic, but a committed file `gofmt -l` complains about is not.
+CIUS_RO_RULES_DIR := testdata/cius-ro-rules
+cius-ro-rules: cius-schematron
+	python3 $(CIUS_RO_RULES_DIR)/gen.py
+	gofmt -w cius_ro_rules_table.go
+	go test -count=1 -run 'TestCIUSRO|TestEveryCIUSRO' .
 
 # National CIUS oracles: KoSIT XRechnung, OpenPEPPOL BIS 3, the Dutch NLCIUS
 # (SimplerInvoicing SI-UBL) instance test suite, and the national-format sample
