@@ -64,9 +64,20 @@
 // Conformant; every CIUS and national validator still names a fatal gap and so
 // reports false whatever the document. See Report, Coverage and RuleLimit.
 //
+// The EN 16931 core is also the one rule set that reports warnings. CEN flags
+// 1,168 of its two syntax bindings' assertions warning rather than fatal — the
+// UBL-CR-*, UBL-DT-*, CII-SR-* and CII-DT-* rules that hold a document down to the
+// EN 16931 core subset of UBL and CII — and this package evaluates all of them,
+// from tables generated out of CEN's own Schematron. They are information and not
+// a verdict: a document whose only findings are these is Conformant, and a caller
+// gating on Report.Fatal never sees them. Everything else this package reports is
+// fatal. See Severity and Report.Warnings.
+//
 // # Concurrency
 //
-// There is no global mutable state. The code-list tables and compiled regexps
+// There is no global mutable state. The code-list tables, the compiled regexps
+// and the generated syntax-binding tables (parsed once at load by
+// en16931_syntax_advisory.go)
 // are package-level values initialised once at load and only read afterwards,
 // and every per-call artefact — the run, the parsed tree, the semantic model —
 // is allocated inside the call. Every exported function may therefore be called
@@ -333,10 +344,12 @@ const (
 // being read as a clean invoice, so the default has to lean the other way.
 //
 // The default is not a substitute for deciding, and it is not left unchecked:
-// TestEveryEmittedFindingIsFatalToday sweeps the whole corpus and fails if any
-// finding's severity was not deliberate, and
-// TestEveryEmittedEN16931RuleIsFatalInCENsSchematron holds the one Source with
-// vendored ground truth to the flag CEN publishes.
+// TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings sweeps the whole corpus and
+// fails on any finding whose severity does not match the half of the package it
+// came from, and TestEveryEmittedEN16931RuleCarriesCENsFlag holds the one Source
+// with vendored ground truth to the flag CEN publishes — in both directions, so
+// an advisory rule stamped fatal by the zero value fails as loudly as a fatal one
+// stamped advisory.
 //
 // # This package's own rule identifiers
 //
@@ -353,8 +366,8 @@ const (
 // Fatoora refuses a ZATCA invoice with no UUID. That is precisely what fatal
 // means here. If one of these formats is later found to publish a genuinely
 // advisory expectation and this package implements it, it belongs at
-// SeverityWarning and TestEveryEmittedFindingIsFatalToday is where the change
-// gets recorded.
+// SeverityWarning and TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings is where
+// the change gets recorded.
 //
 // # SourceChecker findings
 //
@@ -420,14 +433,32 @@ func (v Violation) Error() string {
 // the CIUS-PT, CIUS-RO, NLCIUS, Peppol, SRBDT and UBL.BE validators — so
 // stamping one Source over a returned slice would misattribute the core half.
 //
-// The severity is written out rather than left to Severity's zero value. Every
-// rule this package implements is fatal — quoted from its authority's flag where
-// there is one, and decided here where the identifier was minted here (see
-// Severity) — which is a fact about the rule set and not a property of this
-// helper, so the site that would have to change when that stops being true is the
-// one that states it.
+// The severity is written out rather than left to Severity's zero value, and
+// there are two of these helpers rather than one taking a Severity argument for
+// the same reason: which severity a rule set emits at is a fact about the rule
+// set, so it belongs at the emission site and not in an argument a call could get
+// wrong by omission. Every rule this package implements was fatal until the
+// advisory halves of CEN's two syntax bindings arrived — quoted from the
+// authority's flag where there is one, and decided here where the identifier was
+// minted here (see Severity). Those bindings are the only warnings, and
+// advisoryAdder is the one helper that emits them.
 func adder(out *[]Violation, src Source) func(rule, msg string) {
 	return func(rule, msg string) {
 		*out = append(*out, Violation{Source: src, Rule: rule, Severity: SeverityFatal, Message: msg})
+	}
+}
+
+// advisoryAdder is adder for a rule its authority reports without rejecting the
+// document: CEN's flag="warning". Its findings are what Report.Warnings returns,
+// they are absent from Report.Fatal, and they do not move Report.Conformant.
+//
+// Only the generated EN 16931 syntax-binding tables use it — see
+// en16931_syntax_advisory.go, which is also where the argument for reporting them
+// at all is made. A national format's minted identifier does not belong here: no
+// authority has flagged those, so this package had to decide, and it decided they
+// are fatal for the reason Severity gives.
+func advisoryAdder(out *[]Violation, src Source) func(rule, msg string) {
+	return func(rule, msg string) {
+		*out = append(*out, Violation{Source: src, Rule: rule, Severity: SeverityWarning, Message: msg})
 	}
 }

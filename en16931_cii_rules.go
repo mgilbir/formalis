@@ -30,9 +30,10 @@ import (
 //
 // Severity. Of the 482 CII-SR-* assertions CEN publishes, 42 are flagged fatal
 // and 440 advisory; of the 101 CII-DT-* assertions, 70 are fatal and 31
-// advisory. Only the fatal ones are evaluated here, on the policy this package
-// has followed since NLCIUS's BR-NL-19..35: report what an authority makes fatal
-// and name its advisory families in Coverage.
+// advisory. Only the fatal ones are evaluated here. The advisory ones are
+// evaluated as warnings by en16931_syntax_advisory.go, from a table generated
+// from this same Schematron; the split between the two files is between the rules
+// that needed judgement to transcribe and the rules that needed only accuracy.
 //
 // Three of the seventy fatal datatype rules are not evaluated, and cannot be —
 // see ciiDatatypeIdentifierRules for CII-DT-010/011/012, which the Schematron's

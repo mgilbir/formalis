@@ -919,6 +919,14 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 		return out
 	}
 	out = append(out, validateCIISyntaxRules(r, p.root)...)
+	if r.stopped() {
+		return out
+	}
+	// And their advisory halves, generated from the same Schematron and reported
+	// as the warnings CEN flags them. They come last because they are the only
+	// findings here that no authority rejects a document for: a caller reading
+	// Violations in order meets everything blocking before anything advisory.
+	out = append(out, advisorySyntaxRules(r, p.root)...)
 
 	return out
 }

@@ -185,10 +185,12 @@ type Report struct {
 // of the UBL binding and of the CII binding is evaluated, bar the handful CEN's
 // own reference implementation cannot report — so a clean invoice validated
 // against the core alone, by Validate with ProfileEN16931 or by ValidateCIUS on a
-// document declaring no CIUS, is conformant. It is still not Complete: the
-// advisory binding rules are unevaluated, and that is the whole reason severity
-// is on the family. Every other Source still names a fatal gap, so Conformant is
-// still false for every document a CIUS or national validator is handed.
+// document declaring no CIUS, is conformant. It is still not Complete, and now
+// permanently: the seven rules left in Coverage(SourceEN16931) are ones CEN made
+// unevaluable, so no amount of work here can close them. Severity on the family
+// is what keeps that from costing a verdict. Every other Source still names a
+// fatal gap, so Conformant is still false for every document a CIUS or national
+// validator is handed.
 // Coverage says why for any Source, and Report.NotEvaluated says why for any
 // particular run. A caller who wants the older, weaker claim writes
 // len(r.Fatal()) == 0 and now has r.NotEvaluated sitting beside it, naming
@@ -361,19 +363,35 @@ var notEvaluated = map[Source][]RuleFamily{
 	// is true. All 54 fatal UBL-SR-* rules are evaluated, and so are the two
 	// fatal UBL-CR-* rules and the three fatal UBL-DT-* ones
 	// (en16931_ubl_rules.go, en16931_model.go); so are all 42 fatal CII-SR-* and
-	// 67 of the 70 fatal CII-DT-* rules (en16931_cii_rules.go). What is left
-	// below is advisory — rules CEN flags warning, which a reference validator
-	// reports and no authority rejects an invoice for — plus the two groups CEN
-	// flags fatal that no conforming validator can report.
+	// 67 of the 70 fatal CII-DT-* rules (en16931_cii_rules.go).
+	//
+	// The advisory halves of both bindings are evaluated too, as of the generated
+	// tables in en16931_syntax_advisory.go: 676 UBL-CR-*, 21 UBL-DT-*, 440
+	// CII-SR-* and 31 CII-DT-* rules, reported at SeverityWarning. They used to be
+	// four entries in this table. They are gone from it because they are checked,
+	// not because they were reclassified.
+	//
+	// What is left is three entries, and none of them is a rule this package chose
+	// not to implement. Two are rules CEN flags fatal and CEN's own reference
+	// implementation cannot report — four bound to the expression true(), three
+	// behind an earlier matching Schematron rule — and one is an assertion CEN
+	// flags warning in the UBL binding and fatal in the CII binding, evaluated in
+	// the binding that makes it fatal and deliberately not in the other, because
+	// CEN's UBL test is a string-length test that a correctly PCI-masked card
+	// number trips.
 	//
 	// So Report.Conformant is true for a clean document validated against this
-	// rule set, and Report.Complete is not. That is the outcome the severity
-	// column exists for: the question "did the checker have any hole an authority
-	// would reject this invoice over" is now answerable with yes for the core,
-	// while "did it see everything a reference validator would" is still no. The
-	// last thing standing between those two answers was C27 — two fatal UBL-CR-*
-	// rules that were unimplemented and were disclaimed inside an entry
-	// describing their family as advisory.
+	// rule set, and Report.Complete is still false — and now permanently, for
+	// every document, because what is left cannot be closed by anyone. That is
+	// worth reading twice: it is the shape Conformant was in before severity
+	// arrived, one level down. Complete answers "did this package see everything a
+	// reference validator would", and the honest answer for the core is now "yes,
+	// bar seven rules no reference validator sees either". The table cannot say
+	// that, because it has one axis and the question has two: whether a rule was
+	// evaluated, and whether it *could* be. Each of the three entries says which
+	// it is in Reason. Whether that deserves a third RuleFamily severity, or a
+	// field of its own, is a decision for the owner of this package and not for
+	// this table.
 	SourceEN16931: {
 		{
 			Rules:    "BR-51 other than in the CII binding",
@@ -388,30 +406,6 @@ var notEvaluated = map[Source][]RuleFamily{
 				"report them and the CEN unit-test suite ships no fragment for them. The gap is therefore recorded as advisory: what an authority " +
 				"cannot reject a document for cannot put a verdict in doubt. \"The reason code and the free-text reason indicate the same type of " +
 				"allowance\" is a judgement about prose in an arbitrary language, and any mechanical stand-in would accuse conforming invoices",
-		},
-		{
-			Rules:    "UBL-DT-* other than UBL-DT-01/06/07",
-			Severity: SeverityWarning,
-			Reason:   "the 21 advisory UBL datatype rules: attribute-level restrictions CEN flags warning",
-		},
-		{
-			Rules:    "UBL-CR-* other than UBL-CR-666 and UBL-CR-673",
-			Severity: SeverityWarning,
-			Reason: "the 676 advisory rules of the 678-rule UBL-CR-* family: UBL elements outside the EN 16931 core, which CEN flags warning to " +
-				"keep a document within the core subset. The two CEN flags fatal are evaluated (en16931_ubl_rules.go). They were the last fatal gap " +
-				"in this rule set, and they were found because they had been filed inside one entry describing the whole family as \"all but two " +
-				"advisory\" (C27) — a fatal hole accounted for in a line a reader would skim as advisory, which is why the table now splits a family " +
-				"whose members do not share one flag",
-		},
-		{
-			Rules:    "the 440 advisory CII-SR-* rules",
-			Severity: SeverityWarning,
-			Reason:   "of CEN's 482; all 42 fatal ones are evaluated",
-		},
-		{
-			Rules:    "the 31 advisory CII-DT-* rules",
-			Severity: SeverityWarning,
-			Reason:   "of CEN's 101",
 		},
 		{
 			Rules:    "CII-DT-010, CII-DT-011, CII-DT-012",
