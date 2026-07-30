@@ -22,6 +22,31 @@ import "context"
 // cius_pt_datatype.go — so Coverage(SourceCIUSPT) is now empty and SourceCIUSPT is
 // in completeSources.
 //
+// AT/eSPap's copy of CEN's Schematron is CEN's validation-1.1.0 of 2018-06-26 —
+// derived from the copy's own content in ciusCENCopyOmissions, not from a version
+// string — and it has not been refreshed since. Two consequences a caller can see,
+// and neither is a defect in the rules above:
+//
+//   - 78 CEN identifiers this package evaluates postdate that release. A CIUS is by
+//     construction a restriction of EN 16931, so a rule CEN has added since 2018
+//     applies to a Portuguese invoice whether or not AT's copy has caught up.
+//   - 114 CEN identifiers CEN had already published are absent from AT's rule set —
+//     the whole BR-CL-* code-list tier (AT's master Schematron includes no code-list
+//     file of any name), the BR-AE/G/IC/O/Z-* VAT category families, BR-CO-09..17
+//     and BR-DEC-*. None is suppressed here. AT replaced the arithmetic ones with
+//     DT-CIUS-PT-160..167 and 171..175, but with a ±1.00 € acceptance range where
+//     CEN's are exact identities, and TestATsArithmeticReplacementsAreWeakerThanCENs
+//     measures the corpus documents that difference is live on; for the code-list
+//     tier and the five deleted VAT families AT publishes nothing at all. A
+//     suppression whose replacement is weaker converts a divergence from AT's
+//     validator into a class of invoice nothing checks.
+//
+// So ValidateCIUSPT reports fatal EN 16931 findings on all 20 instances AT/eSPap
+// publishes as conformant. Every one of them is under an identifier AT's own rule set
+// does not contain — not one is this package over-reporting a rule AT publishes,
+// which is checked in both directions by
+// TestATInstancesFailOnlyIdentifiersATDoesNotPublish.
+//
 // AT/eSPap also ships a **copy of CEN's own Schematron**, not a reference to it, and
 // nine CEN conditions in that copy are AT's own rather than CEN's at any release.
 // Under ValidateCIUSPT those nine are evaluated as AT wrote them: eight because AT
@@ -93,6 +118,13 @@ import "context"
 // Complete() == true; what remains in the union is the seven rules CEN publishes
 // that no validator can evaluate, which carry Unevaluable and do not hold the
 // verdict down.
+//
+// "Clean" there means clean against the union, which is stricter than AT/eSPap's own
+// validator: AT vendored CEN's rules in 2018 and left 114 of them out, and this
+// package evaluates CEN's current set regardless. A caller who needs "what a
+// reference CIUS-PT validator would say" rather than "is this both EN 16931- and
+// CIUS-PT-conformant" should read Violation.Rule against ciusCENCopyOmissions. See
+// the file comment above.
 func ValidateCIUSPT(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceCIUSPT}, validateCIUSPT)
 }

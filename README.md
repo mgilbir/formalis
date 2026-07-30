@@ -489,17 +489,67 @@ inverts from an assertion into a report. Only `ValidateCIUSPT` applies them, onl
 to UBL documents, and only to those nine identifiers.
 
 A copy can also **remove** a rule, which is an axis the table above does not have: it
-compares the condition of each identifier a copy carries, and a commented-out
-assertion is not carried. One copy does. The G-account extension's
-`EN16931-syntax-modified.sch` comments out `UBL-CR-411`, `UBL-CR-453` and
-`UBL-CR-459` — "a UBL invoice should not include the PaymentMeans ID / the
-PaymentTerms PaymentMeansID / the PaymentTerms Amount" — because those three
-elements are precisely what the extension carries its payment split in. All three are
-advisory, and `ValidateNLCIUS` suppresses them for a document inside the extension
-and for no other. The set is derived by comparing the modified file against the
-unmodified one **in the same release directory**, which is what makes it a
+compares the condition of each identifier a copy carries, and an assertion that is not
+carried has no condition to compare. One copy removes a rule by commenting it out.
+The G-account extension's `EN16931-syntax-modified.sch` comments out `UBL-CR-411`,
+`UBL-CR-453` and `UBL-CR-459` — "a UBL invoice should not include the PaymentMeans
+ID / the PaymentTerms PaymentMeansID / the PaymentTerms Amount" — because those
+three elements are precisely what the extension carries its payment split in. All
+three are advisory, and `ValidateNLCIUS` suppresses them for a document inside the
+extension and for no other. The set is derived by comparing the modified file against
+the unmodified one **in the same release directory**, which is what makes it a
 measurement of SimplerInvoicing's edit rather than of the gap between two release
 dates.
+
+### What a copy leaves out
+
+A copy can also simply **not carry** a rule, and absence has the same two causes as a
+differing condition. The authority left the rule out, or CEN had not written it yet.
+Telling them apart needs the release the copy was taken from, and that is derived
+from the copy's own content: the CEN release that publishes every identifier the copy
+carries and whose assertions the copy reproduces most closely. Version strings are
+not consulted — a CIUS says "EN 16931" in its title whichever release it copied.
+
+| Authority | CEN release it vendored | Identifiers CEN had published and it left out | Identifiers CEN has added since |
+|---|---|---|---|
+| CIUS-PT 2.1.1 (UBL) | `validation-1.1.0` (2018-06-26) | **114** | 78 |
+| CIUS-RO 1.0.9 (UBL) | `validation-1.3.8` (2022-04-08) | 0 | 26 |
+| NLCIUS SI-UBL 2.0.3.2 | `validation-1.3.6` (2021-05-30) | 0 | 28 |
+| NLCIUS 1.0.3 (CII) | `validation-1.3.1` … `1.3.4` (2020-02-25) | 0 | 50 |
+
+A release range means CEN republished those files unchanged and the evidence cannot
+pin them any finer, which is said rather than rounded away. Three copies are not in
+the table and each says why in `ciusCENCopyOmissions`: SRBDT ships no copy of CEN's
+files at all, the G-account extension `<include>`s the whole of SI-UBL 2.0 so its
+omissions are that row's, and UBL.BE's merged file re-cases 671 of CEN's identifiers
+(`UBL-CR-001` as `ubl-CR-001`), which is a question about its identifier namespace
+rather than about absence.
+
+CIUS-PT is the only one that leaves a CEN rule out at all. What it leaves out is the
+whole `BR-CL-*` code-list tier — its master Schematron includes no code-list file of
+any name, where CIUS-RO's and both NLCIUS masters include CEN's — the `BR-AE-*`,
+`BR-G-*`, `BR-IC-*`, `BR-O-*` and `BR-Z-*` VAT category families, `BR-CO-09..17`,
+`BR-DEC-*`, and a handful more.
+
+**None of them is suppressed**, and that is a decision rather than an omission.
+Suppressing a rule the authority dropped is only right when the authority put
+something in its place: AT/eSPap did, for the arithmetic tier — `DT-CIUS-PT-160..167`
+answer the same questions as `BR-CO-10..17` — but with a **±1.00 € acceptance range**
+where CEN's are exact identities. Across this repository's corpus the Portuguese rule
+stays silent on 10 UBL documents where the CEN rule it displaced fires, so honouring
+it instead would leave those documents reported by nothing. For the code-list tier and
+the five VAT category families there is no Portuguese counterpart at all. Honouring
+the deletion would turn a divergence from AT's validator into a class of invoice
+nothing checks, and a false negative is worse than a false positive because nothing
+reports it.
+
+The consequence a caller should know: `ValidateCIUSPT` reports fatal EN 16931 findings
+on all 20 instances AT/eSPap publishes as conformant — 216 of them — and **every one
+is under an identifier AT's own rule set does not contain**. Not one is this package
+over-reporting a rule AT publishes. If you need "what AT's validator would say", filter
+the report against `Coverage` and the identifiers named in `ciusCENCopyOmissions`; if
+you need "is this invoice EN 16931-conformant *and* CIUS-PT-conformant", which is what
+`ValidateCIUSPT` answers, take it as it comes.
 
 ## Bounded work
 
