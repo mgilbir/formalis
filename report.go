@@ -541,25 +541,6 @@ var notEvaluated = map[Source][]RuleFamily{
 	// including every PEPPOL-COMMON-* identifier and the 101 country-specific rules
 	// below.
 
-	SourceXRechnung: {
-		{
-			Rules: "PEPPOL-EN16931-R001/R005/R008/R010/R020/R040..R044/R046/R053..R055/R061/R101/R110/R111/R120/R121/R130",
-			// The Reason names the whitelist rather than describing it, because this
-			// is the entry a reader is most likely to think is misfiled: these are
-			// Peppol identifiers, and they are an XRechnung gap because XRechnung
-			// ships them.
-			Severity: SeverityFatal,
-			Reason: "the Peppol BIS Billing 3.0 rules KoSIT merges into the released XRechnung Schematron. They are not in the sources this " +
-				"repository vendors under src/validation/schematron/ — the build copies them in from Peppol at release time, driven by the " +
-				"whitelist in src/xsl/rule-list.xml, which is the file that names these twenty-one and comments out the rest — so a survey " +
-				"of the source tree alone reads XRechnung as 57 rules when the artefact a German buyer validates against has 78. " +
-				"ValidateXRechnung evaluates none of them. Nine are implemented elsewhere in this package, under SourcePeppol and reached " +
-				"through ValidatePeppol, so a caller who needs them today can run both; but that is a workaround and not this rule set " +
-				"honouring its own imports. R061 matters most of the three ways it could: KoSIT withdrew its own BR-DE-29 in XRechnung 3.0 " +
-				"and put R061 in its place, so the mandate reference BG-19 requires is checked by nothing here",
-		},
-	},
-
 	// Peppol BIS Billing 3.0. All 59 PEPPOL-COMMON-* and PEPPOL-EN16931-*
 	// identifiers the vendored Schematron publishes are evaluated — 58 in the UBL
 	// binding, 44 in the CII one, each in the binding that publishes it.
