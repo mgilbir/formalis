@@ -14,8 +14,8 @@ import (
 // validates CII (ZUGFeRD/XRechnung-CII) and UBL (XRechnung-UBL) alike.
 //
 // xrechnung_rules.go holds the rules whose subject is a position in the document
-// tree — the payment-means groups, the settlement-discount text and the EXTENSION
-// sub-profile — and argues why they are per-syntax.
+// tree — the payment-means groups, the settlement-discount text and both
+// sub-profiles — and argues why they are per-syntax.
 //
 // Not vendored: the KoSIT Schematron and instance test suite are cloned by
 // `make cius-oracles` and used only as the FP=0 oracle.
@@ -43,6 +43,12 @@ var xrechnungSuppressedForExtension = map[string]string{
 	"BR-CL-25": "BR-DEX-07", // electronic address scheme
 	"BR-CL-26": "BR-DEX-08", // deliver-to location identifier scheme
 	"BR-CL-24": "BR-DEX-01", // attachment MIME code, with application/xml added
+}
+
+// xrechnungSuppressedForCVD is the same swap for the CVD sub-profile, which adds
+// the scheme identifier 'CVD' to the item classification code list.
+var xrechnungSuppressedForCVD = map[string]string{
+	"BR-CL-13": "BR-TMP-CVD-01",
 }
 
 // The XRechnung specification identifiers, from common.sch:
@@ -148,9 +154,7 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 		switch {
 		case ext && xrechnungSuppressedForExtension[v.Rule] != "":
 			continue
-		// The CVD sub-profile adds the scheme identifier 'CVD' to the item
-		// classification code list; re-checked below until BR-TMP-CVD-01 arrives.
-		case cvd && v.Rule == "BR-CL-13":
+		case cvd && xrechnungSuppressedForCVD[v.Rule] != "":
 			continue
 		// BR-DEX-09 replaces the amount-due formula, and KoSIT publishes it for the
 		// UBL binding only. A CII EXTENSION invoice keeps CEN's BR-CO-16.
@@ -159,13 +163,8 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 		}
 		out = append(out, v)
 	}
-	for _, li := range inv.lines {
-		if l := li.classListID; l != "" && !en16931ItemClassCodes[l] && !(cvd && l == "CVD") {
-			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-13", Severity: SeverityFatal, Message: fmt.Sprintf("Item classification scheme (%q) is not permitted", l)})
-		}
-	}
 	out = append(out, validateXRechnungRules(inv, ext, cvd)...)
-	out = append(out, validateXRechnungTreeRules(r, p, ext)...)
+	out = append(out, validateXRechnungTreeRules(r, p, ext, cvd)...)
 	return out
 }
 
