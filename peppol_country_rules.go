@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"math"
+	"regexp"
 	"strings"
 )
 
@@ -104,6 +105,30 @@ var peppolCountryRules = map[string]peppolRule{
 	"NL-R-007": {peppolUBL | peppolCII, SeverityFatal},
 	"NL-R-008": {peppolUBL | peppolCII, SeverityFatal},
 	"NL-R-009": {peppolUBL | peppolCII, SeverityFatal},
+
+	// Greece — UBL only. 17 fatal, 2 advisory, and the only family whose
+	// identifiers do not all fit XX-R-NNN: GR-R-001 and GR-R-004 are split into
+	// numbered assertions, GR-R-008 into -2 and -3 with its first assertion
+	// published as GR-S-008-1, and GR-S-011 has no GR-R-011 counterpart.
+	"GR-R-001-1": {peppolUBL, SeverityFatal},
+	"GR-R-001-2": {peppolUBL, SeverityFatal},
+	"GR-R-001-3": {peppolUBL, SeverityFatal},
+	"GR-R-001-4": {peppolUBL, SeverityFatal},
+	"GR-R-001-5": {peppolUBL, SeverityFatal},
+	"GR-R-001-6": {peppolUBL, SeverityFatal},
+	"GR-R-001-7": {peppolUBL, SeverityFatal},
+	"GR-R-002":   {peppolUBL, SeverityFatal},
+	"GR-R-003":   {peppolUBL, SeverityFatal},
+	"GR-R-004-1": {peppolUBL, SeverityFatal},
+	"GR-R-004-2": {peppolUBL, SeverityFatal},
+	"GR-R-005":   {peppolUBL, SeverityFatal},
+	"GR-R-006":   {peppolUBL, SeverityFatal},
+	"GR-R-008-2": {peppolUBL, SeverityFatal},
+	"GR-R-008-3": {peppolUBL, SeverityFatal},
+	"GR-R-009":   {peppolUBL, SeverityFatal},
+	"GR-R-010":   {peppolUBL, SeverityFatal},
+	"GR-S-008-1": {peppolUBL, SeverityWarning},
+	"GR-S-011":   {peppolUBL, SeverityWarning},
 
 	// Italy — 4 fatal, both bindings.
 	"IT-R-001": {peppolUBL | peppolCII, SeverityFatal},
@@ -287,6 +312,10 @@ func peppolCountryUBLRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolSwedishUBLRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolGreekUBLRules(e, root)
 }
 
 // peppolCountryCIIRules evaluates the country-specific rules of
@@ -1468,4 +1497,333 @@ func peppolSwedishRate(e *peppolEval, rate *ciiNode) {
 func peppolIsXPathNumber(v string) bool {
 	value, ok := parseAmount(v)
 	return ok && !math.IsNaN(value)
+}
+
+// ---------------------------------------------------------------------------
+// Greece
+// ---------------------------------------------------------------------------
+
+// peppolGreekDocumentTypes is $greekDocumentType, `tokenize('1.1 1.6 2.1 2.4 5.1
+// 5.2 ', '\s')`. The trailing space makes the last token the empty string, which
+// GR-R-001-5 cannot reach because it also requires a non-empty fourth segment.
+var peppolGreekDocumentTypes = map[string]bool{
+	"1.1": true, "1.6": true, "2.1": true, "2.4": true, "5.1": true, "5.2": true, "": true,
+}
+
+// peppolGreekDateRE is $dateRegExp, transcribed from the artefact's own string:
+//
+//	'^(0?[1-9]|[12][0-9]|3[01])[-\\/ ]?(0?[1-9]|1[0-2])[-\\/ ]?(19|20)[0-9]{2}'
+//
+// The separator class is four characters — hyphen, backslash, solidus, space —
+// because an XPath string literal does no escape processing, so `\\` inside it is
+// a regular-expression escaped backslash rather than an escaped solidus. The
+// pattern has no closing anchor, and matches() is a substring search anyway.
+var peppolGreekDateRE = regexp.MustCompile(`^(0?[1-9]|[12][0-9]|3[01])[-\\/ ]?(0?[1-9]|1[0-2])[-\\/ ]?(19|20)[0-9]{2}`)
+
+// peppolGreekMARK and peppolGreekInvoiceURL are the two document descriptions the
+// Greek rules key on: the MARK number the Greek tax authority assigns, and the
+// invoice's published URL.
+const (
+	peppolGreekMARK       = "##M.AR.K##"
+	peppolGreekInvoiceURL = "##INVOICE|URL##"
+)
+
+// peppolGreekUBLRules is the Greek rule set, which the CII binding does not
+// publish. Nineteen identifiers across two patterns and ten contexts.
+//
+// The gates are $isGreekSender and $isGreekSenderandReceiver, both built on
+// $supplierCountry/$customerCountry — so on the VAT prefix before the postal
+// address — and both admit two codes: Greece's VAT prefix is EL and its ISO 3166
+// country code is GR, and OpenPEPPOL accepts either. Two rules add a *third*
+// gate on top: GR-R-004-1, GR-S-008-1, GR-R-008-2 and GR-R-004-2 require the
+// seller's postal country to be literally 'GR', and GR-R-009 is gated on
+// $accountingSupplierCountry, which is $supplierCountry without its tax-
+// representative step. Four different country tests in one family.
+func peppolGreekUBLRules(e *peppolEval, root *ciiNode) {
+	greek := func(c string) bool { return c == "GR" || c == "EL" }
+	if !greek(peppolUBLSupplierCountry(root)) {
+		return
+	}
+	bothGreek := greek(peppolUBLCustomerCountry(root))
+	// $accountingSupplierCountry: the seller's VAT prefix, then its postal country,
+	// with no tax-representative step. GR-R-009 is the only rule gated on it.
+	accountingSupplier := peppolCountryOf(
+		peppolUBLVATPrefix(root.child("AccountingSupplierParty", "Party")),
+		peppolUBLPostalCountry(root, "AccountingSupplierParty"),
+	)
+	sellerPostalGR := peppolAnyChildValue(
+		root.child("AccountingSupplierParty", "Party", "PostalAddress", "Country"), "IdentificationCode", "GR")
+
+	peppolGreekInvoiceID(e, root)
+
+	for _, party := range nodesAt(root, "AccountingSupplierParty", "Party") {
+		// GR-R-002: string-length(./cac:PartyName/cbc:Name) > 0
+		if len(party.child("PartyName", "Name").rawText()) == 0 {
+			e.add("GR-R-002", "Greek suppliers MUST provide the Seller name as registered (BT-27)")
+		}
+		// GR-S-011: exactly one VAT company identifier, prefixed EL, whose remainder
+		// passes the Greek TIN check.
+		var vatIDs []string
+		for _, ts := range party.all("PartyTaxScheme") {
+			if normalizeSpace(ts.child("TaxScheme", "ID").rawText()) != "VAT" {
+				continue
+			}
+			for _, id := range ts.all("CompanyID") {
+				vatIDs = append(vatIDs, id.rawText())
+			}
+		}
+		if len(vatIDs) != 1 || peppolSubstring(vatIDs[0], 1, 2) != "EL" ||
+			!peppolGreekTIN(peppolSubstring(vatIDs[0], 3)) {
+			e.add("GR-S-011", "Greek suppliers should provide one Seller VAT identifier (BT-31) prefixed EL and "+
+				"carrying a valid Greek TIN")
+		}
+		// GR-R-003, context …/cac:PartyTaxScheme[normalize-space(cac:TaxScheme/cbc:ID)
+		// = 'VAT']/cbc:CompanyID: substring(., 1, 2) = 'EL' and u:TinVerification(substring(., 3))
+		//
+		// GR-S-011 is the same test as one warning over the party; this is one fatal
+		// finding per identifier. Both are published, so both are reported.
+		for _, ts := range party.all("PartyTaxScheme") {
+			if normalizeSpace(ts.child("TaxScheme", "ID").rawText()) != "VAT" {
+				continue
+			}
+			for _, id := range ts.all("CompanyID") {
+				if peppolSubstring(id.rawText(), 1, 2) != "EL" || !peppolGreekTIN(peppolSubstring(id.rawText(), 3)) {
+					e.addf("GR-R-003", "A Greek supplier's VAT identifier (BT-31=%q) MUST begin EL and carry a valid "+
+						"Greek TIN", normalizeSpace(id.rawText()))
+				}
+			}
+		}
+	}
+	// GR-R-009, context cac:AccountingSupplierParty/cac:Party[$accountingSupplierCountry
+	// = 'GR' or 'EL']/cbc:EndpointID: ./@schemeID = '9933' and u:TinVerification(.)
+	if greek(accountingSupplier) {
+		for _, party := range nodesAt(root, "AccountingSupplierParty", "Party") {
+			for _, ep := range party.all("EndpointID") {
+				if ep.attr("schemeID") != "9933" || !peppolGreekTIN(ep.rawText()) {
+					e.addf("GR-R-009", "A Greek supplier's electronic address (BT-34=%q) MUST be a valid Greek TIN "+
+						"declared under scheme 9933", normalizeSpace(ep.rawText()))
+				}
+			}
+		}
+	}
+	// GR-R-005, context cac:AccountingCustomerParty[$isGreekSender]/cac:Party — gated
+	// on the *sender* being Greek, not the customer.
+	for _, party := range nodesAt(root, "AccountingCustomerParty", "Party") {
+		if len(party.child("PartyName", "Name").rawText()) == 0 {
+			e.add("GR-R-005", "Greek suppliers MUST provide the Buyer name (BT-44)")
+		}
+	}
+	// GR-R-004-1 / GR-S-008-1 / GR-R-008-2, context the document element, gated on
+	// $isGreekSender *and* the seller's postal country being literally 'GR'.
+	if sellerPostalGR {
+		mark := peppolGreekDocRefs(root, peppolGreekMARK)
+		urls := peppolGreekDocRefs(root, peppolGreekInvoiceURL)
+		if len(mark) != 1 {
+			e.addf("GR-R-004-1", "A Greek supplier's invoice MUST carry exactly one MARK number as an Additional "+
+				"supporting document described %q; found %d", peppolGreekMARK, len(mark))
+		}
+		if len(urls) != 1 {
+			e.addf("GR-S-008-1", "A Greek supplier's invoice should carry exactly one invoice URL described %q; "+
+				"found %d", peppolGreekInvoiceURL, len(urls))
+		}
+		// GR-R-008-2 is the weaker half of the same count — "no more than one" —
+		// published fatal beside the advisory "exactly one".
+		if len(urls) > 1 {
+			e.addf("GR-R-008-2", "A Greek supplier's invoice MUST NOT carry more than one invoice URL described "+
+				"%q; found %d", peppolGreekInvoiceURL, len(urls))
+		}
+		// GR-R-004-2, context that document reference's cbc:ID:
+		//   matches(., '^[1-9]([0-9]*)')
+		for _, ref := range mark {
+			for _, id := range ref.all("ID") {
+				if !peppolGreekPositiveInt(id.rawText()) {
+					e.addf("GR-R-004-2", "A Greek MARK number (%q) MUST be a positive integer",
+						normalizeSpace(id.rawText()))
+				}
+			}
+		}
+	}
+	// GR-R-008-3, context cac:AdditionalDocumentReference[$isGreekSender and
+	// cbc:DocumentDescription = '##INVOICE|URL##'] — this one is *not* gated on the
+	// postal country, unlike the three above.
+	for _, ref := range peppolGreekDocRefs(root, peppolGreekInvoiceURL) {
+		if normalizeSpace(ref.child("Attachment", "ExternalReference", "URI").rawText()) == "" {
+			e.add("GR-R-008-3", "A Greek supplier's invoice URL reference MUST carry the external reference URI "+
+				"(BT-124)")
+		}
+	}
+	if !bothGreek {
+		return
+	}
+	// GR-R-006 / GR-R-010, the second Greek pattern: both parties Greek.
+	for _, party := range nodesAt(root, "AccountingCustomerParty", "Party") {
+		var vatIDs []string
+		for _, ts := range party.all("PartyTaxScheme") {
+			if normalizeSpace(ts.child("TaxScheme", "ID").rawText()) != "VAT" {
+				continue
+			}
+			for _, id := range ts.all("CompanyID") {
+				vatIDs = append(vatIDs, id.rawText())
+			}
+		}
+		if len(vatIDs) != 1 || peppolSubstring(vatIDs[0], 1, 2) != "EL" ||
+			!peppolGreekTIN(peppolSubstring(vatIDs[0], 3)) {
+			e.add("GR-R-006", "For a Greek buyer, Greek suppliers MUST provide one Buyer VAT identifier (BT-48) "+
+				"prefixed EL and carrying a valid Greek TIN")
+		}
+		for _, ep := range party.all("EndpointID") {
+			if ep.attr("schemeID") != "9933" || !peppolGreekTIN(ep.rawText()) {
+				e.addf("GR-R-010", "A Greek buyer's electronic address (BT-49=%q) MUST be a valid Greek TIN declared "+
+					"under scheme 9933", normalizeSpace(ep.rawText()))
+			}
+		}
+	}
+}
+
+// peppolGreekInvoiceID is GR-R-001-1..7, the seven assertions of the rule whose
+// context is the document's cbc:ID.
+//
+// The Greek invoice number is a six-field composite separated by '|' — the
+// supplier's TIN, the issue date, a serial number, a document type, and two more
+// fields — and each assertion checks one field. They are seven independent
+// assertions of one Schematron rule, so a malformed identifier trips several at
+// once, which is what OpenPEPPOL's own fixture for a bare "06182859" declares.
+func peppolGreekInvoiceID(e *peppolEval, root *ciiNode) {
+	issueDate := peppolTokenize(root.child("IssueDate").rawText(), "-")
+	for _, idNode := range root.all("ID") {
+		segments := peppolTokenize(idNode.rawText(), "|")
+		at := func(i int) string {
+			if i-1 < len(segments) {
+				return segments[i-1]
+			}
+			return ""
+		}
+		// GR-R-001-1: count($IdSegments) = 6
+		if len(segments) != 6 {
+			e.addf("GR-R-001-1", "A Greek supplier's Invoice number (BT-1=%q) MUST consist of six '|'-separated "+
+				"segments; found %d", normalizeSpace(idNode.rawText()), len(segments))
+		}
+		// GR-R-001-2: nine characters, a valid TIN, and equal to the seller's or the
+		// tax representative's VAT identifier with its EL prefix removed.
+		tin := at(1)
+		sellerTIN := peppolSubstring(peppolUBLVATCompanyID(root.child("AccountingSupplierParty", "Party")), 3, 9)
+		repTIN := peppolSubstring(peppolUBLVATCompanyID(root.child("TaxRepresentativeParty")), 3, 9)
+		if len([]rune(normalizeSpace(tin))) != 9 || !peppolGreekTIN(tin) ||
+			(tin != sellerTIN && tin != repTIN) {
+			e.addf("GR-R-001-2", "The first segment of a Greek Invoice number (%q) MUST be a valid TIN matching the "+
+				"Seller's or the tax representative's VAT identifier", tin)
+		}
+		// GR-R-001-3: a date matching $dateRegExp whose three '/'-separated components
+		// are the issue date's reversed.
+		idDate := peppolTokenize(at(2), "/")
+		dateAt := func(i int) string {
+			if i-1 < len(idDate) {
+				return idDate[i-1]
+			}
+			return ""
+		}
+		issueAt := func(i int) string {
+			if i-1 < len(issueDate) {
+				return issueDate[i-1]
+			}
+			return ""
+		}
+		if len(normalizeSpace(at(2))) == 0 || !peppolGreekDateRE.MatchString(at(2)) ||
+			dateAt(1) != issueAt(3) || dateAt(2) != issueAt(2) || dateAt(3) != issueAt(1) {
+			e.addf("GR-R-001-3", "The second segment of a Greek Invoice number (%q) MUST be a date equal to the "+
+				"Invoice issue date (BT-2)", at(2))
+		}
+		// GR-R-001-4: a non-negative integer.
+		//
+		// The assertion's last conjunct is xs:integer($IdSegments[3]) >= 0, which raises
+		// a dynamic error rather than reporting anything for a value that is numeric but
+		// not an integer — so a fractional third segment is reported by nothing, here as
+		// in a reference validation.
+		serial := at(3)
+		switch {
+		case len(normalizeSpace(serial)) == 0 || !peppolIsXPathNumber(serial):
+			e.addf("GR-R-001-4", "The third segment of a Greek Invoice number (%q) MUST be a positive integer", serial)
+		default:
+			if v, ok := parseAmount(serial); ok && v == math.Trunc(v) && v < 0 {
+				e.addf("GR-R-001-4", "The third segment of a Greek Invoice number (%q) MUST be a positive integer", serial)
+			}
+		}
+		// GR-R-001-5: one of the Greek document types.
+		if len(normalizeSpace(at(4))) == 0 || !peppolGreekDocumentTypes[at(4)] {
+			e.addf("GR-R-001-5", "The fourth segment of a Greek Invoice number (%q) MUST be a Greek document type "+
+				"(1.1, 1.6, 2.1, 2.4, 5.1 or 5.2)", at(4))
+		}
+		// GR-R-001-6 / GR-R-001-7: the fifth and sixth segments are non-empty. The test
+		// is string-length() with no normalization, so a segment of one space passes.
+		if len(at(5)) == 0 {
+			e.add("GR-R-001-6", "The fifth segment of a Greek Invoice number MUST NOT be empty")
+		}
+		if len(at(6)) == 0 {
+			e.add("GR-R-001-7", "The sixth segment of a Greek Invoice number MUST NOT be empty")
+		}
+	}
+}
+
+// peppolGreekDocRefs is `cac:AdditionalDocumentReference[cbc:DocumentDescription =
+// $description]` — the document references carrying one of the two Greek marker
+// descriptions. The comparison is a node-set one against the untrimmed value.
+func peppolGreekDocRefs(root *ciiNode, description string) []*ciiNode {
+	var out []*ciiNode
+	for _, ref := range root.all("AdditionalDocumentReference") {
+		if peppolAnyChildValue(ref, "DocumentDescription", description) {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// peppolTokenize is fn:tokenize over a single-character separator, with the one
+// behaviour Go's strings.Split does not share: a zero-length input yields the empty
+// sequence rather than one empty token. GR-R-001-1 counts the result, so the
+// difference decides whether a document with no invoice number at all reports "found
+// 0" or "found 1".
+func peppolTokenize(s, sep string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, sep)
+}
+
+// peppolGreekPositiveInt is GR-R-004-2's `matches(., '^[1-9]([0-9]*)')` — an
+// unanchored tail, so only the first character is constrained.
+func peppolGreekPositiveInt(v string) bool {
+	r := []rune(v)
+	return len(r) > 0 && r[0] >= '1' && r[0] <= '9'
+}
+
+// peppolGreekTIN is u:TinVerification, the Greek taxpayer identification number
+// check declared in PEPPOL-EN16931-UBL.sch:
+//
+//	$checksum = d8*2 + d7*4 + d6*8 + d5*16 + d4*32 + d3*64 + d2*128 + d1*256
+//	($checksum mod 11) mod 10 = d9
+//
+// The function reads the first nine codepoints and ignores the rest, so a longer
+// value whose first nine pass is accepted — which is the artefact's behaviour and
+// the reason GR-S-011 strips the 'EL' prefix before calling it rather than after.
+// A non-digit anywhere in those nine makes number() return NaN, and NaN equals
+// nothing, so the check fails.
+func peppolGreekTIN(v string) bool {
+	r := []rune(v)
+	if len(r) < 9 {
+		return false
+	}
+	weights := [8]int{256, 128, 64, 32, 16, 8, 4, 2}
+	sum := 0
+	for i := 0; i < 8; i++ {
+		d := int(r[i]) - '0'
+		if d < 0 || d > 9 {
+			return false
+		}
+		sum += d * weights[i]
+	}
+	check := int(r[8]) - '0'
+	if check < 0 || check > 9 {
+		return false
+	}
+	return (sum%11)%10 == check
 }

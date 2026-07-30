@@ -682,6 +682,64 @@ func mustReplace(t *testing.T, doc, from, to string) string {
 	return out
 }
 
+// TestPeppolNationalExamplesCarryNoFatalCountryFinding validates the invoices
+// OpenPEPPOL publishes as conforming examples of its own country-specific rule
+// sets, under rules/national-examples.
+//
+// It is the false-positive oracle for the country rules, and it is a different
+// oracle from the per-rule test sets: those exercise one rule at a time on a
+// three-element fragment, and these are whole invoices an authority holds up as
+// correct. The assertion is "no fatal country finding" rather than "no finding",
+// for the same reason the XRechnung corpus assertion was loosened when the advisory
+// bindings arrived — GR-S-008-1 is a warning that a Greek invoice should carry a
+// published URL, and OpenPEPPOL's own correct example does not carry one, which is
+// presumably why the rule is advisory.
+//
+// The Greek pair is why this test is worth its lines. GR-base-example-TaxRepresentative
+// has a seller with a Swedish postal address and no VAT identifier of its own, so
+// $supplierCountry resolves through the tax representative to EL and
+// $accountingSupplierCountry resolves through the address to SE. The document is
+// Greek for eighteen of the nineteen Greek rules and not Greek for GR-R-009, whose
+// gate is the other variable — and its seller's electronic address is a GLN under
+// scheme 0088, which GR-R-009 would reject. Conflating the two variables reports a
+// document OpenPEPPOL publishes as correct.
+func TestPeppolNationalExamplesCarryNoFatalCountryFinding(t *testing.T) {
+	root := filepath.Join("testdata", "peppol", "repo", "rules", "national-examples")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("OpenPEPPOL national examples not present (make cius-oracles)")
+	}
+	ctx := context.Background()
+	files, warnings := 0, 0
+	err := filepath.Walk(root, func(p string, fi os.FileInfo, e error) error {
+		if e != nil || fi.IsDir() || !strings.HasSuffix(strings.ToLower(p), ".xml") {
+			return e
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			t.Errorf("%s: %v", p, err)
+			return nil
+		}
+		files++
+		for _, v := range mustReport(t, ctx, ValidatePeppol, data).Violations {
+			if _, country := peppolCountryRules[v.Rule]; !country {
+				continue
+			}
+			if v.Severity == SeverityFatal {
+				t.Errorf("%s: OpenPEPPOL publishes this as a conforming example of its %s rules and %s is reported "+
+					"fatal: %s", filepath.Base(p), v.Rule[:2], v.Rule, v.Message)
+				continue
+			}
+			warnings++
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	atLeast(t, "OpenPEPPOL national examples", files, minPeppolNationalExamples)
+	t.Logf("OpenPEPPOL national examples: %d documents, no fatal country finding (%d advisory)", files, warnings)
+}
+
 // peppolCountryExtraCases are the country rules OpenPEPPOL ships no test set for,
 // and their conforming counterparts.
 //
