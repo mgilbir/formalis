@@ -1,6 +1,9 @@
 package formalis
 
-import "strings"
+import (
+	"math"
+	"strings"
+)
 
 // The country-specific half of the OpenPEPPOL rule set: the 101 identifiers
 // PEPPOL-EN16931-UBL.sch and -CII.sch publish under the comment "National rules",
@@ -111,6 +114,21 @@ var peppolCountryRules = map[string]peppolRule{
 	// Norway — 1 fatal, 1 advisory, both bindings.
 	"NO-R-001": {peppolUBL | peppolCII, SeverityFatal},
 	"NO-R-002": {peppolUBL | peppolCII, SeverityWarning},
+
+	// Sweden — 7 fatal, 6 advisory, both bindings.
+	"SE-R-001": {peppolUBL | peppolCII, SeverityFatal},
+	"SE-R-002": {peppolUBL | peppolCII, SeverityFatal},
+	"SE-R-003": {peppolUBL | peppolCII, SeverityFatal},
+	"SE-R-004": {peppolUBL | peppolCII, SeverityFatal},
+	"SE-R-005": {peppolUBL | peppolCII, SeverityFatal},
+	"SE-R-006": {peppolUBL | peppolCII, SeverityFatal},
+	"SE-R-007": {peppolUBL | peppolCII, SeverityWarning},
+	"SE-R-008": {peppolUBL | peppolCII, SeverityWarning},
+	"SE-R-009": {peppolUBL | peppolCII, SeverityWarning},
+	"SE-R-010": {peppolUBL | peppolCII, SeverityWarning},
+	"SE-R-011": {peppolUBL | peppolCII, SeverityWarning},
+	"SE-R-012": {peppolUBL | peppolCII, SeverityWarning},
+	"SE-R-013": {peppolUBL | peppolCII, SeverityFatal},
 }
 
 // ---------------------------------------------------------------------------
@@ -265,6 +283,10 @@ func peppolCountryUBLRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolDanishUBLRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolSwedishUBLRules(e, root)
 }
 
 // peppolCountryCIIRules evaluates the country-specific rules of
@@ -286,6 +308,10 @@ func peppolCountryCIIRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolDanishCIIRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolSwedishCIIRules(e, root)
 }
 
 // ---------------------------------------------------------------------------
@@ -1140,4 +1166,306 @@ func peppolAnyChildValue(parent *ciiNode, name, value string) bool {
 		}
 	}
 	return false
+}
+
+// ---------------------------------------------------------------------------
+// Sweden
+// ---------------------------------------------------------------------------
+
+// peppolSwedishVATRates is SE-R-006's permitted set: Sweden's three standard VAT
+// rates.
+var peppolSwedishVATRates = []float64{25, 12, 6}
+
+// peppolSwedishUBLRules is the Swedish pattern of the UBL binding: 13 rules over
+// eight contexts.
+//
+// Sweden is the one family with no <let> variable at all. Every rule's context
+// carries its own country test inline, and they are not the same test:
+//
+//	SE-R-001/002/006  the seller's postal country is SE *and* its VAT identifier
+//	                  begins SE
+//	SE-R-003/004/013  the seller's postal country is SE and a legal registration
+//	                  identifier is present — the VAT prefix is not consulted
+//	SE-R-005          the seller's postal country is SE and a legal registration
+//	                  identifier is present
+//	SE-R-007..011     the seller's postal country is SE
+//	SE-R-012          both parties' postal country is SE
+//
+// So a Swedish company invoicing under a foreign VAT registration answers to the
+// organisation-number rules and not to the VAT-number ones. Collapsing the five
+// gates into one would have widened three of them.
+func peppolSwedishUBLRules(e *peppolEval, root *ciiNode) {
+	sellerAddrSE, sellerVATSE := false, false
+	for _, party := range nodesAt(root, "AccountingSupplierParty", "Party") {
+		if peppolAnyChildValue(party.child("PostalAddress", "Country"), "IdentificationCode", "SE") {
+			sellerAddrSE = true
+			if peppolSubstring(peppolUBLVATCompanyID(party), 1, 2) == "SE" {
+				sellerVATSE = true
+			}
+		}
+	}
+	if !sellerAddrSE {
+		return
+	}
+	buyerAddrSE := false
+	for _, party := range nodesAt(root, "AccountingCustomerParty", "Party") {
+		if peppolAnyChildValue(party.child("PostalAddress", "Country"), "IdentificationCode", "SE") {
+			buyerAddrSE = true
+		}
+	}
+	for _, party := range nodesAt(root, "AccountingSupplierParty", "Party") {
+		if !peppolAnyChildValue(party.child("PostalAddress", "Country"), "IdentificationCode", "SE") {
+			continue
+		}
+		vatID := peppolUBLVATCompanyID(party)
+		if peppolSubstring(vatID, 1, 2) == "SE" {
+			// SE-R-001: string-length(normalize-space(<vat id>)) = 14
+			if len([]rune(normalizeSpace(vatID))) != 14 {
+				e.addf("SE-R-001", "A Swedish Seller VAT identifier (BT-31=%q) MUST be fourteen characters",
+					normalizeSpace(vatID))
+			}
+			// SE-R-002: string(number(substring(<vat id>, 3, 12))) != 'NaN'
+			if !peppolIsXPathNumber(peppolSubstring(vatID, 3, 12)) {
+				e.addf("SE-R-002", "A Swedish Seller VAT identifier (BT-31=%q) MUST carry twelve numeric characters "+
+					"after the country prefix", normalizeSpace(vatID))
+			}
+		}
+		// SE-R-003/004/013, context cac:PartyLegalEntity[<seller postal SE> and
+		// cbc:CompanyID]. The VAT prefix is not part of this gate.
+		for _, le := range party.all("PartyLegalEntity") {
+			id := le.child("CompanyID")
+			if id == nil {
+				continue
+			}
+			raw, trimmed := id.rawText(), normalizeSpace(id.rawText())
+			if !peppolIsXPathNumber(raw) {
+				e.addf("SE-R-003", "A Swedish organisation number (BT-30=%q) MUST be numeric", trimmed)
+			}
+			if len([]rune(trimmed)) != 10 {
+				e.addf("SE-R-004", "A Swedish organisation number (BT-30=%q) MUST be ten characters", trimmed)
+			}
+			if !peppolSwedishOrgNr(trimmed) {
+				e.addf("SE-R-013", "The last digit of a Swedish organisation number (BT-30=%q) MUST satisfy the Luhn "+
+					"check", trimmed)
+			}
+		}
+		// SE-R-005, context cac:PartyTaxScheme[normalize-space(upper-case(
+		// cac:TaxScheme/cbc:ID)) != 'VAT']/cbc:CompanyID, gated on the party having a
+		// legal registration identifier. The scheme test is upper-cased here and not in
+		// the Italian rule that reads the same element.
+		if len(nodesAt(party, "PartyLegalEntity", "CompanyID")) == 0 {
+			continue
+		}
+		for _, ts := range party.all("PartyTaxScheme") {
+			if normalizeSpace(strings.ToUpper(ts.child("TaxScheme", "ID").rawText())) == "VAT" {
+				continue
+			}
+			for _, id := range ts.all("CompanyID") {
+				if normalizeSpace(strings.ToUpper(id.rawText())) != "GODKÄND FÖR F-SKATT" {
+					e.addf("SE-R-005", "For Swedish suppliers the Seller tax registration identifier (BT-32=%q) MUST "+
+						"read \"Godkänd för F-skatt\"", normalizeSpace(id.rawText()))
+				}
+			}
+		}
+	}
+	// SE-R-006, context //cac:TaxCategory[<seller SE and VAT SE> and cbc:ID = 'S'] |
+	// //cac:ClassifiedTaxCategory[<same>].
+	//
+	// The `and cbc:ID = 'S'` predicate is the UBL binding's alone — the CII wording
+	// has no category-code test, so the two are not the same rule and are written
+	// separately below.
+	if sellerVATSE {
+		for _, name := range []string{"TaxCategory", "ClassifiedTaxCategory"} {
+			for _, tc := range root.findAll(name) {
+				if !peppolAnyChildValue(tc, "ID", "S") {
+					continue
+				}
+				peppolSwedishRate(e, tc.child("Percent"))
+			}
+		}
+	}
+	// SE-R-007..012, context //cac:PaymentMeans[…].
+	for _, pm := range root.findAll("PaymentMeans") {
+		code := pm.child("PaymentMeansCode")
+		normalized := normalizeSpace(code.rawText())
+		account := pm.child("PayeeFinancialAccount")
+		branch := normalizeSpace(account.child("FinancialInstitutionBranch", "ID").rawText())
+		if normalized == "30" {
+			// The account identifier is the context of SE-R-007..010, so a payment means
+			// with no cac:PayeeFinancialAccount/cbc:ID at all is out of scope rather than
+			// reported.
+			for _, id := range account.orNil().all("ID") {
+				value := normalizeSpace(id.rawText())
+				switch branch {
+				case "SE:PLUSGIRO":
+					if !peppolIsXPathNumber(value) {
+						e.addf("SE-R-007", "A Swedish Plusgiro account identifier (BT-84=%q) MUST be numeric", value)
+					}
+					if n := len([]rune(value)); n < 2 || n > 8 {
+						e.addf("SE-R-010", "A Swedish Plusgiro account identifier (BT-84=%q) MUST be two to eight "+
+							"characters", value)
+					}
+				case "SE:BANKGIRO":
+					if !peppolIsXPathNumber(value) {
+						e.addf("SE-R-008", "A Swedish Bankgiro account identifier (BT-84=%q) MUST be numeric", value)
+					}
+					if n := len([]rune(value)); n != 7 && n != 8 {
+						e.addf("SE-R-009", "A Swedish Bankgiro account identifier (BT-84=%q) MUST be seven or eight "+
+							"characters", value)
+					}
+				}
+			}
+		}
+		// SE-R-011 / SE-R-012 assert false(), so their context is the whole rule. The
+		// code comparison is against the untrimmed string value here — `cbc:PaymentMeansCode
+		// = normalize-space('50')` normalizes the literal, not the element — while
+		// SE-R-007..010 above normalize the element. Both are transcribed as written.
+		raw := code.rawText()
+		if raw == "50" || raw == "56" {
+			e.add("SE-R-011", "For Swedish suppliers, Bankgiro and Plusgiro are indicated with Payment means type "+
+				"code 30 and a financial institution branch of SE:BANKGIRO or SE:PLUSGIRO, not with 50 or 56")
+		}
+		if buyerAddrSE && raw == "31" {
+			e.add("SE-R-012", "For domestic Swedish transactions, a credit transfer should be indicated with Payment "+
+				"means type code 30")
+		}
+	}
+}
+
+// peppolSwedishCIIRules is the Swedish pattern of the CII binding.
+//
+// SE-R-006 is the one rule whose two bindings are not the same rule. The UBL
+// context is `//cac:TaxCategory[… and cbc:ID = 'S']`, restricted to the standard-
+// rate category; the CII context is `//ram:ApplicableTradeTax[…] |
+// //ram:CategoryTradeTax[…]` with no category predicate at all, so it applies to
+// every tax group of a Swedish seller whatever its category. That is why the two
+// are written out separately rather than sharing a body: a zero-rated CII line
+// trips it and the UBL equivalent does not.
+func peppolSwedishCIIRules(e *peppolEval, root *ciiNode) {
+	seller := peppolCIIParty(root, "SellerTradeParty")
+	if !peppolAnyChildValue(seller.child("PostalTradeAddress"), "CountryID", "SE") {
+		return
+	}
+	buyerSE := peppolAnyChildValue(peppolCIIParty(root, "BuyerTradeParty").child("PostalTradeAddress"), "CountryID", "SE")
+	vatID := peppolCIIVATID(seller)
+	if peppolSubstring(vatID, 1, 2) == "SE" {
+		if len([]rune(normalizeSpace(vatID))) != 14 {
+			e.addf("SE-R-001", "A Swedish Seller VAT identifier (BT-31=%q) MUST be fourteen characters",
+				normalizeSpace(vatID))
+		}
+		if !peppolIsXPathNumber(peppolSubstring(vatID, 3, 12)) {
+			e.addf("SE-R-002", "A Swedish Seller VAT identifier (BT-31=%q) MUST carry twelve numeric characters "+
+				"after the country prefix", normalizeSpace(vatID))
+		}
+	}
+	// SE-R-003/004/013, context ram:SpecifiedLegalOrganization[… and ram:ID].
+	for _, org := range seller.orNil().all("SpecifiedLegalOrganization") {
+		id := org.child("ID")
+		if id == nil {
+			continue
+		}
+		raw, trimmed := id.rawText(), normalizeSpace(id.rawText())
+		if !peppolIsXPathNumber(raw) {
+			e.addf("SE-R-003", "A Swedish organisation number (BT-30=%q) MUST be numeric", trimmed)
+		}
+		if len([]rune(trimmed)) != 10 {
+			e.addf("SE-R-004", "A Swedish organisation number (BT-30=%q) MUST be ten characters", trimmed)
+		}
+		if !peppolSwedishOrgNr(trimmed) {
+			e.addf("SE-R-013", "The last digit of a Swedish organisation number (BT-30=%q) MUST satisfy the Luhn "+
+				"check", trimmed)
+		}
+	}
+	// SE-R-005, context ram:SpecifiedTaxRegistration/ram:ID[@schemeID = 'FC'], gated
+	// on a legal registration identifier being present. The CII binding selects the
+	// registration by scheme where UBL selects it by "not VAT".
+	if len(nodesAt(seller, "SpecifiedLegalOrganization", "ID")) > 0 {
+		for _, reg := range seller.orNil().all("SpecifiedTaxRegistration") {
+			for _, id := range reg.all("ID") {
+				if id.attr("schemeID") != "FC" {
+					continue
+				}
+				if normalizeSpace(strings.ToUpper(id.rawText())) != "GODKÄND FÖR F-SKATT" {
+					e.addf("SE-R-005", "For Swedish suppliers the Seller tax registration identifier (BT-32=%q) MUST "+
+						"read \"Godkänd för F-skatt\"", normalizeSpace(id.rawText()))
+				}
+			}
+		}
+	}
+	// SE-R-006 — every tax group, no category predicate.
+	if peppolSubstring(vatID, 1, 2) == "SE" {
+		for _, name := range []string{"ApplicableTradeTax", "CategoryTradeTax"} {
+			for _, tax := range root.findAll(name) {
+				peppolSwedishRate(e, tax.child("RateApplicablePercent"))
+			}
+		}
+	}
+	// SE-R-007..012, context ram:SpecifiedTradeSettlementPaymentMeans[…]. The CII
+	// binding normalizes the type code in all four contexts; the UBL binding
+	// normalizes it in two of them and not in the other two.
+	for _, st := range nodesAt(root, "SupplyChainTradeTransaction", "ApplicableHeaderTradeSettlement") {
+		for _, pm := range st.all("SpecifiedTradeSettlementPaymentMeans") {
+			code := normalizeSpace(pm.child("TypeCode").rawText())
+			bic := normalizeSpace(pm.child("PayeeSpecifiedCreditorFinancialInstitution", "BICID").rawText())
+			if code == "30" {
+				for _, id := range pm.child("PayeePartyCreditorFinancialAccount").orNil().all("ProprietaryID") {
+					value := normalizeSpace(id.rawText())
+					switch bic {
+					case "SE:PLUSGIRO":
+						if !peppolIsXPathNumber(value) {
+							e.addf("SE-R-007", "A Swedish Plusgiro account identifier (BT-84=%q) MUST be numeric", value)
+						}
+						if n := len([]rune(value)); n < 2 || n > 8 {
+							e.addf("SE-R-010", "A Swedish Plusgiro account identifier (BT-84=%q) MUST be two to eight "+
+								"characters", value)
+						}
+					case "SE:BANKGIRO":
+						if !peppolIsXPathNumber(value) {
+							e.addf("SE-R-008", "A Swedish Bankgiro account identifier (BT-84=%q) MUST be numeric", value)
+						}
+						if n := len([]rune(value)); n != 7 && n != 8 {
+							e.addf("SE-R-009", "A Swedish Bankgiro account identifier (BT-84=%q) MUST be seven or "+
+								"eight characters", value)
+						}
+					}
+				}
+			}
+			if code == "50" || code == "56" {
+				e.add("SE-R-011", "For Swedish suppliers, Bankgiro and Plusgiro are indicated with Payment means type "+
+					"code 30 and a creditor financial institution of SE:BANKGIRO or SE:PLUSGIRO, not with 50 or 56")
+			}
+			if buyerSE && code == "31" {
+				e.add("SE-R-012", "For domestic Swedish transactions, a credit transfer should be indicated with "+
+					"Payment means type code 30")
+			}
+		}
+	}
+}
+
+// peppolSwedishRate is SE-R-006's assertion:
+//
+//	number(<rate>) = 25 or number(<rate>) = 12 or number(<rate>) = 6
+//
+// An absent rate makes number() NaN, which equals nothing, so the rule reports it.
+// That is the artefact's arithmetic and not a reading of intent.
+func peppolSwedishRate(e *peppolEval, rate *ciiNode) {
+	value, ok := parseAmount(rate.rawText())
+	if ok {
+		for _, allowed := range peppolSwedishVATRates {
+			if value == allowed {
+				return
+			}
+		}
+	}
+	e.addf("SE-R-006", "For Swedish suppliers the VAT category rate (BT-119=%q) MUST be 6, 12 or 25",
+		normalizeSpace(rate.rawText()))
+}
+
+// peppolIsXPathNumber is `string(number($v)) != 'NaN'`: whether XPath's number()
+// yields a number for this string. fn:number is xs:double's cast, so it takes
+// surrounding whitespace, a sign and an exponent, and it maps the literal "NaN" to
+// NaN — which the test then rejects.
+func peppolIsXPathNumber(v string) bool {
+	value, ok := parseAmount(v)
+	return ok && !math.IsNaN(value)
 }
