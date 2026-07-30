@@ -288,14 +288,21 @@ const (
 	SourceEN16931 Source = "EN 16931"
 	// SourceXRechnung is the German KoSIT XRechnung CIUS (BR-DE-*).
 	SourceXRechnung Source = "XRechnung"
-	// SourcePeppol is OpenPEPPOL BIS Billing 3.0 (PEPPOL-EN16931-* and
-	// PEPPOL-COMMON-*).
+	// SourcePeppol is OpenPEPPOL BIS Billing 3.0: PEPPOL-EN16931-* and
+	// PEPPOL-COMMON-*, and the country-specific rules the same two Schematron files
+	// publish under a comment reading "National rules" — DE-R-*, DK-R-*,
+	// GR-R-*/GR-S-*, IS-R-*, IT-R-*, NL-R-*, NO-R-* and SE-R-*.
+	//
+	// Those last are OpenPEPPOL's own national rule sets and not the CIUS of the same
+	// countries: NL-R-* is distinct from the BR-NL-* of SourceNLCIUS, and DE-R-* from
+	// the BR-DE-* of SourceXRechnung, which is why they carry this Source and not
+	// those.
 	//
 	// It is the one Source a validator for another authority emits: the released
-	// XRechnung Schematron merges twenty-one of these rules in, so
+	// XRechnung Schematron merges twenty-one PEPPOL-EN16931-* rules in, so
 	// ValidateXRechnung reports them — under OpenPEPPOL's Source, because Source
-	// names the authority that wrote the rule. Their coverage is XRechnung's, not
-	// Peppol's; see the comment on the coverage table in report.go.
+	// names the authority that wrote the rule. It imports none of the country rules;
+	// see the comment on the coverage table in report.go.
 	SourcePeppol Source = "Peppol"
 	// SourceNLCIUS is the Dutch SimplerInvoicing NLCIUS (BR-NL-*).
 	SourceNLCIUS Source = "NLCIUS"

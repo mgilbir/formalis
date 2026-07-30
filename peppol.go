@@ -56,16 +56,30 @@ var peppolVATEX = map[string]struct {
 // returned with it is the zero Report, so a caller who ignores the error cannot
 // read the value as clean. See ErrMalformedXML.
 //
-// The Report names the rule families neither rule set evaluates — the union of
-// Coverage(SourceEN16931) and Coverage(SourcePeppol). Every one of the 59
-// PEPPOL-COMMON-* and PEPPOL-EN16931-* identifiers the vendored OpenPEPPOL
-// Schematron publishes is evaluated, in the binding that publishes it, and the
-// severity of each finding is OpenPEPPOL's flag: the six Italian, Danish and
-// Swedish identifier-format warnings are advisory, so a document can fail one of
-// them and still be Conformant. What Coverage(SourcePeppol) still names is the
-// other rule set in the same two files — the 101 country-specific identifiers
-// (DE-R-*, DK-R-*, GR-R-*, IS-R-*, IT-R-*, NL-R-*, NO-R-*, SE-R-*) OpenPEPPOL
-// publishes alongside them.
+// The Report names the rule families neither rule set evaluates, which is now
+// Coverage(SourceEN16931) alone: Coverage(SourcePeppol) is empty. Both rule sets in
+// the two vendored OpenPEPPOL binding files are evaluated, each identifier in the
+// binding that publishes it —
+//
+//   - the 59 PEPPOL-COMMON-* and PEPPOL-EN16931-* rules, and
+//   - the 101 country-specific rules the same files publish under a comment
+//     reading "National rules": DE-R-*, DK-R-*, GR-R-*/GR-S-*, IS-R-*, IT-R-*,
+//     NL-R-*, NO-R-* and SE-R-*.
+//
+// 244 (identifier, binding) pairs in total. So a clean Peppol invoice reports
+// Conformant() == true.
+//
+// The country rules are not an opt-in national profile: neither binding file
+// declares a Schematron <phase>, buildconfig.xml's base configuration is the whole
+// file, and each rule is gated inside itself on the supplier's country — and, for
+// the domestic ones, the customer's. A French invoice matches none of their
+// contexts. peppol_country_rules.go sets out the five different spellings of that
+// gate, which are not interchangeable.
+//
+// The severity of each finding is OpenPEPPOL's published flag, so a document can
+// fail an advisory rule and still be Conformant: the identifier-format warnings of
+// PEPPOL-COMMON-R044..R047 and R052/R053, and eighteen of the country rules,
+// including every SE-R-007..012 and the Greek GR-S-008-1 and GR-S-011.
 func ValidatePeppol(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourcePeppol}, validatePeppol)
 }

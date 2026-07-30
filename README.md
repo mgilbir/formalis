@@ -99,7 +99,11 @@ fatal:
   format checks `PEPPOL-COMMON-R044/R045/R046/R047/R052/R053` — plus
   `PEPPOL-EN16931-R120`, which OpenPEPPOL flags fatal and KoSIT re-flags `warning`
   when it merges it into XRechnung, so the same rule is a non-conformance on the
-  Peppol path and a warning on the German one.
+  Peppol path and a warning on the German one;
+- eighteen of OpenPEPPOL's 101 country-specific rules, among them all six Swedish
+  Bankgiro/Plusgiro checks `SE-R-007..012`, the Greek `GR-S-008-1` and `GR-S-011`,
+  the Danish `DK-R-003`/`DK-R-017`, the Norwegian `NO-R-002`, the Icelandic
+  `IS-R-001` and six German ones.
 
 (This section said "one rule set and one only" until the second and third arrived;
 the KoSIT half had been true for a release before anyone corrected the sentence.)
@@ -156,17 +160,22 @@ gap left:
 - **XRechnung**: the Schematron a German buyer validates against is 78 identifiers,
   KoSIT's own 57 plus 21 it merges in from Peppol BIS Billing 3.0, and all 78 are
   evaluated. The imported findings carry `SourcePeppol`, because `Source` names the
-  authority that wrote the rule.
+  authority that wrote the rule;
+- **Peppol BIS Billing 3.0**: both rule sets of the two vendored OpenPEPPOL
+  Schematron files are evaluated — the 59 `PEPPOL-COMMON-*` and `PEPPOL-EN16931-*`
+  identifiers, and the 101 country-specific rules published in the same files under
+  a comment reading "National rules" (`DE-R-*`, `DK-R-*`, `GR-R-*`/`GR-S-*`,
+  `IS-R-*`, `IT-R-*`, `NL-R-*`, `NO-R-*`, `SE-R-*`). That is 244 `(identifier,
+  binding)` pairs, each evaluated in the binding that publishes it, and every one of
+  them has a document in the suite that trips it and one that does not. The country
+  rules are gated the way OpenPEPPOL gates them — on the supplier's country and, for
+  the domestic ones, the customer's — so a French invoice answers to none of them.
 
 Every other CIUS and national validator still names a gap its authority flags fatal
-and a validator could close, so those return false whatever the document. That
-includes `ValidatePeppol`: all 59 `PEPPOL-COMMON-*` and `PEPPOL-EN16931-*`
-identifiers are evaluated, and the 101 country-specific rules OpenPEPPOL publishes
-in the same two Schematron files (`DE-R-*`, `DK-R-*`, `GR-R-*`, `IS-R-*`, `IT-R-*`,
-`NL-R-*`, `NO-R-*`, `SE-R-*`) are not.
+and a validator could close, so those return false whatever the document.
 
 `Complete()` is the stricter question — "did this package see everything a
-reference validator could see" — and the same two rule sets answer yes. The EN 16931
+reference validator could see" — and the same three rule sets answer yes. The EN 16931
 core's 1,168 advisory binding rules used to be the reason it could not;
 they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
 rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
@@ -181,6 +190,12 @@ it was a rule set it *imports* rather than one of its own — the twenty-one Pep
 rules the released artefact merges in, one of which (`PEPPOL-EN16931-R061`) had
 replaced KoSIT's withdrawn `BR-DE-29`, so BG-19's mandate reference was checked by
 nothing on the German path at all.
+
+The Peppol path answers yes for a third: its only gap was a rule set nobody had
+counted. Both binding files hold a second family of 101 country-specific rules
+beside the 59 `PEPPOL-*` ones, and every coverage survey here had matched on the
+prefix `PEPPOL-` and stopped — so `ValidatePeppol` reported `Conformant() == false`
+for every document, for that reason alone.
 
 Note what `Complete()` is *not*: it says nothing about what was found. A document
 with twenty fatal findings can be `Complete` — every rule ran, and twenty of them
