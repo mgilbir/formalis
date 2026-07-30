@@ -725,22 +725,63 @@ var notEvaluated = map[Source][]RuleFamily{
 	// until this was read, so recording them here is a false-positive fix and not a
 	// coverage reduction: they are findings the Ministry's own validator cannot
 	// produce. It is the same reading that put ubl-BE-13 in Coverage(SourceUBLBE).
+	// SRBDT's fatal half is finished: all 46 identifiers the Ministry of Finance
+	// publishes are accounted for — 31 evaluated in cius_rs.go (21 RSR business
+	// rules, the 3 RSE extension rules, and the 7 assertions of the abstract pdvcat
+	// pattern, which the validation schema instantiates four times) and the 15
+	// below, which the Ministry published and no conforming Schematron processor can
+	// report.
+	//
+	// The two families that had no entry until the Schematron was vendored are
+	// evaluated rather than named now: RSK-X-* is the Serbian zero-rate VAT-category
+	// tier and RSE-* the srbdtext extension tier.
+	//
+	// Every entry here is Unevaluable, so none of them holds Conformant down. All
+	// fifteen have the same cause and it is not a judgement:
+	// EN16931-UBL-srbdt.sch is one pattern, eleven of its rules repeat the context
+	// `/ubl:Invoice | /cn:CreditNote` and four more repeat three other contexts, and
+	// ISO Schematron gives a node to the first matching rule in a pattern and to no
+	// other. TestSRBDTUnevaluableRulesAreDerivedFromTheArtefact re-derives the whole
+	// list from the file, so a Ministry that splits its pattern turns these back into
+	// gaps on the day the artefact is re-fetched.
+	//
+	// Eight of them — RSR-09, 10, 13, 16, 17, 20, 22 and 25 — were being *emitted*
+	// until this was read, so recording them here is a false-positive fix and not a
+	// coverage reduction: they are findings the Ministry's own validator cannot
+	// produce. It is the same reading that put ubl-BE-13 in Coverage(SourceUBLBE).
 	SourceSRBDT: {
 		{
-			Rules:    "RSK-X-01, RSK-X-05..10",
-			Severity: SeverityFatal,
-			Reason:   "the Serbian VAT-category rules, in EN16931-UBL-srbdt-pdvcat-gen.sch",
+			Rules:       "RSR-08, RSR-09, RSR-10, RSR-13, RSR-16, RSR-17, RSR-20, RSR-22, RSR-25, RSR-26, RSR-33",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "EN16931-UBL-srbdt.sch binds all eleven, in the single pattern UBL-srbdt, to the context " +
+				"`/ubl:Invoice | /cn:CreditNote`, which an earlier rule of that pattern has already claimed. " +
+				"ISO Schematron processes a node with the first rule in a pattern whose context matches it and " +
+				"with no other, so the document element never reaches any of them",
 		},
 		{
-			Rules:    "RSE-01, RSE-02, RSE-03",
-			Severity: SeverityFatal,
-			Reason:   "the SRBDT extension rules, which no entry in this table named until the Schematron was vendored",
+			Rules:       "RSR-15",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "in EN16931-UBL-srbdt.sch its rule repeats the context " +
+				"`cac:AccountingSupplierParty/cac:Party/cbc:EndpointID` of the immediately preceding rule of the " +
+				"same pattern, so no Seller electronic address ever reaches it",
 		},
 		{
-			Rules:    "any other RSR rule: this package emits only RSR-03, 04, 09, 10, 11, 13, 14, 16, 17, 20, 21, 22, 23, 25",
-			Severity: SeverityFatal,
-			Reason: "the rest of the published set: RSR-01, 02, 05..08, 12, 15, 18, 19, 24, 26..36 — the BT-8 code " +
-				"values, the endpoint-contains-PIB cross-checks and the buyer registration format",
+			Rules:       "RSR-24",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "in EN16931-UBL-srbdt.sch its rule repeats the context " +
+				"`cac:AccountingCustomerParty/cac:Party/cbc:EndpointID` of the immediately preceding rule of the " +
+				"same pattern, so no Buyer electronic address ever reaches it",
+		},
+		{
+			Rules:       "RSR-31, RSR-32",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "in EN16931-UBL-srbdt.sch both rules repeat the context " +
+				"`/ubl:Invoice/cac:TaxRepresentativeParty | /cn:CreditNote/cac:TaxRepresentativeParty` of an " +
+				"earlier rule of the same pattern, so no tax representative ever reaches either",
 		},
 	},
 

@@ -187,44 +187,55 @@ func TestReportFromAnIgnoredErrorIsNotConformant(t *testing.T) {
 // set is partial is not a document that passed that rule set. Before Report there
 // was nothing a caller could read that said so.
 //
-// It used to be asked of ValidateCIUSPT, whose fatal gap was first
-// BR-CIUS-PT-13/15/17/18 and 24..63 and then the 290 DT-CIUS-PT-* datatype rules.
-// It then moved to ValidateCIUSRO, whose coverage named four Romanian families
-// ANAF publishes. Both rule sets are finished now — CIUS-RO's remaining six
-// entries are Unevaluable and therefore free, which is precisely the state this
-// test must *not* be demonstrated on — so the question is asked of ValidateSRBDT,
-// whose coverage names three Serbian families the Ministry of Finance publishes
-// and this package does not evaluate. The *positive* half of what CIUS-PT and
-// CIUS-RO became is asserted directly below, so nothing that was checked here
-// stopped being checked.
+// This test has now moved four times, and where it has moved to is the interesting
+// part. It was asked of ValidateCIUSPT, whose fatal gap was first
+// BR-CIUS-PT-13/15/17/18 and 24..63 and then the 290 DT-CIUS-PT-* datatype rules;
+// then of ValidateCIUSRO, whose coverage named four Romanian families ANAF
+// publishes; then of ValidateSRBDT, whose coverage named three Serbian ones. All
+// three rule sets are finished, and what each has left is Unevaluable and therefore
+// free — which is precisely the state this test must *not* be demonstrated on.
 //
-// The property is that a named fatal gap keeps Conformant false, and the rule set
-// it is demonstrated on is incidental. When ValidateSRBDT's fatal half is finished
-// too, this moves again rather than being deleted:
+// With the last CIUS closed there is no CIUS left to ask, so it is asked of
+// ValidateFatturaPA. That is not a downgrade: the thirteen tree-reading national
+// validators are the *most* partial rule sets in this package (C12 said so, and the
+// notEvaluated comment still does), each checking the mandatory structure and code
+// lists of a format whose authority publishes a whole XSD, and the failure scenario
+// is the same one — a caller reads len(Violations) == 0 from a validator that never
+// ran the check the authority will reject the document on.
+//
+// The property is that a named, evaluable, fatal gap keeps Conformant false, and
+// the rule set it is demonstrated on is incidental. If FatturaPA's gap is ever
+// closed this moves again rather than being deleted:
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is what keeps the choice of
 // validator honest, because it fails the moment the one named here stops having a
-// fatal gap.
+// fatal gap. The *positive* half of what CIUS-PT, CIUS-RO, SRBDT and UBL.BE became
+// is asserted directly below, so nothing that was checked here stopped being
+// checked.
 func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
-	r := mustReport(t, context.Background(), ValidateSRBDT, []byte(minimalSRBDT))
+	r := mustReport(t, context.Background(), ValidateFatturaPA, []byte(minimalFatturaPA))
 	for _, v := range r.Violations {
-		if v.Source == SourceSRBDT {
-			t.Fatalf("the fixture is no longer clean under the SRBDT rules, so this test proves nothing: %v", r.Violations)
+		if v.Source == SourceFatturaPA {
+			t.Fatalf("the fixture is no longer clean under the FatturaPA rules, so this test proves nothing: %v", r.Violations)
 		}
 	}
 	if r.Complete() {
-		t.Error("ValidateSRBDT reported Complete; it does not evaluate the RSK-X-*, RSE-* or the rest of the RSR-* rules")
+		t.Error("ValidateFatturaPA reported Complete; it does not evaluate the SdI FatturaPA XSD")
 	}
 	if r.Conformant() {
-		t.Error("ValidateSRBDT reported Conformant on a document whose Serbian VAT-category rules were never checked")
+		t.Error("ValidateFatturaPA reported Conformant on a document whose SdI schema checks were never run")
 	}
 	// The caller has to be able to find out *which* rules, not merely that some
 	// exist, or the report is no more actionable than a file comment.
 	var found bool
 	for _, g := range r.NotEvaluated {
-		if strings.Contains(g.Rules, "RSK-") || strings.Contains(g.Rules, "RSE-") || strings.Contains(g.Rules, "RSR") {
+		if strings.Contains(g.Rules, "FatturaPA") {
 			found = true
 			if g.Severity != SeverityFatal {
 				t.Errorf("the family the integrator would be rejected on is reported as %s: %+v", g.Severity, g)
+			}
+			if g.Unevaluable {
+				t.Errorf("the family this test rests on is marked Unevaluable, which makes it free and makes "+
+					"this test prove nothing: %+v", g)
 			}
 		}
 	}
@@ -1338,6 +1349,14 @@ func TestZeroReportIsNotComplete(t *testing.T) {
 // whatever the reason.
 var sourcesWithUnevaluableFamilies = map[Source]bool{
 	SourceEN16931: true, SourceUBLBE: true,
+	// SRBDT joined with fifteen identifiers and one cause, read out of
+	// EN16931-UBL-srbdt.sch rather than argued: that file is a single pattern in
+	// which eleven rules repeat the context `/ubl:Invoice | /cn:CreditNote` and four
+	// more repeat three other contexts, and ISO Schematron gives a node to the first
+	// matching rule of a pattern only. Eight of the fifteen were being reported by
+	// this package before it was read, so recording them is a false-positive fix.
+	// TestSRBDTUnevaluableRulesAreDerivedFromTheArtefact re-derives all fifteen.
+	SourceSRBDT: true,
 	// CIUS-RO joined with six identifiers and two distinct reasons, both read out
 	// of cius-ro/RO16931-rules.sch rather than argued: three rules whose context is
 	// claimed by an earlier rule of the same pattern, which under ISO Schematron
@@ -1404,20 +1423,23 @@ func TestOnlyEN16931HasUnevaluableFamilies(t *testing.T) {
 				"file that is here", src, unevaluable, src)
 		}
 	}
-	// Two of the four CIUS this loop used to name. It named UBL.BE and CIUS-RO too,
-	// on the ground that this repository vendored no Schematron for any of them and
-	// the claim was therefore uncheckable — which stopped being true when
-	// `make cius-schematron` landed. UBL.BE has exactly one unevaluable family,
-	// ubl-BE-13, and CIUS-RO six; both authorities' artefacts are here to be read,
-	// and the tests that read them are named beside each Source in
-	// sourcesWithUnevaluableFamilies. The other two still have none, and their
-	// rules being the hardest in the package to implement is not a reason to
-	// acquire one. "Hard" is the thing Unevaluable does not mean.
-	for _, src := range []Source{SourceCIUSPT, SourceSRBDT} {
+	// The last of the four CIUS this loop used to name. It named UBL.BE and CIUS-RO
+	// too, on the ground that this repository vendored no Schematron for any of them
+	// and the claim was therefore uncheckable — which stopped being true when
+	// `make cius-schematron` landed — and it named SRBDT until the rule order of
+	// EN16931-UBL-srbdt.sch was read. Every Source that left this list did so with a
+	// test that re-derives its claim from the artefact, named beside it in
+	// sourcesWithUnevaluableFamilies.
+	//
+	// CIUS-PT still has none, and its rules being among the hardest in the package
+	// to implement was never a reason to acquire one. "Hard" is the thing
+	// Unevaluable does not mean, and the whole of AT/eSPap's inventory is evaluated
+	// anyway.
+	for _, src := range []Source{SourceCIUSPT} {
 		for _, f := range Coverage(src) {
 			if f.Unevaluable {
-				t.Errorf("Coverage(%q) marks %q unevaluable. These two CIUS are unimplemented, not unevaluable: "+
-					"their authorities publish rules that a validator can check and this package does not", src, f.Rules)
+				t.Errorf("Coverage(%q) marks %q unevaluable. This CIUS is unimplemented where it is incomplete, "+
+					"not unevaluable: its authority publishes rules that a validator can check", src, f.Rules)
 			}
 		}
 	}
@@ -1660,6 +1682,11 @@ func coverageText(src Source) string {
 // mentioned, and the two bilingual free-text code lists that had been called "not
 // enforced". Its only remaining entry is ubl-BE-13, which the authority binds to a
 // tautology.
+// ValidateSRBDT joined it when the Ministry of Finance's whole inventory was
+// accounted for: the 21 RSR rules a Schematron processor reaches, the 3 RSE
+// extension rules and the 7 assertions of the abstract pdvcat pattern, plus the 15
+// that no processor reaches. It is the validator this list's counterpart test used
+// to be demonstrated on, which is why that test moved for the third time.
 var validatorsWithNoFatalGap = map[string]bool{
 	"Validate":          true,
 	"ValidateNLCIUS":    true,
@@ -1669,6 +1696,7 @@ var validatorsWithNoFatalGap = map[string]bool{
 	"ValidateCIUSPT":    true,
 	"ValidateCIUSRO":    true,
 	"ValidateUBLBE":     true,
+	"ValidateSRBDT":     true,
 }
 
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of
