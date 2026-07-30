@@ -107,3 +107,48 @@ func BenchmarkValidateEN16931(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkCIUSPTDatatypeRules is the CIUS-PT datatype pass over an already-parsed
+// UBL tree: the single trie walk that assigns every element to the first rule of
+// each pattern whose context matches it, and the evaluation of that element's
+// assertions. No parsing and no semantic model is in the number.
+//
+// It is committed for the reason the advisory one above is. 291 assertions over
+// 173 contexts is the kind of number that invites resolving each context
+// independently, and 1,680 documents go through ValidateCIUSPT on every test run.
+func BenchmarkCIUSPTDatatypeRules(b *testing.B) {
+	var trees []*ciiNode
+	for _, d := range benchCorpus(b, "UBL") {
+		root, err := parseCII(newRun(context.Background()), d)
+		if err != nil {
+			b.Fatal(err)
+		}
+		trees = append(trees, root)
+	}
+	r := newRun(context.Background())
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, root := range trees {
+			ptDTValidate(r, root, func(string, string) {})
+		}
+	}
+	b.ReportMetric(float64(len(trees)), "docs/op")
+}
+
+// BenchmarkValidateCIUSPT is the whole call a caller makes, so the pass above can
+// be read as a share of it rather than in isolation.
+func BenchmarkValidateCIUSPT(b *testing.B) {
+	docs := benchCorpus(b, "UBL")
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, d := range docs {
+			if _, err := ValidateCIUSPT(ctx, d); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	b.ReportMetric(float64(len(docs)), "docs/op")
+}

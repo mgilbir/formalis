@@ -298,7 +298,42 @@ func gatherCIISyntaxNodes(root *ciiNode) *ciiSyntaxNodes {
 // removed and every internal run collapsed to one space. Three of these rules
 // compare element values through it rather than raw, and a value that differs
 // only in indentation is the same value to them.
-func normalizeSpace(s string) string { return strings.Join(strings.Fields(s), " ") }
+// normalizeSpace is XPath's fn:normalize-space: leading and trailing whitespace
+// removed and every internal run collapsed to one space.
+//
+// The common case by far is a string that is already normalised, and returning it
+// unchanged rather than rebuilding it is worth the scan: the CIUS-PT datatype rules
+// call this 321 times over a few hundred elements per invoice, and
+// strings.Fields+Join allocated twice on every one of them.
+func normalizeSpace(s string) string {
+	if ptDTAlreadyNormalized(s) {
+		return s
+	}
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// ptDTAlreadyNormalized reports whether normalize-space would return s unchanged:
+// no leading or trailing whitespace, no whitespace character other than a space,
+// and no two spaces in a row.
+func ptDTAlreadyNormalized(s string) bool {
+	if s == "" {
+		return true
+	}
+	if isXMLSpace(s[0]) || isXMLSpace(s[len(s)-1]) {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !isXMLSpace(s[i]) {
+			continue
+		}
+		if s[i] != ' ' || s[i-1] == ' ' {
+			return false
+		}
+	}
+	return true
+}
+
+func isXMLSpace(c byte) bool { return c == ' ' || c == '\t' || c == '\n' || c == '\r' }
 
 // allNormalizeSpaceEqual is the shape CII-SR-467 and CII-SR-468 share:
 //

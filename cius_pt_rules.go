@@ -299,7 +299,7 @@ func gatherPTNodes(root *ciiNode) *ptNodes {
 // identifier, so that a reviewer can read the two side by side. Each rule carries
 // its resolved context and condition in a comment, and the polarity — assert or
 // report — is named, because the two are opposite and 33 of the 73 are reports.
-func validateCIUSPTRules(inv *en16931Invoice, root *ciiNode) []Violation {
+func validateCIUSPTRules(r *run, inv *en16931Invoice, root *ciiNode) []Violation {
 	if inv.syntax != "UBL" {
 		return nil
 	}
@@ -315,6 +315,12 @@ func validateCIUSPTRules(inv *en16931Invoice, root *ciiNode) []Violation {
 	ptLineRules(g, add)
 	ptVATRules(g, add)
 	ptLowerRateRules(g, add)
+
+	// And the 291 generated DT-CIUS-PT-* assertions, which are AT's own XPath run
+	// against the same tree. They are a separate Schematron pattern pair, so they
+	// see every node these rules saw: ISO Schematron's first-match-wins is per
+	// pattern and not per document.
+	ptDTValidate(r, root, add)
 	return out
 }
 

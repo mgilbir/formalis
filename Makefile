@@ -25,7 +25,7 @@ CURL := curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused
 URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(x) for x in sys.argv[1].split('/')))"
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
-	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron \
+	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron cius-pt-rules \
 	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles
 
 # Run the tests. Oracle-backed tests skip when their (gitignored) data is absent;
@@ -114,6 +114,21 @@ SYNTAX_RULES_DIR := testdata/en16931-syntax-rules
 en16931-syntax-rules: en16931-artefacts
 	python3 $(SYNTAX_RULES_DIR)/gen.py
 	go test -count=1 -run 'TestAdvisory' .
+
+# AT/eSPap's CIUS-PT datatype tier, generated from the vendored Schematron into
+# cius_pt_datatype_table.go. Same arrangement as the two targets above: the
+# generator is a deliberate act, and the test that re-derives the same tables from
+# the Schematron runs on every `make test`.
+#
+# The test run at the end is not belt-and-braces. gen.py refuses an assertion whose
+# XPath is outside the subset it recognises and refuses to write a table short of
+# what the artefact publishes; the package refuses to compile a table its own parser
+# cannot read. Those are independent gates on the same property, and the second is
+# only reached by running the tests.
+CIUS_PT_RULES_DIR := testdata/cius-pt-rules
+cius-pt-rules: cius-schematron
+	python3 $(CIUS_PT_RULES_DIR)/gen.py
+	go test -count=1 -run 'TestCIUSPTDatatype|TestEveryCIUSPTDatatype' .
 
 # National CIUS oracles: KoSIT XRechnung, OpenPEPPOL BIS 3, the Dutch NLCIUS
 # (SimplerInvoicing SI-UBL) instance test suite, and the national-format sample

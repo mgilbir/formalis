@@ -153,7 +153,7 @@ authority publishes. Every rule set here is a documented subset, and
 `Coverage(src)` is where each one says so.
 
 `Conformant()` is the weaker and more useful question, because it passes over the
-gaps an authority would not reject a document for. Two rule sets have no **fatal**
+gaps an authority would not reject a document for. Four rule sets have no **fatal**
 gap left:
 
 - the **EN 16931 core**: every fatal rule of the semantic model, of the UBL binding
@@ -174,12 +174,20 @@ gap left:
   them has a document in the suite that trips it and one that does not. The country
   rules are gated the way OpenPEPPOL gates them — on the supplier's country and, for
   the domestic ones, the customer's — so a French invoice answers to none of them.
+- **CIUS-PT**: all 363 identifiers AT/eSPap publishes are evaluated — the 65
+  `BR-CIUS-PT-*` business rules, AT's own eight `BR-AA-*` for the "Lower rate" VAT
+  category, and the 290 `DT-CIUS-PT-*` datatype and arithmetic rules over the 291
+  assertions that carry them. That last family is four fifths of the Portuguese
+  rule set by count and no coverage entry here named it until the Schematron was
+  vendored; it is generated from that Schematron rather than transcribed, the way
+  CEN's advisory binding rules are. It is the first CIUS whose *datatype* tier is
+  implemented at all.
 
 Every other CIUS and national validator still names a gap its authority flags fatal
 and a validator could close, so those return false whatever the document.
 
 `Complete()` is the stricter question — "did this package see everything a
-reference validator could see" — and the same three rule sets answer yes. The EN 16931
+reference validator could see" — and the same four rule sets answer yes. The EN 16931
 core's 1,168 advisory binding rules used to be the reason it could not;
 they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
 rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
@@ -194,6 +202,11 @@ it was a rule set it *imports* rather than one of its own — the twenty-one Pep
 rules the released artefact merges in, one of which (`PEPPOL-EN16931-R061`) had
 replaced KoSIT's withdrawn `BR-DE-29`, so BG-19's mandate reference was checked by
 nothing on the German path at all.
+
+The CIUS-PT path answers yes for a fourth reason, and it is the one this package
+had been carrying longest: its only gap was 290 fatal rules that had never been
+named anywhere. `ValidateCIUSPT` reported `Conformant() == false` for every
+Portuguese invoice, whatever it contained, until they were implemented.
 
 The Peppol path answers yes for a third: its only gap was a rule set nobody had
 counted. Both binding files hold a second family of 101 country-specific rules
@@ -416,6 +429,7 @@ make en16931-artefacts             # the CEN/TC 434 per-rule unit-test suite
 make en16931-ubl                   # the EN 16931 UBL example invoices
 make en16931-genericode            # the official code lists (needs unzip)
 make en16931-syntax-rules          # regenerate the advisory binding table
+make cius-pt-rules                 # regenerate the CIUS-PT datatype table
 make test
 ```
 
@@ -423,10 +437,11 @@ Each target is stamped, so re-running it is a no-op rather than an error; the
 matching `clean-*` target removes the stamp and the data, and is how you force a
 re-fetch.
 
-Two targets go one step further and *regenerate* committed source. `make
-en16931-codelists` rewrites the code-list tables from the genericode bundle, and
+Three targets go one step further and *regenerate* committed source. `make
+en16931-codelists` rewrites the code-list tables from the genericode bundle,
 `make en16931-syntax-rules` rewrites the advisory syntax-binding table from the CEN
-Schematron. Both are deliberate acts and neither is part of running the tests,
+Schematron, and `make cius-pt-rules` rewrites the CIUS-PT datatype table from
+AT/eSPap's. All three are deliberate acts and none is part of running the tests,
 which is why fetching each oracle is its own target — and in both cases a test
 re-derives the same data from the same source on every run and fails if the
 committed table has drifted. The generators refuse to write anything they cannot

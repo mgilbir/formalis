@@ -15,9 +15,12 @@ import "context"
 // kind, and every one of them is a Schematron <report> whose test reads as the
 // defect rather than as the requirement.
 //
-// All 65 published BR-CIUS-PT-* identifiers are evaluated, and so are the eight
-// BR-AA-* below. What is not evaluated is the 290-rule DT-CIUS-PT-* datatype tier;
-// see Coverage(SourceCIUSPT).
+// Every identifier AT/eSPap publishes is evaluated: the 65 BR-CIUS-PT-*, the eight
+// BR-AA-* below, and the 290 DT-CIUS-PT-* datatype and arithmetic rules over the
+// 291 assertions that carry them. The last of those is four fifths of the rule set
+// by count and is generated from the Schematron rather than transcribed — see
+// cius_pt_datatype.go — so Coverage(SourceCIUSPT) is now empty and SourceCIUSPT is
+// in completeSources.
 //
 // Two facts about the artefact decide how these rules are written, and both were
 // found the expensive way in earlier rule sets:
@@ -35,7 +38,7 @@ import "context"
 //     OpenPEPPOL's own fixtures hold up as conforming for want of that distinction
 //     (C32), and seven CIUS-PT rules had it wrong before PR 22.
 //
-// Every published identifier is flagged fatal — 65 BR-CIUS-PT-* and 290
+// Every published identifier is flagged fatal — 65 BR-CIUS-PT-*, 8 BR-AA-* and 290
 // DT-CIUS-PT-* — so the plain adder is right, and the coverage table's fail-safe
 // fatal turned out to be the authority's own flag. cius_artefacts_test.go checks
 // both directions.
@@ -49,8 +52,9 @@ import "context"
 // ptLowerRateRules.
 
 // ValidateCIUSPT validates an invoice XML against the Portuguese CIUS-PT: the
-// EN 16931 core plus all 73 published CIUS-PT business rules — the 65 BR-CIUS-PT-*
-// and AT/eSPap's own eight BR-AA-*.
+// EN 16931 core plus every rule AT/eSPap publishes — the 65 BR-CIUS-PT-* business
+// rules, AT's own eight BR-AA-*, and the 290 DT-CIUS-PT-* datatype and arithmetic
+// rules.
 //
 // The EN 16931 core accepts either syntax. The CIUS-PT rules are evaluated for a
 // UBL document only, because that is the only binding AT/eSPap publishes: a CII
@@ -69,14 +73,16 @@ import "context"
 // read the value as clean. See ErrMalformedXML.
 //
 // The Report names the rule families neither rule set evaluates — the union of
-// Coverage(SourceEN16931) and Coverage(SourceCIUSPT). A document with no findings
-// is still not a document that passed CIUS-PT, because the 290 DT-CIUS-PT-*
-// datatype and arithmetic rules were not run, and Report.Conformant says so.
+// Coverage(SourceEN16931) and Coverage(SourceCIUSPT). Coverage(SourceCIUSPT) is
+// empty, so a clean Portuguese invoice reports Conformant() == true and
+// Complete() == true; what remains in the union is the seven rules CEN publishes
+// that no validator can evaluate, which carry Unevaluable and do not hold the
+// verdict down.
 func ValidateCIUSPT(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceCIUSPT}, validateCIUSPT)
 }
 
 func validateCIUSPT(r *run, p *parsed) []Violation {
 	out := validateEN16931(r, p, ProfileEN16931)
-	return append(out, validateCIUSPTRules(p.inv, p.root)...)
+	return append(out, validateCIUSPTRules(r, p.inv, p.root)...)
 }

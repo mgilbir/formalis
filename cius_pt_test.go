@@ -118,6 +118,7 @@ const minimalCIUSPTUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 </cac:PayeeParty>
 <cac:TaxRepresentativeParty>
   <cac:PartyName><cbc:Name>Tax Rep</cbc:Name></cac:PartyName>
+  <cac:PartyTaxScheme><cbc:CompanyID>PT333333333</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
   <cac:PostalAddress><cbc:CityName>RepCity</cbc:CityName><cac:AddressLine><cbc:Line>RepLine3</cbc:Line></cac:AddressLine><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
 </cac:TaxRepresentativeParty>
 <cac:Delivery><cbc:ActualDeliveryDate>2024-01-14</cbc:ActualDeliveryDate><cac:DeliveryLocation><cbc:ID>LOC-1</cbc:ID><cac:Address><cbc:StreetName>DelivStreet</cbc:StreetName><cbc:CityName>DelivCity</cbc:CityName><cbc:PostalZone>4444-002</cbc:PostalZone><cac:AddressLine><cbc:Line>DelivLine3</cbc:Line></cac:AddressLine><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:Address></cac:DeliveryLocation><cac:DeliveryParty><cac:PartyName><cbc:Name>Deliver To Lda</cbc:Name></cac:PartyName></cac:DeliveryParty></cac:Delivery>
@@ -127,22 +128,22 @@ const minimalCIUSPTUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
   <cac:PaymentMandate><cbc:ID>MANDATE-1</cbc:ID><cac:PayerFinancialAccount><cbc:ID>PAYER-ACCT</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate>
 </cac:PaymentMeans>
 <cac:PaymentTerms><cbc:Note>30 dias</cbc:Note></cac:PaymentTerms>
-<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:AllowanceChargeReason>Desconto</cbc:AllowanceChargeReason><cbc:Amount currencyID="EUR">10.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:AllowanceCharge>
-<cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:AllowanceChargeReason>Portes</cbc:AllowanceChargeReason><cbc:Amount currencyID="EUR">5.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:AllowanceCharge>
-<cac:TaxTotal><cbc:TaxAmount>21.85</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount>95.00</cbc:TaxableAmount><cbc:TaxAmount>21.85</cbc:TaxAmount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
-<cac:LegalMonetaryTotal><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cbc:AllowanceTotalAmount>10.00</cbc:AllowanceTotalAmount><cbc:ChargeTotalAmount>5.00</cbc:ChargeTotalAmount><cbc:TaxExclusiveAmount>95.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount>116.85</cbc:TaxInclusiveAmount><cbc:PayableAmount>116.85</cbc:PayableAmount></cac:LegalMonetaryTotal>
-<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount>
+<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:AllowanceChargeReason>Desconto</cbc:AllowanceChargeReason><cbc:Amount currencyID="EUR">10.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:AllowanceCharge>
+<cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:AllowanceChargeReason>Portes</cbc:AllowanceChargeReason><cbc:Amount currencyID="EUR">5.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:AllowanceCharge>
+<cac:TaxTotal><cbc:TaxAmount currencyID="EUR">21.85</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">95.00</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">21.85</cbc:TaxAmount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
+<cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount><cbc:AllowanceTotalAmount currencyID="EUR">10.00</cbc:AllowanceTotalAmount><cbc:ChargeTotalAmount currencyID="EUR">5.00</cbc:ChargeTotalAmount><cbc:TaxExclusiveAmount currencyID="EUR">95.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="EUR">116.85</cbc:TaxInclusiveAmount><cbc:PayableAmount currencyID="EUR">116.85</cbc:PayableAmount></cac:LegalMonetaryTotal>
+<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1.00</cbc:InvoicedQuantity><cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount>
   <cac:OrderLineReference><cbc:LineID>1</cbc:LineID></cac:OrderLineReference>
   <cac:DocumentReference><cbc:ID>OBJ-1</cbc:ID></cac:DocumentReference>
   <cac:Item><cbc:Name>Widget</cbc:Name>
     <cac:BuyersItemIdentification><cbc:ID>BII-1</cbc:ID></cac:BuyersItemIdentification>
     <cac:SellersItemIdentification><cbc:ID>SII-1</cbc:ID></cac:SellersItemIdentification>
-    <cac:StandardItemIdentification><cbc:ID>SDI-1</cbc:ID></cac:StandardItemIdentification>
+    <cac:StandardItemIdentification><cbc:ID schemeID="0088">SDI-1</cbc:ID></cac:StandardItemIdentification>
     <cac:OriginCountry><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:OriginCountry>
-    <cac:CommodityClassification><cbc:ItemClassificationCode>65141500</cbc:ItemClassificationCode></cac:CommodityClassification>
-    <cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory>
+    <cac:CommodityClassification><cbc:ItemClassificationCode listID="ST">65141500</cbc:ItemClassificationCode></cac:CommodityClassification>
+    <cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory>
   </cac:Item>
-  <cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount><cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount currencyID="EUR">0.00</cbc:Amount></cac:AllowanceCharge></cac:Price>
+  <cac:Price><cbc:PriceAmount currencyID="EUR">100.00</cbc:PriceAmount><cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount currencyID="EUR">0.00</cbc:Amount><cbc:BaseAmount currencyID="EUR">100.00</cbc:BaseAmount></cac:AllowanceCharge></cac:Price>
 </cac:InvoiceLine>
 </Invoice>`
 
@@ -156,16 +157,16 @@ const minimalCIUSPTUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 const (
 	ptSellerVATScheme    = `<cbc:CompanyID>PT111111111</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>`
 	ptBuyerVATScheme     = `<cbc:CompanyID>PT222222222</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme>`
-	ptBreakdownCategory  = `<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>`
-	ptLineCategory       = `<cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory>`
-	ptDocAllowanceCat    = `<cbc:Amount currencyID="EUR">10.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>`
-	ptDocChargeCat       = `<cbc:Amount currencyID="EUR">5.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>`
+	ptBreakdownCategory  = `<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>`
+	ptLineCategory       = `<cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory>`
+	ptDocAllowanceCat    = `<cbc:Amount currencyID="EUR">10.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>`
+	ptDocChargeCat       = `<cbc:Amount currencyID="EUR">5.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory>`
 	ptDelivery           = `<cac:Delivery><cbc:ActualDeliveryDate>2024-01-14</cbc:ActualDeliveryDate><cac:DeliveryLocation><cbc:ID>LOC-1</cbc:ID><cac:Address><cbc:StreetName>DelivStreet</cbc:StreetName><cbc:CityName>DelivCity</cbc:CityName><cbc:PostalZone>4444-002</cbc:PostalZone><cac:AddressLine><cbc:Line>DelivLine3</cbc:Line></cac:AddressLine><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:Address></cac:DeliveryLocation><cac:DeliveryParty><cac:PartyName><cbc:Name>Deliver To Lda</cbc:Name></cac:PartyName></cac:DeliveryParty></cac:Delivery>`
 	ptDeliverToAddress   = `<cac:Address><cbc:StreetName>DelivStreet</cbc:StreetName><cbc:CityName>DelivCity</cbc:CityName><cbc:PostalZone>4444-002</cbc:PostalZone><cac:AddressLine><cbc:Line>DelivLine3</cbc:Line></cac:AddressLine><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:Address>`
-	ptLegalMonetaryTotal = `<cac:LegalMonetaryTotal><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cbc:AllowanceTotalAmount>10.00</cbc:AllowanceTotalAmount><cbc:ChargeTotalAmount>5.00</cbc:ChargeTotalAmount><cbc:TaxExclusiveAmount>95.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount>116.85</cbc:TaxInclusiveAmount><cbc:PayableAmount>116.85</cbc:PayableAmount></cac:LegalMonetaryTotal>`
+	ptLegalMonetaryTotal = `<cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount><cbc:AllowanceTotalAmount currencyID="EUR">10.00</cbc:AllowanceTotalAmount><cbc:ChargeTotalAmount currencyID="EUR">5.00</cbc:ChargeTotalAmount><cbc:TaxExclusiveAmount currencyID="EUR">95.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="EUR">116.85</cbc:TaxInclusiveAmount><cbc:PayableAmount currencyID="EUR">116.85</cbc:PayableAmount></cac:LegalMonetaryTotal>`
 	ptPayeeAccount       = `<cac:PayeeFinancialAccount><cbc:ID>PT50000201231234567890154</cbc:ID><cbc:Name>Seller account</cbc:Name><cac:FinancialInstitutionBranch><cbc:ID>BRANCH-1</cbc:ID></cac:FinancialInstitutionBranch></cac:PayeeFinancialAccount>`
 	ptMandate            = `<cac:PaymentMandate><cbc:ID>MANDATE-1</cbc:ID><cac:PayerFinancialAccount><cbc:ID>PAYER-ACCT</cbc:ID></cac:PayerFinancialAccount></cac:PaymentMandate>`
-	ptPriceAllowance     = `<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount currencyID="EUR">0.00</cbc:Amount></cac:AllowanceCharge>`
+	ptPriceAllowance     = `<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator><cbc:Amount currencyID="EUR">0.00</cbc:Amount><cbc:BaseAmount currencyID="EUR">100.00</cbc:BaseAmount></cac:AllowanceCharge>`
 )
 
 // ciusPTMutations is one fixture per evaluated identifier: a substitution on the
@@ -182,14 +183,14 @@ var ciusPTMutations = []ciusMutation{
 	{"no buyer VAT identifier (03)", `<cbc:CompanyID>PT222222222</cbc:CompanyID>`, "", "BR-CIUS-PT-03"},
 	{"buyer tax scheme is not VAT (04)", ptBuyerVATScheme, `<cbc:CompanyID>PT222222222</cbc:CompanyID><cac:TaxScheme><cbc:ID>GST</cbc:ID></cac:TaxScheme>`, "BR-CIUS-PT-04"},
 	{"no document totals (10)", ptLegalMonetaryTotal, "", "BR-CIUS-PT-10"},
-	{"no total VAT amount (11)", `<cac:TaxTotal><cbc:TaxAmount>21.85</cbc:TaxAmount>`, `<cac:TaxTotal>`, "BR-CIUS-PT-11"},
+	{"no total VAT amount (11)", `<cac:TaxTotal><cbc:TaxAmount currencyID="EUR">21.85</cbc:TaxAmount>`, `<cac:TaxTotal>`, "BR-CIUS-PT-11"},
 	{"debit note without a preceding invoice (65)", `<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>`, `<cbc:InvoiceTypeCode>383</cbc:InvoiceTypeCode>`, "BR-CIUS-PT-65"},
 	{"no deliver-to address (66)", ptDeliverToAddress, "", "BR-CIUS-PT-66"},
 
 	// $Document_totals — the two sums that become mandatory once a document-level
 	// allowance or charge is present.
-	{"allowance without its document total (62)", `<cbc:AllowanceTotalAmount>10.00</cbc:AllowanceTotalAmount>`, "", "BR-CIUS-PT-62"},
-	{"charge without its document total (63)", `<cbc:ChargeTotalAmount>5.00</cbc:ChargeTotalAmount>`, "", "BR-CIUS-PT-63"},
+	{"allowance without its document total (62)", `<cbc:AllowanceTotalAmount currencyID="EUR">10.00</cbc:AllowanceTotalAmount>`, "", "BR-CIUS-PT-62"},
+	{"charge without its document total (63)", `<cbc:ChargeTotalAmount currencyID="EUR">5.00</cbc:ChargeTotalAmount>`, "", "BR-CIUS-PT-63"},
 
 	// $Seller, $Buyer, $Payee and the three postal addresses.
 	{"no seller street (05)", `<cbc:StreetName>SellerStreet</cbc:StreetName>`, "", "BR-CIUS-PT-05"},
@@ -238,26 +239,26 @@ var ciusPTMutations = []ciusMutation{
 	{"payment terms without a note (61)", `<cac:PaymentTerms><cbc:Note>30 dias</cbc:Note></cac:PaymentTerms>`, `<cac:PaymentTerms/>`, "BR-CIUS-PT-61"},
 
 	// $Invoice_Line, $Invoice_Line_Item and $Invoice_Line_Price.
-	{"line item without a tax scheme (09)", ptLineCategory, `<cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent></cac:ClassifiedTaxCategory>`, "BR-CIUS-PT-09"},
+	{"line item without a tax scheme (09)", ptLineCategory, `<cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent></cac:ClassifiedTaxCategory>`, "BR-CIUS-PT-09"},
 	{"empty order line reference (51)", `<cac:OrderLineReference><cbc:LineID>1</cbc:LineID></cac:OrderLineReference>`, `<cac:OrderLineReference/>`, "BR-CIUS-PT-51"},
 	{"empty line object reference (52)", `<cac:DocumentReference><cbc:ID>OBJ-1</cbc:ID></cac:DocumentReference>`, `<cac:DocumentReference/>`, "BR-CIUS-PT-52"},
 	{"empty buyer's item identifier (53)", `<cac:BuyersItemIdentification><cbc:ID>BII-1</cbc:ID></cac:BuyersItemIdentification>`, `<cac:BuyersItemIdentification/>`, "BR-CIUS-PT-53"},
 	{"empty seller's item identifier (54)", `<cac:SellersItemIdentification><cbc:ID>SII-1</cbc:ID></cac:SellersItemIdentification>`, `<cac:SellersItemIdentification/>`, "BR-CIUS-PT-54"},
-	{"empty standard item identifier (55)", `<cac:StandardItemIdentification><cbc:ID>SDI-1</cbc:ID></cac:StandardItemIdentification>`, `<cac:StandardItemIdentification/>`, "BR-CIUS-PT-55"},
+	{"empty standard item identifier (55)", `<cac:StandardItemIdentification><cbc:ID schemeID="0088">SDI-1</cbc:ID></cac:StandardItemIdentification>`, `<cac:StandardItemIdentification/>`, "BR-CIUS-PT-55"},
 	{"empty item origin country (56)", `<cac:OriginCountry><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:OriginCountry>`, `<cac:OriginCountry/>`, "BR-CIUS-PT-56"},
-	{"empty commodity classification (57)", `<cac:CommodityClassification><cbc:ItemClassificationCode>65141500</cbc:ItemClassificationCode></cac:CommodityClassification>`, `<cac:CommodityClassification/>`, "BR-CIUS-PT-57"},
-	{"charge on the price detail (58)", `<cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount>`, `<cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount><cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:Amount currencyID="EUR">1.00</cbc:Amount></cac:AllowanceCharge>`, "BR-CIUS-PT-58"},
+	{"empty commodity classification (57)", `<cac:CommodityClassification><cbc:ItemClassificationCode listID="ST">65141500</cbc:ItemClassificationCode></cac:CommodityClassification>`, `<cac:CommodityClassification/>`, "BR-CIUS-PT-57"},
+	{"charge on the price detail (58)", `<cac:Price><cbc:PriceAmount currencyID="EUR">100.00</cbc:PriceAmount>`, `<cac:Price><cbc:PriceAmount currencyID="EUR">100.00</cbc:PriceAmount><cac:AllowanceCharge><cbc:ChargeIndicator>true</cbc:ChargeIndicator><cbc:Amount currencyID="EUR">1.00</cbc:Amount></cac:AllowanceCharge>`, "BR-CIUS-PT-58"},
 	{"price discount without an amount (59)", ptPriceAllowance, `<cac:AllowanceCharge><cbc:ChargeIndicator>false</cbc:ChargeIndicator></cac:AllowanceCharge>`, "BR-CIUS-PT-59"},
 
 	// $Document_level_allowances and $Document_level_charges.
-	{"document allowance without a tax scheme (19)", ptDocAllowanceCat, `<cbc:Amount currencyID="EUR">10.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent></cac:TaxCategory>`, "BR-CIUS-PT-19"},
-	{"document charge without a tax scheme (20)", ptDocChargeCat, `<cbc:Amount currencyID="EUR">5.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent></cac:TaxCategory>`, "BR-CIUS-PT-20"},
+	{"document allowance without a tax scheme (19)", ptDocAllowanceCat, `<cbc:Amount currencyID="EUR">10.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent></cac:TaxCategory>`, "BR-CIUS-PT-19"},
+	{"document charge without a tax scheme (20)", ptDocChargeCat, `<cbc:Amount currencyID="EUR">5.00</cbc:Amount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent></cac:TaxCategory>`, "BR-CIUS-PT-20"},
 
 	// $VAT_breakdown and its three code-filtered subsets.
-	{"breakdown without a tax scheme (08)", ptBreakdownCategory, `<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent></cac:TaxCategory></cac:TaxSubtotal>`, "BR-CIUS-PT-08"},
+	{"breakdown without a tax scheme (08)", ptBreakdownCategory, `<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23.00</cbc:Percent></cac:TaxCategory></cac:TaxSubtotal>`, "BR-CIUS-PT-08"},
 	{"lower-rate breakdown with no rate (12)", ptBreakdownCategory, `<cac:TaxCategory><cbc:ID>AA</cbc:ID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>`, "BR-CIUS-PT-12"},
 	{"standard-rated breakdown at zero (14)", ptBreakdownCategory, `<cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>0</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>`, "BR-CIUS-PT-14"},
-	{"exempt breakdown at a non-zero rate (16)", ptBreakdownCategory, `<cac:TaxCategory><cbc:ID>E</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>`, "BR-CIUS-PT-16"},
+	{"exempt breakdown at a non-zero rate (16)", ptBreakdownCategory, `<cac:TaxCategory><cbc:ID>E</cbc:ID><cbc:Percent>23.00</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal>`, "BR-CIUS-PT-16"},
 	// -15 forbids the exemption-reason item attribute on a standard-rated line. The
 	// baseline's line is standard-rated, so adding the attribute is the whole fixture.
 	{"standard-rated line carrying an exemption reason (15)", `<cac:BuyersItemIdentification>`, `<cac:AdditionalItemProperty><cbc:Name>#TAXEXEMPTIONREASON@CLASSIFIEDTAXCATEGORY#</cbc:Name><cbc:Value>Artigo 9</cbc:Value></cac:AdditionalItemProperty><cac:BuyersItemIdentification>`, "BR-CIUS-PT-15"},
