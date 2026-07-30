@@ -111,10 +111,23 @@ const (
 	minXRechnungRuleInstances = 242
 	minXRechnungRuleVerdicts  = 269
 	minPeppolExamples         = 9
-	minCIUSPTInstances        = 20
-	minCIUSROInstances        = 44
-	minUBLBEInstances         = 36
-	minSRBDTInstances         = 10
+
+	// OpenPEPPOL's own per-rule test sets, under rules/unit-UBL-PEPPOL and
+	// rules/unit-CII-PEPPOL. They are the same kind of oracle as KoSIT's fixtures
+	// above and the only one that gives a *violating* verdict for a Peppol rule from
+	// the authority that wrote it: 102 test sets, each scoped to one identifier and
+	// holding several documents, every one of which declares whether OpenPEPPOL
+	// considers it valid or invalid against that rule.
+	//
+	// The example corpus is nine conforming invoices, so it could only ever say that
+	// no rule over-fires. These say that each rule fires at all, which is what tells
+	// a working rule from one bound to an element name no document contains.
+	minPeppolRuleDocuments = 354
+	minPeppolRuleVerdicts  = 350
+	minCIUSPTInstances     = 20
+	minCIUSROInstances     = 44
+	minUBLBEInstances      = 36
+	minSRBDTInstances      = 10
 
 	// NLCIUS is the one suite that carries both verdicts: the instances named
 	// for a BR-NL rule, and the subset of those that are deliberately broken and

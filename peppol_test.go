@@ -27,27 +27,85 @@ const minimalPeppolUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
   <cac:PartyLegalEntity><cbc:RegistrationName>Seller Ltd</cbc:RegistrationName></cac:PartyLegalEntity>
 </cac:Party></cac:AccountingSupplierParty>
 <cac:AccountingCustomerParty><cac:Party>
-  <cbc:EndpointID schemeID="0088">7300010000002</cbc:EndpointID>
+  <cbc:EndpointID schemeID="0088">7300010000018</cbc:EndpointID>
   <cac:PostalAddress><cbc:CityName>Bonn</cbc:CityName><cbc:PostalZone>53113</cbc:PostalZone>
     <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
   <cac:PartyLegalEntity><cbc:RegistrationName>Buyer Ltd</cbc:RegistrationName></cac:PartyLegalEntity>
 </cac:Party></cac:AccountingCustomerParty>
-<cac:TaxTotal><cbc:TaxAmount>19.00</cbc:TaxAmount>
-  <cac:TaxSubtotal><cbc:TaxableAmount>100.00</cbc:TaxableAmount><cbc:TaxAmount>19.00</cbc:TaxAmount>
+<cac:TaxTotal><cbc:TaxAmount currencyID="EUR">19.00</cbc:TaxAmount>
+  <cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">100.00</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">19.00</cbc:TaxAmount>
     <cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
-<cac:LegalMonetaryTotal><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount>
-  <cbc:TaxExclusiveAmount>100.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount>119.00</cbc:TaxInclusiveAmount>
-  <cbc:PayableAmount>119.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
+<cac:LegalMonetaryTotal><cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount>
+  <cbc:TaxExclusiveAmount currencyID="EUR">100.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount currencyID="EUR">119.00</cbc:TaxInclusiveAmount>
+  <cbc:PayableAmount currencyID="EUR">119.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
 <cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity>
-  <cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount>
+  <cbc:LineExtensionAmount currencyID="EUR">100.00</cbc:LineExtensionAmount>
   <cac:Item><cbc:Name>Widget</cbc:Name>
     <cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item>
-  <cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
+  <cac:Price><cbc:PriceAmount currencyID="EUR">100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </Invoice>`
 
+// minimalPeppolCII is minimalPeppolUBL's counterpart in the other binding.
+//
+// The two Peppol binding files are not translations of each other — 15 identifiers
+// are UBL-only and one is CII-only, and several more test a different thing in each
+// — so a suite with one fixture would leave a third of the rule set unexercised and
+// could not tell a rule bound to the wrong binding from one bound to the right
+// one. It also carries what the CII binding is stricter about: a @format on every
+// udt:DateTimeString (F001) and a @currencyID on the VAT total (R053, CL007).
+const minimalPeppolCII = `<CrossIndustryInvoice>
+  <ExchangedDocumentContext>
+    <BusinessProcessSpecifiedDocumentContextParameter><ID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</ID></BusinessProcessSpecifiedDocumentContextParameter>
+    <GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0</ID></GuidelineSpecifiedDocumentContextParameter>
+  </ExchangedDocumentContext>
+  <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime></ExchangedDocument>
+  <SupplyChainTradeTransaction>
+    <IncludedSupplyChainTradeLineItem>
+      <AssociatedDocumentLineDocument><LineID>1</LineID></AssociatedDocumentLineDocument>
+      <SpecifiedTradeProduct><Name>Widget</Name></SpecifiedTradeProduct>
+      <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
+      <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
+      <SpecifiedLineTradeSettlement><ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>100.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
+    </IncludedSupplyChainTradeLineItem>
+    <ApplicableHeaderTradeAgreement>
+      <BuyerReference>abc123</BuyerReference>
+      <SellerTradeParty><Name>Seller Co</Name>
+        <URIUniversalCommunication><URIID schemeID="0088">7300010000001</URIID></URIUniversalCommunication>
+        <PostalTradeAddress><PostcodeCode>10115</PostcodeCode><CityName>Berlin</CityName><CountryID>DE</CountryID></PostalTradeAddress>
+        <SpecifiedTaxRegistration><ID schemeID="VA">DE123456789</ID></SpecifiedTaxRegistration></SellerTradeParty>
+      <BuyerTradeParty><Name>Buyer Co</Name>
+        <URIUniversalCommunication><URIID schemeID="0088">7300010000018</URIID></URIUniversalCommunication>
+        <PostalTradeAddress><PostcodeCode>53113</PostcodeCode><CityName>Bonn</CityName><CountryID>DE</CountryID></PostalTradeAddress></BuyerTradeParty>
+    </ApplicableHeaderTradeAgreement>
+    <ApplicableHeaderTradeDelivery>
+      <ActualDeliverySupplyChainEvent><OccurrenceDateTime><DateTimeString format="102">20240101</DateTimeString></OccurrenceDateTime></ActualDeliverySupplyChainEvent>
+    </ApplicableHeaderTradeDelivery>
+    <ApplicableHeaderTradeSettlement>
+      <InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>
+      <SpecifiedTradeSettlementPaymentMeans><TypeCode>58</TypeCode>
+        <PayeePartyCreditorFinancialAccount><IBANID>DE75512108001245126199</IBANID></PayeePartyCreditorFinancialAccount></SpecifiedTradeSettlementPaymentMeans>
+      <ApplicableTradeTax><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
+      <SpecifiedTradeSettlementHeaderMonetarySummation>
+        <LineTotalAmount>100.00</LineTotalAmount>
+        <TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>
+        <TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>
+        <GrandTotalAmount>120.00</GrandTotalAmount>
+        <DuePayableAmount>120.00</DuePayableAmount>
+      </SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ApplicableHeaderTradeSettlement>
+  </SupplyChainTradeTransaction>
+</CrossIndustryInvoice>`
+
 func TestValidatePeppolBaseline(t *testing.T) {
-	if v := findings(t, context.Background(), ValidatePeppol, []byte(minimalPeppolUBL)); len(v) != 0 {
-		t.Fatalf("baseline Peppol not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
+	for _, tc := range []struct{ name, doc string }{
+		{"UBL", minimalPeppolUBL},
+		{"CII", minimalPeppolCII},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if v := findings(t, context.Background(), ValidatePeppol, []byte(tc.doc)); len(v) != 0 {
+				t.Fatalf("baseline Peppol not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
+			}
+		})
 	}
 }
 
