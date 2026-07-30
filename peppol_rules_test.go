@@ -153,6 +153,130 @@ func TestPeppolRuleTableMatchesTheSchematron(t *testing.T) {
 	t.Logf("OpenPEPPOL publishes %d PEPPOL-* identifiers: %d in the UBL binding, %d in the CII one", len(published), ubl, cii)
 }
 
+// peppolCountrySchematronRules reads every *country-specific* identifier and flag
+// out of the two vendored binding files — everything the decoder finds that is not
+// a PEPPOL-* rule.
+//
+// It is deliberately the complement of peppolSchematronRules rather than a list of
+// the eight prefixes this package knows about: a ninth country OpenPEPPOL adds must
+// arrive here as an unaccounted identifier, not be filtered out by a pattern that
+// was written before it existed. That is the shape of C33 — the whole family was
+// invisible because every survey matched on "PEPPOL-" and stopped.
+//
+// The one non-rule the decoder can return is the pattern identifier
+// `german-rules`, and it cannot reach here: assertFlags reads <assert>/<report>
+// elements, and that string is a <pattern id>. The count assertion below is what
+// says so.
+func peppolCountrySchematronRules(t *testing.T) map[string]peppolSchRule {
+	t.Helper()
+	dir := filepath.Join("testdata", "peppol", "repo", "rules", "sch")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("OpenPEPPOL Schematron not present (make cius-oracles)")
+	}
+	out := map[string]peppolSchRule{}
+	for binding, name := range map[peppolBindings]string{
+		peppolUBL: filepath.Join(dir, "PEPPOL-EN16931-UBL.sch"),
+		peppolCII: filepath.Join(dir, "PEPPOL-EN16931-CII.sch"),
+	} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for id, flags := range assertFlags(t, name, data) {
+			if strings.HasPrefix(id, "PEPPOL-") {
+				continue
+			}
+			r, ok := out[id]
+			if !ok {
+				r = peppolSchRule{flags: map[string]bool{}}
+			}
+			r.bindings |= binding
+			for f := range flags {
+				r.flags[f] = true
+			}
+			out[id] = r
+		}
+	}
+	if len(out) != 101 {
+		t.Fatalf("read %d country-specific identifiers from the vendored Schematron, want 101; the harness is not "+
+			"reading the artefacts", len(out))
+	}
+	return out
+}
+
+// TestPeppolCountryRuleTableMatchesTheSchematron holds peppolCountryRules to the
+// artefact in both directions, and holds the identifiers it does not yet name to
+// Coverage(SourcePeppol).
+//
+// The second half is the invariant C33 was a breach of: every identifier the
+// artefact publishes is either evaluated or named as a gap, and nothing is neither.
+// The coverage table used to name none of these 101 because no survey had counted
+// them, and there was no test that could have noticed.
+func TestPeppolCountryRuleTableMatchesTheSchematron(t *testing.T) {
+	published := peppolCountrySchematronRules(t)
+	named := map[string]bool{}
+	for _, entry := range Coverage(SourcePeppol) {
+		for _, id := range coverageIdentifiers(entry.Rules) {
+			named[id] = true
+		}
+	}
+	var unaccounted []string
+	for id, r := range published {
+		got, ok := peppolCountryRules[id]
+		if !ok {
+			if !named[id] {
+				unaccounted = append(unaccounted, id)
+			}
+			continue
+		}
+		if named[id] {
+			t.Errorf("%s is evaluated and Coverage(SourcePeppol) still names it as a gap", id)
+		}
+		if got.bindings != r.bindings {
+			t.Errorf("%s is published in %s and peppolCountryRules records %s", id,
+				peppolBindingNames(r.bindings), peppolBindingNames(got.bindings))
+		}
+		want, known := severityOfFlag(pickFlag(r.flags))
+		if !known {
+			t.Errorf("%s carries the flag %v, which this package does not know how to fold onto a Severity", id, keysOf(r.flags))
+			continue
+		}
+		if got.severity != want {
+			t.Errorf("this package reports %s as %s, but OpenPEPPOL flags it %v; the severity a finding carries is "+
+				"a quotation and not a choice", id, got.severity, keysOf(r.flags))
+		}
+	}
+	sort.Strings(unaccounted)
+	if len(unaccounted) > 0 {
+		t.Errorf("%d country-specific identifiers the OpenPEPPOL Schematron publishes are neither evaluated nor "+
+			"named in Coverage(SourcePeppol): %v", len(unaccounted), unaccounted)
+	}
+	for id := range peppolCountryRules {
+		if _, ok := published[id]; !ok {
+			t.Errorf("peppolCountryRules names %q, which the vendored OpenPEPPOL Schematron does not publish", id)
+		}
+	}
+	// The identifier namespaces must not collide either: a country rule and a
+	// PEPPOL-* rule sharing a name would make peppolPublished's lookup order decide
+	// which flag a finding carries.
+	for id := range peppolCountryRules {
+		if _, ok := peppolRules[id]; ok {
+			t.Errorf("%s is in both peppolRules and peppolCountryRules", id)
+		}
+	}
+	var ubl, cii int
+	for _, r := range published {
+		if r.bindings&peppolUBL != 0 {
+			ubl++
+		}
+		if r.bindings&peppolCII != 0 {
+			cii++
+		}
+	}
+	t.Logf("OpenPEPPOL publishes %d country-specific identifiers: %d in the UBL binding, %d in the CII one; this "+
+		"package evaluates %d of them", len(published), ubl, cii, len(peppolCountryRules))
+}
+
 func peppolBindingNames(b peppolBindings) string {
 	var out []string
 	if b&peppolUBL != 0 {
@@ -203,7 +327,7 @@ func peppolUnitTestSets(t *testing.T) []peppolUnitCase {
 		t.Skip("OpenPEPPOL unit tests not present (make cius-oracles)")
 	}
 	var out []peppolUnitCase
-	for _, dir := range []string{"unit-UBL-PEPPOL", "unit-CII-PEPPOL"} {
+	for _, dir := range append([]string{"unit-UBL-PEPPOL", "unit-CII-PEPPOL"}, peppolCountryUnitDirs(t)...) {
 		files, err := filepath.Glob(filepath.Join(root, dir, "*.xml"))
 		if err != nil {
 			t.Fatal(err)
@@ -213,6 +337,38 @@ func peppolUnitTestSets(t *testing.T) []peppolUnitCase {
 			out = append(out, peppolReadTestSet(t, f)...)
 		}
 	}
+	return out
+}
+
+// peppolCountryUnitDirs are OpenPEPPOL's per-rule test sets for the country rules
+// this package evaluates — rules/unit-{UBL,CII}-{DE,DK,GR,IT,NL,NO,SE}.
+//
+// They are the authority's own statement of what should and should not fire for
+// each national rule set, and nothing in this repository had read them: PR 20 wired
+// unit-{UBL,CII}-PEPPOL and left thirteen more directories, 140 test sets, on
+// disk unopened. The list is derived from the families in peppolCountryRules rather
+// than written out, so a family that becomes evaluated acquires its fixtures in the
+// same change, and a directory OpenPEPPOL adds for a country this package already
+// evaluates is picked up rather than ignored.
+//
+// Iceland has no directory upstream, which is why peppolCountryExtraCases exists.
+func peppolCountryUnitDirs(t *testing.T) []string {
+	t.Helper()
+	root := filepath.Join("testdata", "peppol", "repo", "rules")
+	families := map[string]bool{}
+	for id := range peppolCountryRules {
+		families[id[:2]] = true
+	}
+	var out []string
+	for family := range families {
+		for _, binding := range []string{"UBL", "CII"} {
+			dir := "unit-" + binding + "-" + family
+			if fi, err := os.Stat(filepath.Join(root, dir)); err == nil && fi.IsDir() {
+				out = append(out, dir)
+			}
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -526,6 +682,37 @@ func mustReplace(t *testing.T, doc, from, to string) string {
 	return out
 }
 
+// peppolCountryExtraCases are the country rules OpenPEPPOL ships no test set for,
+// and their conforming counterparts.
+//
+// The set is derived and not chosen: OpenPEPPOL publishes per-rule test sets under
+// rules/unit-{UBL,CII}-{DE,DK,GR,IT,NL,NO,SE} covering 132 of the 142 published
+// (country identifier, binding) pairs, and TestEveryPublishedPeppolRuleHasBothVerdicts
+// is what says which are left. Iceland is the whole remainder: there is no
+// unit-UBL-IS directory upstream, so all ten IS-R-* rules need a verdict here.
+func peppolCountryExtraCases(t *testing.T) []peppolExtraCase {
+	t.Helper()
+	return nil
+}
+
+// TestPeppolCountryExtraCases runs them.
+func TestPeppolCountryExtraCases(t *testing.T) {
+	ctx := context.Background()
+	for _, c := range peppolCountryExtraCases(t) {
+		t.Run(c.name, func(t *testing.T) {
+			fired := false
+			for _, v := range mustReport(t, ctx, ValidatePeppol, []byte(c.doc)).Violations {
+				if v.Rule == c.rule {
+					fired = true
+				}
+			}
+			if fired != c.want {
+				t.Errorf("%s fired = %v, want %v", c.rule, fired, c.want)
+			}
+		})
+	}
+}
+
 // TestPeppolExtraCases runs them.
 func TestPeppolExtraCases(t *testing.T) {
 	ctx := context.Background()
@@ -561,7 +748,7 @@ func TestPeppolExtraCases(t *testing.T) {
 // hand-written pairs those leave uncovered, and the nine example invoices, which are
 // a conforming verdict for every rule at once.
 func TestEveryPublishedPeppolRuleHasBothVerdicts(t *testing.T) {
-	published := peppolSchematronRules(t)
+	published := peppolEvaluatedRules(t)
 	type pair struct {
 		rule string
 		cii  bool
@@ -576,7 +763,7 @@ func TestEveryPublishedPeppolRuleHasBothVerdicts(t *testing.T) {
 			silent[pair{rule, cii}] = true
 		}
 	}
-	for _, c := range peppolExtraCases(t) {
+	for _, c := range append(peppolExtraCases(t), peppolCountryExtraCases(t)...) {
 		if c.want {
 			fires[pair{c.rule, c.cii}] = true
 		} else {
@@ -624,6 +811,28 @@ func TestEveryPublishedPeppolRuleHasBothVerdicts(t *testing.T) {
 	t.Logf("all %d published (Peppol identifier, binding) pairs have a violating verdict and a conforming one", pairs)
 }
 
+// peppolEvaluatedRules is every (identifier, binding) pair this package evaluates,
+// with the bindings and flags read out of the artefact rather than out of the
+// tables — so a rule whose table entry drifts from the file fails in
+// TestPeppolRuleTableMatchesTheSchematron and its country counterpart, and the
+// verdict guard below still asks the artefact what it should be checking.
+//
+// It is the 59 PEPPOL-* identifiers plus the country-specific ones
+// peppolCountryRules names. The country identifiers the package does not evaluate
+// yet are excluded here and required to be in Coverage(SourcePeppol) instead: a
+// named gap has no verdicts to have, and demanding them would make the guard fail
+// for the one reason it is not about.
+func peppolEvaluatedRules(t *testing.T) map[string]peppolSchRule {
+	t.Helper()
+	out := peppolSchematronRules(t)
+	for id, r := range peppolCountrySchematronRules(t) {
+		if _, ok := peppolCountryRules[id]; ok {
+			out[id] = r
+		}
+	}
+	return out
+}
+
 // TestPeppolRulesFireOnlyInTheBindingThatPublishesThem is the negative half of the
 // bindings column, asserted on documents rather than on the table.
 //
@@ -632,7 +841,7 @@ func TestEveryPublishedPeppolRuleHasBothVerdicts(t *testing.T) {
 // match its VAT category was reported against PEPPOL-EN16931-P0104, which OpenPEPPOL
 // publishes for UBL only. Nothing said that could not happen.
 func TestPeppolRulesFireOnlyInTheBindingThatPublishesThem(t *testing.T) {
-	published := peppolSchematronRules(t)
+	published := peppolEvaluatedRules(t)
 	// One document per binding that breaks as much as it can, so the sweep below
 	// has something to over-fire on: a corpus sweep is the wide version of this and
 	// runs in TestCoverageNamesNoRuleThePackageEmits.
