@@ -22,6 +22,16 @@ import "context"
 // cius_pt_datatype.go — so Coverage(SourceCIUSPT) is now empty and SourceCIUSPT is
 // in completeSources.
 //
+// AT/eSPap also ships a **copy of CEN's own Schematron**, not a reference to it, and
+// nine CEN conditions in that copy are AT's own rather than CEN's at any release.
+// Under ValidateCIUSPT those nine are evaluated as AT wrote them: eight because AT
+// treats the VAT category codes 'NOR' and 'ISE' as synonyms of CEN's 'S' and 'E'
+// throughout BR-S-* and BR-E-*, and BR-23 because AT inverts CEN's assertion into a
+// report. Such a finding keeps CEN's identifier and SourceEN16931 and carries
+// Reading == SourceCIUSPT, so a caller can tell whose condition decided it. The
+// mechanism, and the reason the other 735 differences in the same copy are *not*
+// overridden, are in cius_overrides.go.
+//
 // Two facts about the artefact decide how these rules are written, and both were
 // found the expensive way in earlier rule sets:
 //
@@ -61,6 +71,11 @@ import "context"
 // invoice is validated against the core and reported as carrying no CIUS-PT
 // finding, which is what a reference CIUS-PT validator says about it too.
 //
+// For a UBL document the core is evaluated with AT/eSPap's own condition wherever
+// AT/eSPap wrote one — nine CEN identifiers, listed in ciusCENCopyVerdicts. Those
+// findings keep SourceEN16931 and CEN's identifier, and carry Reading ==
+// SourceCIUSPT. No other entry point substitutes them.
+//
 // ctx bounds how long the call may take; the work itself is bounded by this
 // package's own limits. A cancelled run reports a RuleLimit violation rather
 // than an empty Violations slice, so a run that stopped early cannot be read
@@ -84,5 +99,11 @@ func ValidateCIUSPT(ctx context.Context, xmlData []byte) (Report, error) {
 
 func validateCIUSPT(r *run, p *parsed) []Violation {
 	out := validateEN16931(r, p, ProfileEN16931)
+	// AT/eSPap ships a copy of CEN's Schematron and wrote nine of its conditions
+	// itself, so on this path those nine are judged by AT's reading and not by CEN's.
+	// The findings keep CEN's identifier and carry Reading = SourceCIUSPT. See
+	// cius_overrides.go; this is the only place the substitution happens, and it
+	// happens on no other entry point.
+	out = applyConditionOverrides(r, ptOverrides, p, out)
 	return append(out, validateCIUSPTRules(r, p.inv, p.root)...)
 }
