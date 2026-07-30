@@ -1200,10 +1200,17 @@ func TestZeroReportIsNotComplete(t *testing.T) {
 // itself by being wrong. A Source arriving here should be a sentence in a commit
 // message, not a side effect of adding a coverage entry.
 //
-// Only CEN is on it, and PRs adding XRechnung, Peppol and CIUS coverage should
-// expect to leave it alone: a rule those authorities publish and this package has
-// not implemented is unimplemented, whatever the reason.
-var sourcesWithUnevaluableFamilies = map[Source]bool{SourceEN16931: true}
+// CEN was the only entry for as long as CEN's was the only rule set this
+// repository vendored, and the comment here said PRs adding CIUS coverage should
+// expect to leave it alone. That was the right instruction under the wrong reason:
+// the bar is evidence, not authorship. With the five national Schematrons
+// vendored, UBL.BE clears it — GLOBALUBL.BE.sch binds ubl-BE-13 to
+// abs($TaxAmount) >= 0 over a variable that falls back to -1, which is a tautology
+// in the same sense as CEN's true(), and TestUBLBE13IsBoundToATautology reads that
+// binding back out of the file. The instruction stands for everything else: a rule
+// an authority publishes and this package has not implemented is unimplemented,
+// whatever the reason.
+var sourcesWithUnevaluableFamilies = map[Source]bool{SourceEN16931: true, SourceUBLBE: true}
 
 // sourcesWithVendoredRuleArtefacts are the authorities whose published rule set
 // this repository actually holds, so that a claim about the artefact can be
@@ -1211,6 +1218,11 @@ var sourcesWithUnevaluableFamilies = map[Source]bool{SourceEN16931: true}
 // reads the flags from.
 var sourcesWithVendoredRuleArtefacts = map[Source]bool{
 	SourceEN16931: true, SourceXRechnung: true, SourcePeppol: true,
+	// The five `make cius-schematron` added. Before it, this map was the reason
+	// these Sources could not carry an unevaluable family however plain the case
+	// (C35); now the claim is checkable for them like any other.
+	SourceCIUSPT: true, SourceCIUSRO: true, SourceUBLBE: true,
+	SourceSRBDT: true, SourceNLCIUS: true,
 }
 
 // TestOnlyEN16931HasUnevaluableFamilies is the guard against RuleFamily.Unevaluable
@@ -1254,14 +1266,17 @@ func TestOnlyEN16931HasUnevaluableFamilies(t *testing.T) {
 				"file that is here", src, unevaluable, src)
 		}
 	}
-	// The four CIUS whose authority publishes no Schematron this repository holds
-	// are named, not merely implied by the list above, because they are the case
-	// most likely to be argued for: their rules are the hardest in the package to
-	// implement, and "hard" is the thing Unevaluable does not mean.
-	for _, src := range []Source{SourceCIUSPT, SourceCIUSRO, SourceUBLBE, SourceSRBDT} {
+	// Three of the four CIUS this loop used to name. It named UBL.BE too, on the
+	// ground that this repository vendored no Schematron for any of them and the
+	// claim was therefore uncheckable — which stopped being true when
+	// `make cius-schematron` landed. UBL.BE now has exactly one unevaluable family,
+	// ubl-BE-13, and the artefact is here to be read; the other three still have
+	// none, and their rules being the hardest in the package to implement is not a
+	// reason to acquire one. "Hard" is the thing Unevaluable does not mean.
+	for _, src := range []Source{SourceCIUSPT, SourceCIUSRO, SourceSRBDT} {
 		for _, f := range Coverage(src) {
 			if f.Unevaluable {
-				t.Errorf("Coverage(%q) marks %q unevaluable. These four CIUS are unimplemented, not unevaluable: "+
+				t.Errorf("Coverage(%q) marks %q unevaluable. These three CIUS are unimplemented, not unevaluable: "+
 					"their authorities publish rules that a validator can check and this package does not", src, f.Rules)
 			}
 		}
@@ -1301,6 +1316,14 @@ func TestUnevaluableFamiliesNameTheirEvidence(t *testing.T) {
 		filepath.Join(dir, "cii", "schematron", "*", "*.sch"),
 		filepath.Join(dir, "ubl", "xslt", "*.xslt"),
 		filepath.Join(dir, "cii", "xslt", "*.xslt"),
+		// The five national rule sets. An unevaluable family under a national
+		// Source has to name one of these, for the same reason CEN's has to name
+		// one of CEN's: the claim is about a file, and the file has to be here.
+		filepath.Join("testdata", "cius-be", "schematron", "*", "*.sch"),
+		filepath.Join("testdata", "cius-pt", "schematron", "*", "*", "*.sch"),
+		filepath.Join("testdata", "cius-ro", "schematron", "*", "*", "*.sch"),
+		filepath.Join("testdata", "cius-rs", "schematron", "*", "*.sch"),
+		filepath.Join("testdata", "nlcius", "schematron", "*", "*.sch"),
 	} {
 		files, _ := filepath.Glob(pat)
 		for _, f := range files {

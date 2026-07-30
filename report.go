@@ -679,9 +679,18 @@ var notEvaluated = map[Source][]RuleFamily{
 			Reason:   "the BELMText and BVERCText bilingual free-text description code lists",
 		},
 		{
-			Rules:    "any other ubl-BE rule: this package emits only ubl-BE-02, 03, 05, 07, 08, 09, 10, 11, 13, 14, 15",
+			// The one unevaluable family outside CEN's, and the reason it is here
+			// rather than in the residue below: it is not a rule this package has
+			// not got to, it is a rule the authority cannot report either.
+			Rules:       "ubl-BE-13",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason:      ublBE13Reason,
+		},
+		{
+			Rules:    "any other ubl-BE rule: this package emits only ubl-BE-02, 03, 05, 07, 08, 09, 10, 11, 14, 15",
 			Severity: SeverityFatal,
-			Reason:   "the rest of the published set",
+			Reason:   "the rest of the published set — ubl-BE-01 and ubl-BE-04, on the AdditionalDocumentReference group",
 		},
 	},
 
