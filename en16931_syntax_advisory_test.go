@@ -759,8 +759,16 @@ func TestAdvisoryFindingsDoNotMoveTheVerdict(t *testing.T) {
 		t.Error("a document whose only findings are advisory must still be Conformant; that is what puts " +
 			"Severity on the finding")
 	}
-	if r.Complete() {
-		t.Error("Complete must still be false: Coverage(SourceEN16931) names the rules CEN made unevaluable")
+	// And Complete, which it was not until RuleFamily.Unevaluable existed. This
+	// assertion was its own inverse one commit ago: what was left in
+	// Coverage(SourceEN16931) after these bindings landed was three families CEN
+	// itself cannot evaluate, and the table had no way to say so, so Complete was
+	// permanently false. Advisory *findings* still do not move it either way —
+	// Complete is about what was evaluated, not about what was found — and this
+	// document has three of them.
+	if !r.Complete() {
+		t.Error("a document whose only findings are advisory must be Complete: every rule left in " +
+			"Coverage(SourceEN16931) is one CEN published and no validator can evaluate")
 	}
 }
 
