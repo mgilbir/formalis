@@ -66,16 +66,37 @@ type ptDTRuleSrc struct {
 
 // ptDTCtxPath is one branch of a context union.
 //
-// root is the document element the branch requires — "Invoice", "CreditNote", or
-// "" for a branch written relative to the document element and therefore applying
-// to both. That distinction is load-bearing: DT-CIUS-PT-003 is two assertions
-// because an invoice type code and a credit-note type code are different elements,
-// and DT-CIUS-PT-008 binds the invoice's cbc:DueDate against the credit note's
-// cac:PaymentMeans/cbc:PaymentDueDate, which is not the same place at all.
+// root says where the branch is anchored, and it takes four values:
+//
+//   - "Invoice" or "CreditNote" — the branch is anchored at that document element,
+//     and applies only to a document with that root. That distinction is
+//     load-bearing: DT-CIUS-PT-003 is two assertions because an invoice type code
+//     and a credit-note type code are different elements, and DT-CIUS-PT-008 binds
+//     the invoice's cbc:DueDate against the credit note's
+//     cac:PaymentMeans/cbc:PaymentDueDate, which is not the same place at all.
+//   - "" — anchored at the document element, whichever it is.
+//   - ptDTFloating — an XSLT match pattern that may begin at any element, which is
+//     what a Schematron <rule context> written without a leading slash actually
+//     means. CIUS-PT's generator refuses such a branch and emits the narrower
+//     reading; CIUS-RO's contexts are written that way throughout (cbc:IssueDate,
+//     cac:TaxTotal/cac:TaxSubtotal, //cac:PaymentMeans) and cannot be read any
+//     other way without changing which nodes they claim.
 type ptDTCtxPath struct {
 	root  string
 	steps []ptDTCtxStep
 }
+
+// ptDTFloating marks a context branch that is an XSLT match pattern rather than a
+// path from the document element: it matches an element whose own name and whose
+// ancestors' names end with the branch's steps, at any depth.
+//
+// It is spelled as a value of ptDTCtxPath.root rather than as a fourth field so
+// that the generated CIUS-PT table, which writes ptDTCtxPath as a positional
+// literal in several thousand places, does not have to be rewritten to say
+// "not floating" everywhere. A compiled ptDTTerm never carries it: a floating
+// branch's nodes are found through the pattern's second trie and its term's root
+// is "", because a match pattern applies to both document elements.
+const ptDTFloating = "//"
 
 // ptDTCtxStep is one step of a context path: an element local name, and the step's
 // predicate as AT wrote it (empty when it has none).
@@ -106,6 +127,11 @@ type ptDTCompiledPattern struct {
 	lets  []ptDTCompiledLet
 	rules []ptDTCompiledRule
 	trie  *ptDTTrieNode
+	// floating is the second trie: the branches that are match patterns rather
+	// than paths from the document element. It is consulted afresh at every
+	// element, so a branch of n steps matches wherever the last n names on the
+	// path from the root agree with it. It has no edges at all for CIUS-PT.
+	floating *ptDTTrieNode
 	// rootTerms are the rules whose context is the document element itself.
 	rootTerms []ptDTTerm
 	// asserts is the number of assertions the pattern holds, which the tests
@@ -186,7 +212,12 @@ func ptDTMustCompile(p ptDTPattern) *ptDTCompiledPattern {
 }
 
 func ptDTCompile(p ptDTPattern) (*ptDTCompiledPattern, error) {
-	out := &ptDTCompiledPattern{name: p.name, trie: &ptDTTrieNode{}, rootNames: map[string]bool{}}
+	out := &ptDTCompiledPattern{
+		name:      p.name,
+		trie:      &ptDTTrieNode{},
+		floating:  &ptDTTrieNode{},
+		rootNames: map[string]bool{},
+	}
 	var err error
 	if out.lets, err = ptDTCompileLets(p.lets); err != nil {
 		return nil, err
@@ -228,6 +259,12 @@ func ptDTCompile(p ptDTPattern) (*ptDTCompiledPattern, error) {
 
 		for _, path := range r.paths {
 			node := out.trie
+			if path.root == ptDTFloating {
+				if len(path.steps) == 0 {
+					return nil, fmt.Errorf("%s: a floating context branch with no step matches every element", r.context)
+				}
+				node = out.floating
+			}
 			for _, s := range path.steps {
 				var pred *ptDTExpr
 				if s.pred != "" {
@@ -240,7 +277,12 @@ func ptDTCompile(p ptDTPattern) (*ptDTCompiledPattern, error) {
 				}
 				node = ptDTTrieEdgeFor(node, s.name, s.pred, pred)
 			}
+			// A floating branch applies to both document elements, so its term
+			// carries no root requirement; the sentinel exists only in the table.
 			term := ptDTTerm{rule: i, root: path.root}
+			if path.root == ptDTFloating {
+				term.root = ""
+			}
 			if len(path.steps) == 0 {
 				out.rootTerms = append(out.rootTerms, term)
 			} else {
@@ -310,6 +352,10 @@ func ptDTCheck(e *ptDTExpr) error {
 				return err
 			}
 			e.matcher = m
+		}
+	case ptOpCastable:
+		if e.name != "xs:date" {
+			return fmt.Errorf("`castable as %s`: the only type this evaluator implements is xs:date", e.name)
 		}
 	case ptOpPath:
 		for i, s := range e.path.steps {
@@ -802,6 +848,8 @@ func ptDTEval(e *ptDTExpr, c *ptDTCtx) (ptDTSeq, error) {
 		return ptDTCall(e, c)
 	case ptOpEvery:
 		return ptDTEvery(e, c)
+	case ptOpCastable:
+		return ptDTCastable(e, c)
 	case ptOpPath:
 		return ptDTSelect(e.path, c)
 	}
@@ -838,6 +886,114 @@ func ptDTEvery(e *ptDTExpr, c *ptDTCtx) (ptDTSeq, error) {
 		}
 	}
 	return ptDTTrue, nil
+}
+
+// ptDTCastable is `E castable as T`, restricted to xs:date — the only type any
+// assertion in this package tests against. ptDTCheck refuses any other, so a rule
+// that starts using one is a load failure rather than a rule that quietly answers
+// the wrong question.
+//
+// XPath 2.0's SingleType without a `?` requires exactly one item, so an empty
+// sequence is *not* castable — which is the reading that makes ANAF's
+// `string(.) castable as xs:date` false for an empty element rather than an error.
+// A sequence of more than one item is a type error, as everywhere else here.
+func ptDTCastable(e *ptDTExpr, c *ptDTCtx) (ptDTSeq, error) {
+	s, err := ptDTEval(e.args[0], c)
+	if err != nil {
+		return nil, err
+	}
+	switch len(s) {
+	case 0:
+		return ptDTFalse, nil
+	case 1:
+	default:
+		return nil, ptDTErrf("`castable as %s` applied to a sequence of %d items", e.name, len(s))
+	}
+	return ptDTBoolSeq(ptDTIsDate(s[0].value())), nil
+}
+
+// ptDTIsDate reports whether s is in xs:date's lexical space:
+// `-? YYYY(+) '-' MM '-' DD` with an optional timezone, and a day that exists in
+// that month of that year.
+//
+// The calendar check is not pedantry. BR-RO-DT001's whole content is that a date
+// element holds a date, and a validator that accepted 2024-02-31 would report
+// nothing for the one value the rule is most likely to be written against.
+func ptDTIsDate(s string) bool {
+	if s == "" {
+		return false
+	}
+	if s[0] == '-' {
+		s = s[1:]
+	}
+	// The timezone, if any: 'Z' or (+|-)HH:MM.
+	if strings.HasSuffix(s, "Z") {
+		s = s[:len(s)-1]
+	} else if len(s) > 6 {
+		if tz := s[len(s)-6:]; (tz[0] == '+' || tz[0] == '-') && tz[3] == ':' {
+			if ptDTAllDigits(tz[1:3]) && ptDTAllDigits(tz[4:6]) {
+				hh, mm := ptDTAtoi(tz[1:3]), ptDTAtoi(tz[4:6])
+				if hh > 14 || mm > 59 || (hh == 14 && mm != 0) {
+					return false
+				}
+				s = s[:len(s)-6]
+			}
+		}
+	}
+	// YYYY-MM-DD, with a year of four digits or more and no leading zero beyond
+	// four characters.
+	i := strings.IndexByte(s, '-')
+	if i < 4 || len(s) != i+6 || s[i+3] != '-' {
+		return false
+	}
+	year, month, day := s[:i], s[i+1:i+3], s[i+4:]
+	if !ptDTAllDigits(year) || !ptDTAllDigits(month) || !ptDTAllDigits(day) {
+		return false
+	}
+	if i > 4 && year[0] == '0' {
+		return false
+	}
+	y, m, d := ptDTAtoi(year), ptDTAtoi(month), ptDTAtoi(day)
+	if y == 0 || m < 1 || m > 12 || d < 1 {
+		return false
+	}
+	return d <= ptDTDaysInMonth(y, m)
+}
+
+// ptDTBoolValue is xs:boolean's lexical space, which is four values and not two.
+func ptDTBoolValue(s string) (bool, bool) {
+	switch strings.TrimSpace(s) {
+	case "true", "1":
+		return true, true
+	case "false", "0":
+		return false, true
+	}
+	return false, false
+}
+
+func ptDTAllDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for i := 0; i < len(s); i++ {
+		if !ptDTIsDigit(s[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func ptDTDaysInMonth(y, m int) int {
+	switch m {
+	case 4, 6, 9, 11:
+		return 30
+	case 2:
+		if y%4 == 0 && (y%100 != 0 || y%400 == 0) {
+			return 29
+		}
+		return 28
+	}
+	return 31
 }
 
 // ptDTCompare is XPath's general comparison: true when *some* pair of items, one
@@ -901,6 +1057,28 @@ func ptDTComparePair(a, b ptDTItem, op string) (bool, error) {
 			return a.b != b.b, nil
 		}
 		return false, ptDTErrf("%s does not apply to two booleans", op)
+	}
+	// One boolean and one untyped value: XPath 2.0 casts the untyped one to
+	// xs:boolean, so `cbc:ChargeIndicator = false()` — ANAF's spelling of the
+	// document-level allowance context — matches an element written `0` as well as
+	// one written `false`. Comparing the two as strings would silently exclude the
+	// first, and with it the six BR-DEC-RO-* assertions bound to that context.
+	if (a.kind == ptKBool) != (b.kind == ptKBool) {
+		untyped, boolean := a, b.b
+		if b.kind != ptKBool {
+			untyped, boolean = b, a.b
+		}
+		v, ok := ptDTBoolValue(untyped.value())
+		if !ok {
+			return false, ptDTErrf("the value %q cannot be cast to xs:boolean", untyped.value())
+		}
+		switch op {
+		case "=":
+			return v == boolean, nil
+		case "!=":
+			return v != boolean, nil
+		}
+		return false, ptDTErrf("%s does not apply to a boolean", op)
 	}
 	if a.kind == ptKNum || b.kind == ptKNum {
 		x, okx := ptDTItemNumber(a)
@@ -1261,6 +1439,14 @@ var ptDTFunctions = map[string]ptDTFuncSpec{
 	"distinct-values":  {1, 1},
 	"index-of":         {2, 2},
 	"xs:decimal":       {1, 1},
+	// The four below are CIUS-RO's. text() is a node test rather than a function
+	// in XPath, and is read here as "the character data of the context element",
+	// which is the same string for every element ANAF binds it to (they all have
+	// simple content) and differs only for an element with element children.
+	"string": {0, 1},
+	"text":   {0, 0},
+	"true":   {0, 0},
+	"false":  {0, 0},
 }
 
 func ptDTCall(e *ptDTExpr, c *ptDTCtx) (ptDTSeq, error) {
@@ -1450,6 +1636,24 @@ func ptDTCall(e *ptDTExpr, c *ptDTCtx) (ptDTSeq, error) {
 			return nil, err
 		}
 		return ptDTBoolSeq(e.matcher.match(v)), nil
+	case "true":
+		return ptDTTrue, nil
+	case "false":
+		return ptDTFalse, nil
+	case "string":
+		if len(e.args) == 0 {
+			return ptDTSeq{{kind: ptKStr, str: c.item.value()}}, nil
+		}
+		v, err := str(0)
+		if err != nil {
+			return nil, err
+		}
+		return ptDTSeq{{kind: ptKStr, str: v}}, nil
+	case "text":
+		if c.item.kind != ptKNode {
+			return nil, ptDTErrf("text() applied to something that is not an element")
+		}
+		return ptDTSeq{{kind: ptKStr, str: c.item.node.text}}, nil
 	}
 	return nil, ptDTErrf("unsupported function %s()", e.fn)
 }
@@ -1608,25 +1812,35 @@ func ptDTGather(p *ptDTCompiledPattern, root *ciiNode, doc *ptDTDoc) []ptDTEntry
 
 	// step advances the active trie set by one element. A child whose name leaves
 	// the trie prunes its whole subtree, which is what most of a UBL invoice does.
+	//
+	// The pattern's floating trie is offered the element too, because a match
+	// pattern may begin anywhere: an element is the start of a floating branch as
+	// readily as it is the continuation of one. For a pattern with no floating
+	// branch — every CIUS-PT one — that trie has no edges and the second loop is
+	// empty.
+	advance := func(a *ptDTTrieNode, ch *ciiNode) {
+		for i := range a.edges {
+			ed := &a.edges[i]
+			if ed.name != ch.name {
+				continue
+			}
+			if ed.pred != nil {
+				c := &ptDTCtx{item: ptDTItem{kind: ptKNode, node: ch}, doc: doc}
+				// A context predicate that raises a dynamic error selects
+				// nothing, which is the reading that reports no finding.
+				if ok, err := ptDTEvalBool(ed.pred, c); err != nil || !ok {
+					continue
+				}
+			}
+			buf = append(buf, ed.next)
+		}
+	}
 	step := func(active []*ptDTTrieNode, ch *ciiNode) []*ptDTTrieNode {
 		start := len(buf)
 		for _, a := range active {
-			for i := range a.edges {
-				ed := &a.edges[i]
-				if ed.name != ch.name {
-					continue
-				}
-				if ed.pred != nil {
-					c := &ptDTCtx{item: ptDTItem{kind: ptKNode, node: ch}, doc: doc}
-					// A context predicate that raises a dynamic error selects
-					// nothing, which is the reading that reports no finding.
-					if ok, err := ptDTEvalBool(ed.pred, c); err != nil || !ok {
-						continue
-					}
-				}
-				buf = append(buf, ed.next)
-			}
+			advance(a, ch)
 		}
+		advance(p.floating, ch)
 		return buf[start:len(buf):len(buf)]
 	}
 
@@ -1657,13 +1871,26 @@ func ptDTGather(p *ptDTCompiledPattern, root *ciiNode, doc *ptDTDoc) []ptDTEntry
 	}
 
 	stack = append(stack, root)
-	if len(p.rootTerms) > 0 {
-		claim(p.rootTerms, root)
+	// The document element is offered to the floating trie as well as to the
+	// root-anchored terms, and the two are claimed together rather than one after
+	// the other: first-match-wins is over the whole pattern, so a document element
+	// that a match pattern also selects must still go to the lowest-numbered rule.
+	// CIUS-RO has such a case — rule 20's context is `/ubl:Invoice | cac:CreditNote`
+	// and rule 10's is `/ubl:Invoice | /cn:CreditNote` — and claiming twice would
+	// evaluate BR-DEC-RO-13 and BR-DEC-RO-15 against a credit note that ISO
+	// Schematron gives to rule 10.
+	rootFloat := step(nil, root)
+	rootTerms := append([]ptDTTerm(nil), p.rootTerms...)
+	for _, a := range rootFloat {
+		rootTerms = append(rootTerms, a.terms...)
 	}
-	top := [...]*ptDTTrieNode{p.trie}
+	if len(rootTerms) > 0 {
+		claim(rootTerms, root)
+	}
+	active := append([]*ptDTTrieNode{p.trie}, rootFloat...)
 	for _, ch := range root.children {
 		mark := len(buf)
-		if next := step(top[:], ch); len(next) > 0 {
+		if next := step(active, ch); len(next) > 0 {
 			walk(ch, next)
 		}
 		buf = buf[:mark]
