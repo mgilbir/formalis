@@ -521,7 +521,26 @@ var notEvaluated = map[Source][]RuleFamily{
 	// invisible to every check that read the flags, which is also how BR-DEX-02
 	// came to be filed as fatal when KoSIT flags it warning.
 	//
-	// What is left is not KoSIT's own rules but the ones it imports.
+	// What was left was not KoSIT's own rules but the ones it imports, and those
+	// are evaluated now: the 21 Peppol BIS Billing rules src/xsl/rule-list.xml
+	// whitelists and src/xsl/peppol-into-xr.xsl merges into the released artefact,
+	// in KoSIT's wording of them and gated on that file. So SourceXRechnung is
+	// absent from this table, which is the claim that its rule set — all 78
+	// identifiers of the Schematron a German buyer validates against — is evaluated
+	// in full. completeSources in report_test.go is where that claim is registered.
+	//
+	// The imported findings carry SourcePeppol, because Source names the authority
+	// that wrote the rule and OpenPEPPOL wrote these. They are nonetheless
+	// XRechnung's coverage and not Peppol's, and the distinction is not a dodge: the
+	// Sources a validator hands newReport name *the rule sets that ran*, and the
+	// rule set that ran is XRechnung's, which happens to include 21 rules of
+	// OpenPEPPOL's authorship. ValidateXRechnung therefore does not declare
+	// SourcePeppol, and a caller reading an XRechnung Report's NotEvaluated is told
+	// what the XRechnung Schematron leaves unchecked rather than what OpenPEPPOL
+	// publishes and KoSIT never imported — which is most of Peppol's rule set,
+	// including every PEPPOL-COMMON-* identifier and the 101 country-specific rules
+	// below.
+
 	SourceXRechnung: {
 		{
 			Rules: "PEPPOL-EN16931-R001/R005/R008/R010/R020/R040..R044/R046/R053..R055/R061/R101/R110/R111/R120/R121/R130",
@@ -541,34 +560,51 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
-	// Peppol BIS Billing 3.0: the OpenPEPPOL Schematron publishes 60
-	// identifiers; this package emits P0104..P0111 and R001/003/004/005/007/
-	// 010/020/061/110/111/121/130.
+	// Peppol BIS Billing 3.0. All 59 PEPPOL-COMMON-* and PEPPOL-EN16931-*
+	// identifiers the vendored Schematron publishes are evaluated — 58 in the UBL
+	// binding, 44 in the CII one, each in the binding that publishes it.
+	//
+	// The count used to read "60", and both halves of that number were wrong. It
+	// counted PEPPOL-COMMON-R048, which is inside an XML comment in both binding
+	// files and is therefore a rule OpenPEPPOL withdrew rather than a gap; and it
+	// counted PEPPOL-EN16931-R045, which no binding publishes at all — the entry
+	// wrote the family as "R040..R046" and the artefact has no R045 in the
+	// PEPPOL-EN16931 series. The severity test could not catch either, because it
+	// skips an identifier the artefact does not carry.
+	//
+	// What is left is the other rule set in the same two files. PEPPOL-EN16931-UBL.sch
+	// and -CII.sch each carry, after the PEPPOL-* patterns and under a comment
+	// reading "National rules", the country-specific rules OpenPEPPOL publishes for
+	// eight member states — 101 identifiers, of which the UBL binding holds all 101
+	// and the CII binding 41. They are part of the same artefact and the same
+	// buildconfig.xml configuration (peppolbis-en16931-base-3.0-ubl is the whole
+	// file), so a reference Peppol validation runs them; each is self-gating on the
+	// supplier's and customer's country, so they apply to a subset of documents
+	// rather than to all. No survey of this rule set in this repository had counted
+	// them, this table included.
+	//
+	// They are not the NLCIUS or CIUS-BE rule sets under their own Sources: NL-R-*
+	// here is OpenPEPPOL's Dutch rule set, distinct from the BR-NL-* of
+	// SourceNLCIUS, and DE-R-* is OpenPEPPOL's German set, distinct from KoSIT's
+	// BR-DE-*.
 	SourcePeppol: {
 		{
-			Rules:    "PEPPOL-COMMON-R040..R043, R049, R050",
+			Rules: "DE-R-001..011, DE-R-014..016, DE-R-018, DE-R-022, DE-R-023-1, DE-R-023-2, DE-R-024-1, DE-R-024-2, " +
+				"DE-R-025-1, DE-R-025-2, DE-R-030, DE-R-031, DK-R-002, DK-R-004..011, DK-R-013, DK-R-014, DK-R-016, " +
+				"GR-R-001-1, GR-R-001-2, GR-R-001-3, GR-R-001-4, GR-R-001-5, GR-R-001-6, GR-R-001-7, GR-R-002, GR-R-003, " +
+				"GR-R-004-1, GR-R-004-2, GR-R-005, GR-R-006, GR-R-008-2, GR-R-008-3, GR-R-009, GR-R-010, IS-R-002..010, " +
+				"IT-R-001..004, NL-R-001..009, NO-R-001, SE-R-001..006, SE-R-013",
 			Severity: SeverityFatal,
-			Reason:   "the fatal half of the participant, scheme and endpoint identifier checks",
+			Reason: "the fatal half of the country-specific rules OpenPEPPOL publishes in the same two Schematron files, under the " +
+				"comment \"National rules\": German, Danish, Greek, Icelandic, Italian, Dutch, Norwegian and Swedish organisation-number " +
+				"formats, national payment-means restrictions and domestic reference formats. Each is gated on the supplier's and " +
+				"customer's country, so it applies to a subset of documents; a reference Peppol validation runs the whole file and " +
+				"therefore runs them, which is why they are a gap rather than a different product",
 		},
 		{
-			Rules:    "PEPPOL-COMMON-R044..R048, R052, R053",
+			Rules:    "DE-R-017, DE-R-019, DE-R-020, DE-R-026..028, DK-R-003, DK-R-017, GR-S-008-1, GR-S-011, IS-R-001, NO-R-002, SE-R-007..012",
 			Severity: SeverityWarning,
-			Reason:   "the advisory half of the same family: scheme-deprecation and recommendation warnings",
-		},
-		{
-			Rules:    "PEPPOL-EN16931-CL001/002/003/006/007/008",
-			Severity: SeverityFatal,
-			Reason:   "Peppol's own code-list restrictions, narrower than the EN 16931 lists this package checks",
-		},
-		{
-			Rules:    "PEPPOL-EN16931-F001, P0100, P0101, P0112",
-			Severity: SeverityFatal,
-			Reason:   "the syntax-binding and profile-identifier assertions",
-		},
-		{
-			Rules:    "PEPPOL-EN16931-R002/R006/R008/R040..R046/R051/R053..R055/R080/R100/R101/R120",
-			Severity: SeverityFatal,
-			Reason:   "field-length, structural and accounting-currency assertions Peppol adds to the core",
+			Reason:   "the advisory half of the same country-specific rule sets: recommendations rather than rejections",
 		},
 	},
 

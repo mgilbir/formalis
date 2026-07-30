@@ -39,9 +39,20 @@ var allSources = []Source{
 }
 
 // completeSources are the Sources whose rule sets this package does not claim
-// to have gaps in. SourceChecker is the only one, and only because it publishes
-// no rules at all: RuleLimit, RuleProfile and RuleRoot are this package's
-// statements about its own run and about the file it was handed.
+// to have gaps in.
+//
+// SourceChecker is here because it publishes no rules at all: RuleLimit,
+// RuleProfile and RuleRoot are this package's statements about its own run and
+// about the file it was handed.
+//
+// SourceXRechnung is here because its rule set is finished. The Schematron a
+// German buyer validates against is 78 identifiers — KoSIT's own 57 and the 21
+// Peppol BIS Billing rules src/xsl/rule-list.xml whitelists — and all 78 are
+// evaluated. The 21 arrive as findings under SourcePeppol, since Source names the
+// authority that wrote the rule, and that is why this entry is not contradicted by
+// Coverage(SourcePeppol) still holding a fatal family: the rules Peppol publishes
+// and KoSIT does not import are not XRechnung's coverage. See the comment on
+// notEvaluated, and TestXRechnungImportsExactlyKoSITsWhitelist for the gate.
 //
 // If a Source is ever moved here it means someone finished implementing an
 // authority's rule set, which is exactly the change that should be hard to make
@@ -601,11 +612,11 @@ func severityOfFlag(flag string) (Severity, bool) {
 	return SeverityFatal, false
 }
 
-// advisoryEmittingTables are the tables that decide, per rule identifier, that a
-// finding is advisory. A rule is allowed to arrive as a warning only because one
-// of these says its authority flagged it that way, and the check below is over
-// the tables themselves rather than over a pattern on the identifier, so a rule
-// cannot become excusable by being named like one.
+// severityTables are the tables that decide, per rule identifier, which severity
+// a finding may carry. A rule is allowed to arrive as a warning only because one
+// of these says an authority flagged it that way, and the check below is over the
+// tables themselves rather than over a pattern on the identifier, so a rule cannot
+// become excusable by being named like one.
 //
 //   - advisoryRuleIDs() is the generated EN 16931 syntax-binding table: 1,168
 //     rules CEN flags warning.
@@ -613,17 +624,44 @@ func severityOfFlag(flag string) (Severity, bool) {
 //     evaluates. Eleven are not fatal — seven flagged warning, one information,
 //     and three more (BR-DE-19, BR-DE-20, BR-DEX-02) that a regular-expression
 //     harness could not see at all.
-func advisoryEmittingTables() map[Source]map[string]bool {
-	xr := map[string]bool{}
-	for rule, sev := range xrechnungFlags {
-		if sev == SeverityWarning {
-			xr[rule] = true
+//   - peppolRules is OpenPEPPOL's flag for every identifier it publishes, and
+//     peppolXRFlags is KoSIT's where the merge into XRechnung changes it.
+//
+// The value is a *set* of severities rather than one severity, and that is the one
+// widening this test has taken. It is not an excuse list: it exists because a rule
+// can genuinely carry two published flags, and one does. OpenPEPPOL flags
+// PEPPOL-EN16931-R120 fatal and KoSIT's merge re-flags it warning, so the same
+// identifier is a non-conformance on the Peppol path and a warning on the
+// XRechnung path — which is the fact that put Severity on the Violation rather
+// than in a table keyed by identifier (see schematronFlags, where BR-51 is the
+// same shape). Where a rule has one published flag both directions are still
+// pinned exactly as before, and the per-path reading of the one that has two is
+// asserted on its own in TestR120IsAdvisoryOnlyWhereKoSITSaysSo.
+func severityTables() map[Source]map[string]map[Severity]bool {
+	out := map[Source]map[string]map[Severity]bool{
+		SourceEN16931:   {},
+		SourceXRechnung: {},
+		SourcePeppol:    {},
+	}
+	record := func(src Source, rule string, sev Severity) {
+		if out[src][rule] == nil {
+			out[src][rule] = map[Severity]bool{}
 		}
+		out[src][rule][sev] = true
 	}
-	return map[Source]map[string]bool{
-		SourceEN16931:   advisoryRuleIDs(),
-		SourceXRechnung: xr,
+	for rule := range advisoryRuleIDs() {
+		record(SourceEN16931, rule, SeverityWarning)
 	}
+	for rule, sev := range xrechnungFlags {
+		record(SourceXRechnung, rule, sev)
+	}
+	for rule, r := range peppolRules {
+		record(SourcePeppol, rule, r.severity)
+	}
+	for rule, sev := range peppolXRFlags {
+		record(SourcePeppol, rule, sev)
+	}
+	return out
 }
 
 // TestOnlySeveritiesAnAuthorityPublishedAreEmittedAsWarnings verifies the claim
@@ -634,8 +672,8 @@ func advisoryEmittingTables() map[Source]map[string]bool {
 //
 // It sweeps the whole corpus through every validator — the same sweep the
 // identifier-collision guard uses — and checks each rule's severity against the
-// table that decided it, in both directions: a rule named in one of those tables
-// must never arrive fatal, and anything else must never arrive as a warning.
+// table that decided it, in both directions: a rule an authority flags advisory
+// must never arrive fatal, and one it flags fatal must never arrive as a warning.
 //
 // This was TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings, and before that
 // TestEveryEmittedFindingIsFatalToday. Each rewrite has been the same correction
@@ -647,20 +685,20 @@ func advisoryEmittingTables() map[Source]map[string]bool {
 // warning about its telephone number was refused here, and this assertion was
 // what said that had to be so.
 func TestOnlySeveritiesAnAuthorityPublishedAreEmittedAsWarnings(t *testing.T) {
-	tables := advisoryEmittingTables()
+	tables := severityTables()
 	s := corpusSweep()
 	for src, rules := range s.bySeverity {
 		for rule, sevs := range rules {
-			isAdvisory := tables[src][rule]
+			published, listed := tables[src][rule]
 			for sev := range sevs {
 				switch {
-				case isAdvisory && sev != SeverityWarning:
-					t.Errorf("%s/%s is in a table that records its authority flagging it advisory, but it was "+
-						"reported as %s", src, rule, sev)
-				case !isAdvisory && sev != SeverityFatal:
+				case !listed && sev != SeverityFatal:
 					t.Errorf("%s/%s was reported as %s, and no table in this package records its authority flagging "+
 						"it that way. A severity is a quotation: either the table is missing an entry or the "+
 						"emission site chose one", src, rule, sev)
+				case listed && !published[sev]:
+					t.Errorf("%s/%s was reported as %s, and the flags its authorities publish for it are %v. A "+
+						"severity is a quotation and not a choice", src, rule, sev, keysOfSeverity(published))
 				}
 			}
 		}
@@ -668,6 +706,16 @@ func TestOnlySeveritiesAnAuthorityPublishedAreEmittedAsWarnings(t *testing.T) {
 	if s.files > 0 {
 		atLeast(t, "severity sweep corpus", s.files, minCorpusDocuments)
 	}
+}
+
+// keysOfSeverity renders a severity set for an error message.
+func keysOfSeverity(set map[Severity]bool) []string {
+	var out []string
+	for sev := range set {
+		out = append(out, sev.String())
+	}
+	sort.Strings(out)
+	return out
 }
 
 // TestEveryEmittedEN16931RuleCarriesCENsFlag is the same claim checked against
@@ -778,9 +826,11 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 	// A number that has to come down means either the helper broke or a rule set
 	// finished, and the second belongs in a commit message: this test's population
 	// is the *gaps*, so it shrinks as rules are implemented. It went from 71 to 52
-	// while KoSIT's rules were being implemented and back to 67 when the twenty-one
-	// Peppol rules XRechnung imports were recorded.
-	if checked < 60 {
+	// while KoSIT's rules were being implemented, back to 67 when the twenty-one
+	// Peppol rules XRechnung imports were recorded, and then to 108 when those were
+	// implemented and Coverage(SourcePeppol) came to name the 101 country-specific
+	// rules in the same OpenPEPPOL files instead — which no survey here had counted.
+	if checked < 100 {
 		t.Fatalf("only %d coverage identifiers could be looked up; the harness is reading the wrong artefacts", checked)
 	}
 	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish, with no exceptions", checked)
@@ -1339,6 +1389,12 @@ func coverageText(src Source) string {
 // directions guarded — a rule set that quietly stops naming a fatal gap fails
 // here, and so does one that acquires a new fatal gap after finishing its fatal
 // half.
+// ValidateXRechnung joined the list when the 21 Peppol rules KoSIT's released
+// Schematron merges in were evaluated (C30). It was the one validator here whose
+// only fatal gap was a rule set it imported rather than one of its own, and closing
+// it changed the answer for the whole German public-sector path: a clean XRechnung
+// invoice now reports Conformant() == true, where before it reported false with
+// twenty-one PEPPOL-EN16931-* identifiers as the reason.
 var validatorsWithNoFatalGap = map[string]bool{
 	"Validate":       true,
 	"ValidateNLCIUS": true,
