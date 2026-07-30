@@ -41,7 +41,7 @@ type ciusDoc struct{ name, xml, want string }
 func ciusSuites() []ciusSuite {
 	return []ciusSuite{
 		{source: SourceCIUSPT, validate: ValidateCIUSPT, baseline: minimalCIUSPTUBL, prefix: "BR-CIUS-PT-", cases: ciusPTMutations},
-		{source: SourceCIUSRO, validate: ValidateCIUSRO, baseline: minimalCIUSROUBL, prefix: "BR-RO-", cases: ciusROMutations},
+		{source: SourceCIUSRO, validate: ValidateCIUSRO, baseline: minimalCIUSROUBL, prefix: "BR-RO-", cases: ciusROMutations, extras: ciusROExtras},
 		{source: SourceUBLBE, validate: ValidateUBLBE, baseline: minimalUBLBE, prefix: "ubl-BE-", cases: ublBEMutations},
 		{source: SourceSRBDT, validate: ValidateSRBDT, baseline: minimalSRBDT, prefix: "RSR-", cases: srbdtMutations},
 		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, prefix: "BR-NL-", cases: nlciusMutations},
