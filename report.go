@@ -553,38 +553,36 @@ var notEvaluated = map[Source][]RuleFamily{
 	// PEPPOL-EN16931 series. The severity test could not catch either, because it
 	// skips an identifier the artefact does not carry.
 	//
-	// What is left is the other rule set in the same two files. PEPPOL-EN16931-UBL.sch
+	// The other rule set in the same two files is evaluated too. PEPPOL-EN16931-UBL.sch
 	// and -CII.sch each carry, after the PEPPOL-* patterns and under a comment
 	// reading "National rules", the country-specific rules OpenPEPPOL publishes for
 	// eight member states — 101 identifiers, of which the UBL binding holds all 101
-	// and the CII binding 41. They are part of the same artefact and the same
-	// buildconfig.xml configuration (peppolbis-en16931-base-3.0-ubl is the whole
-	// file), so a reference Peppol validation runs them; each is self-gating on the
-	// supplier's and customer's country, so they apply to a subset of documents
-	// rather than to all. No survey of this rule set in this repository had counted
-	// them, this table included.
+	// and the CII binding 41, for 142 (identifier, binding) pairs. No survey of this
+	// rule set in this repository had counted them, this table included, because
+	// every one of them matched on the prefix "PEPPOL-" and stopped.
+	//
+	// They belong here rather than behind an option, and the artefacts say so three
+	// times over: neither binding file declares a <phase>, so ISO Schematron
+	// activates every pattern; buildconfig.xml's base configurations are the whole
+	// file with no phase attribute; and each rule is gated inside itself on the
+	// supplier's country, and the domestic ones on the customer's too, so evaluating
+	// them unconditionally accuses nobody. peppol_country_rules.go sets out the five
+	// different spellings of that gate, which are not interchangeable.
 	//
 	// They are not the NLCIUS or CIUS-BE rule sets under their own Sources: NL-R-*
 	// here is OpenPEPPOL's Dutch rule set, distinct from the BR-NL-* of
 	// SourceNLCIUS, and DE-R-* is OpenPEPPOL's German set, distinct from KoSIT's
-	// BR-DE-*.
-	SourcePeppol: {
-		{
-			Rules: "DE-R-001..011, DE-R-014..016, DE-R-018, DE-R-022, DE-R-023-1, DE-R-023-2, DE-R-024-1, DE-R-024-2, " +
-				"DE-R-025-1, DE-R-025-2, DE-R-030, DE-R-031",
-			Severity: SeverityFatal,
-			Reason: "the fatal half of the country-specific rules OpenPEPPOL publishes in the same two Schematron files, under the " +
-				"comment \"National rules\": German, Danish, Greek, Icelandic, Italian, Dutch, Norwegian and Swedish organisation-number " +
-				"formats, national payment-means restrictions and domestic reference formats. Each is gated on the supplier's and " +
-				"customer's country, so it applies to a subset of documents; a reference Peppol validation runs the whole file and " +
-				"therefore runs them, which is why they are a gap rather than a different product",
-		},
-		{
-			Rules:    "DE-R-017, DE-R-019, DE-R-020, DE-R-026..028",
-			Severity: SeverityWarning,
-			Reason:   "the advisory half of the same country-specific rule sets: recommendations rather than rejections",
-		},
-	},
+	// BR-DE-*. And KoSIT imports none of the 101, so an XRechnung validation does not
+	// acquire them — which matters most for the German family, since OpenPEPPOL's
+	// DE-R-NNN is a re-publication of KoSIT's BR-DE-NNN and reporting both would name
+	// one defect twice.
+	//
+	// SourcePeppol is therefore absent from this table, which is the claim that its
+	// rule set — all 160 identifiers of the two files, in the bindings that publish
+	// them — is evaluated in full. completeSources in report_test.go is where that
+	// claim is registered, and TestEveryPublishedPeppolRuleHasBothVerdicts is what
+	// holds it up: every one of the 244 published (identifier, binding) pairs has a
+	// document that trips it and one that does not.
 
 	// NLCIUS is the one CIUS whose fatal rule set is implemented in full
 	// (BR-NL-1..5 and 7..13; there is no BR-NL-6). Its gap is advisory only.

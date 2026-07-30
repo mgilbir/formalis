@@ -11,6 +11,14 @@ import (
 
 // minimalPeppolUBL is a small but complete, conforming Peppol BIS Billing 3.0
 // (UBL) invoice carrying the terms Peppol requires on top of EN 16931.
+//
+// It is a German *domestic* invoice, and that is deliberate: OpenPEPPOL's
+// german-rules pattern applies to a document whose seller and buyer postal
+// addresses are both DE, so this fixture exercises all thirty DE-R-* rules in the
+// silent direction on every test that uses it. Meeting them is what the seller
+// contact group, the payment means and the credit-transfer account are here for —
+// DE-R-001/002/005/006/007/023-1 each require one of them, and the baseline
+// asserting no findings is what says they are satisfiable together.
 const minimalPeppolUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
 	xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 	xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
@@ -25,6 +33,8 @@ const minimalPeppolUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
     <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
   <cac:PartyTaxScheme><cbc:CompanyID>DE123456789</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
   <cac:PartyLegalEntity><cbc:RegistrationName>Seller Ltd</cbc:RegistrationName></cac:PartyLegalEntity>
+  <cac:Contact><cbc:Name>Sales</cbc:Name><cbc:Telephone>+49 30 123456</cbc:Telephone>
+    <cbc:ElectronicMail>sales@seller.example</cbc:ElectronicMail></cac:Contact>
 </cac:Party></cac:AccountingSupplierParty>
 <cac:AccountingCustomerParty><cac:Party>
   <cbc:EndpointID schemeID="0088">7300010000018</cbc:EndpointID>
@@ -32,6 +42,8 @@ const minimalPeppolUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
     <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
   <cac:PartyLegalEntity><cbc:RegistrationName>Buyer Ltd</cbc:RegistrationName></cac:PartyLegalEntity>
 </cac:Party></cac:AccountingCustomerParty>
+<cac:PaymentMeans><cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>
+  <cac:PayeeFinancialAccount><cbc:ID>DE02120300000000202051</cbc:ID></cac:PayeeFinancialAccount></cac:PaymentMeans>
 <cac:TaxTotal><cbc:TaxAmount currencyID="EUR">19.00</cbc:TaxAmount>
   <cac:TaxSubtotal><cbc:TaxableAmount currencyID="EUR">100.00</cbc:TaxableAmount><cbc:TaxAmount currencyID="EUR">19.00</cbc:TaxAmount>
     <cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
