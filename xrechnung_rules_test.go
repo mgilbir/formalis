@@ -7,6 +7,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -23,16 +25,28 @@ import (
 // rule is right" and "the rule is bound to an element name nothing in the corpus
 // contains" look identical from outside.
 //
-// TestXRechnungRules is the hand-written table that closes it, one violating case
-// per rule, and TestXRechnungBaselinesAreClean is the conforming verdict for the
-// whole rule set at once. The self-checks that measure the table against KoSIT's
-// published identifiers arrive with the last of the rules.
+// Four things close it, and each is checked rather than asserted:
+//
+//   - TestXRechnungSchematronInstanceExpectations reads KoSIT's own per-rule
+//     fixtures and the verdicts they declare, in both directions. This is the
+//     strongest of the four and it was here all along: the 349 instances under
+//     testdata/xrechnung/schematron/test/instances carry <?xmute?> processing
+//     instructions naming the rules each document must and must not trip, and
+//     nothing in this repository had read them.
+//   - TestXRechnungRules is the hand-written table, for the rules KoSIT's fixtures
+//     do not give a violating verdict for.
+//   - TestEveryPublishedKoSITRuleHasBothVerdicts requires every identifier in the
+//     vendored Schematron to get both verdicts from one of those two, so a rule
+//     KoSIT publishes and this package forgot, or wired to the wrong element name,
+//     fails here.
+//   - TestXRechnungSeveritiesQuoteKoSIT reads the flags back out and compares them
+//     with xrechnungFlags, both directions, with no excused set.
 
 // minimalXRechnungCII is minimalXRechnungUBL's counterpart in the other binding:
 // a conforming XRechnung CII invoice carrying every term XRechnung makes
 // mandatory. Nine of KoSIT's identifiers exist in one binding only and several
-// more test a different thing in each — BR-DE-30 and BR-DE-31 do — so a table with
-// one fixture would leave half the rule set unexercised.
+// more test a different thing in each, so a table with one fixture would leave
+// half the rule set unexercised.
 const minimalXRechnungCII = `<CrossIndustryInvoice>
   <ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
   <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime></ExchangedDocument>
@@ -169,8 +183,8 @@ func runXRechnungCases(t *testing.T, cases []xrCase) {
 // at once, in both bindings and all three sub-profiles.
 //
 // It is what lets the table below hold only violating cases: a rule that fires on
-// one of these documents is over-firing, and there is no cheaper way to say that
-// about a whole rule set. It asserts no finding at all rather than no fatal
+// one of these six documents is over-firing, and there is no cheaper way to say
+// that about fifty-seven rules. It asserts no finding at all rather than no fatal
 // finding, advisory rules included, because these fixtures are this package's own
 // and there is no reason for one of them to carry UBL the EN 16931 core subset
 // leaves out.
@@ -231,6 +245,7 @@ func TestXRechnungRules(t *testing.T) {
 	var cases []xrCase
 	cases = append(cases, xrSkontoCases(t)...)
 	cases = append(cases, xrPaymentMeansCases(t)...)
+	cases = append(cases, xrMandatoryTermCases(t)...)
 	cases = append(cases, xrExtensionCases(t)...)
 	cases = append(cases, xrCVDCases(t)...)
 	cases = append(cases, xrProvisionalCases(t)...)
@@ -723,6 +738,153 @@ func xrProvisionalCases(t *testing.T) []xrCase {
 	}
 }
 
+// ---------------------------------------------------------------------------
+// The self-checks
+// ---------------------------------------------------------------------------
+
+// kositRule is one identifier as KoSIT publishes it: the flags it carries and the
+// bindings it appears in.
+type kositRule struct {
+	flags    map[string]bool
+	bindings map[string]bool // "UBL", "CII"
+}
+
+// kositRules reads every <assert> identifier and flag out of the vendored
+// XRechnung Schematron, with an XML decoder.
+//
+// A regular expression cannot do this job, and the one this repository used for it
+// is why: `<assert\s([^>]*)>` stops at the first '>', and three of KoSIT's
+// assertions carry one inside an attribute value. See assertFlags in
+// report_test.go, which this shares.
+func kositRules(t *testing.T) map[string]kositRule {
+	t.Helper()
+	dir := filepath.Join("testdata", "xrechnung", "schematron", "src", "validation", "schematron")
+	if _, err := os.Stat(dir); err != nil {
+		t.Skip("KoSIT Schematron not present (make cius-oracles)")
+	}
+	out := map[string]kositRule{}
+	for binding, name := range map[string]string{
+		"UBL": filepath.Join(dir, "ubl", "XRechnung-UBL-validation.sch"),
+		"CII": filepath.Join(dir, "cii", "XRechnung-CII-validation.sch"),
+	} {
+		data, err := os.ReadFile(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for id, flags := range assertFlags(t, name, data) {
+			r, ok := out[id]
+			if !ok {
+				r = kositRule{flags: map[string]bool{}, bindings: map[string]bool{}}
+			}
+			for f := range flags {
+				r.flags[f] = true
+			}
+			r.bindings[binding] = true
+			out[id] = r
+		}
+	}
+	if len(out) != 57 {
+		t.Fatalf("read %d identifiers from the KoSIT Schematron, want 57; the harness is not reading the artefacts", len(out))
+	}
+	return out
+}
+
+// TestXRechnungSeveritiesQuoteKoSIT holds xrechnungFlags to the Schematron in
+// both directions and with no excused set.
+//
+// The map has to name exactly the identifiers KoSIT does not flag fatal — no more,
+// because an identifier listed there and flagged fatal would silently downgrade a
+// real non-conformance, and no fewer, because SeverityFatal is the zero value and
+// an omission is invisible at the emission site.
+func TestXRechnungSeveritiesQuoteKoSIT(t *testing.T) {
+	published := kositRules(t)
+	for id, r := range published {
+		want, known := severityOfFlag(pickFlag(r.flags))
+		if !known {
+			t.Errorf("%s carries the flag %v, which this package does not know how to fold onto a Severity", id, keysOf(r.flags))
+			continue
+		}
+		if got := xrechnungFlags[id]; got != want {
+			t.Errorf("this package reports XRechnung %s as %s, but KoSIT flags it %v; the severity a finding carries "+
+				"is a quotation and not a choice", id, got, keysOf(r.flags))
+		}
+	}
+	for id := range xrechnungFlags {
+		if _, ok := published[id]; !ok {
+			t.Errorf("xrechnungFlags names %q, which KoSIT's Schematron does not publish", id)
+		}
+	}
+	var advisory []string
+	for id, sev := range xrechnungFlags {
+		if sev == SeverityWarning {
+			advisory = append(advisory, id)
+		}
+	}
+	sort.Strings(advisory)
+	t.Logf("checked the severity of all %d identifiers KoSIT publishes; %d are not fatal: %v",
+		len(published), len(advisory), advisory)
+}
+
+// TestEveryPublishedKoSITRuleHasBothVerdicts is the guard C27 existed for, in
+// KoSIT's half of the package: every identifier KoSIT publishes must have both a
+// document that trips it and a document that does not, and both must be checked
+// somewhere in this suite.
+//
+// The set of identifiers is read out of the Schematron rather than written down
+// here, so a rule KoSIT adds upstream, or one this package quietly stops
+// evaluating, fails. Verdicts come from three places, and the union is what makes
+// the hand-written table small enough to read: KoSIT's own per-rule fixtures, the
+// table above, and TestXRechnungBaselinesAreClean, which is a conforming verdict
+// for all fifty-seven at once.
+func TestEveryPublishedKoSITRuleHasBothVerdicts(t *testing.T) {
+	published := kositRules(t)
+	fires, silent := map[string]bool{}, map[string]bool{}
+	for _, c := range xrAllCases(t) {
+		if c.want {
+			fires[c.rule] = true
+		} else {
+			silent[c.rule] = true
+		}
+	}
+	for _, ex := range xrInstanceExpectations(t) {
+		for rule := range ex.invalid {
+			fires[rule] = true
+		}
+		for rule := range ex.valid {
+			silent[rule] = true
+		}
+	}
+	// The six clean baselines are a conforming verdict for every rule at once.
+	for id := range published {
+		silent[id] = true
+	}
+	var missing []string
+	for id := range published {
+		if !fires[id] {
+			missing = append(missing, id)
+		}
+	}
+	sort.Strings(missing)
+	if len(missing) > 0 {
+		t.Errorf("%d identifiers KoSIT publishes have no violating case anywhere in this suite, so nothing says they "+
+			"are rules rather than dead code: %v", len(missing), missing)
+	}
+	t.Logf("all %d KoSIT identifiers have a violating verdict and a conforming one", len(published))
+}
+
+// xrAllCases assembles the table without running it, for the self-check above.
+func xrAllCases(t *testing.T) []xrCase {
+	t.Helper()
+	var cases []xrCase
+	cases = append(cases, xrSkontoCases(t)...)
+	cases = append(cases, xrPaymentMeansCases(t)...)
+	cases = append(cases, xrMandatoryTermCases(t)...)
+	cases = append(cases, xrExtensionCases(t)...)
+	cases = append(cases, xrCVDCases(t)...)
+	cases = append(cases, xrProvisionalCases(t)...)
+	return cases
+}
+
 // TestEveryExtensionSuppressionHasAReplacement is the invariant that makes the
 // sub-profile overrides a swap and not a discount: for every EN 16931 rule
 // validateXRechnung stops applying to a sub-profile document, KoSIT publishes the
@@ -734,88 +896,170 @@ func xrProvisionalCases(t *testing.T) []xrCase {
 // BR-DEX-09 that was never evaluated, so an EXTENSION invoice's amount due was
 // checked by neither rule and the coverage table said so in prose nothing read.
 func TestEveryExtensionSuppressionHasAReplacement(t *testing.T) {
-	published := kositExtensionRules(t)
+	published := kositRules(t)
 	for _, swap := range []map[string]string{xrechnungSuppressedForExtension, xrechnungSuppressedForCVD} {
 		for suppressed, replacement := range swap {
-			if !published[replacement] {
+			if _, ok := published[replacement]; !ok {
 				t.Errorf("%s is suppressed in favour of %s, which KoSIT's Schematron does not publish", suppressed, replacement)
 			}
-			if !xrEvaluated[replacement] {
+			if _, ok := xrechnungFlags[replacement]; !ok && !xrEvaluated[replacement] {
 				t.Errorf("%s is suppressed in favour of %s, which this package does not evaluate", suppressed, replacement)
 			}
 		}
 	}
-	// BR-CO-16 is the one suppression that is not in the map, because it is
-	// conditional on the binding: BR-DEX-09 exists in KoSIT's UBL Schematron and not
-	// in its CII one, so a CII EXTENSION invoice keeps CEN's rule. If that ever
-	// changes upstream, the condition in validateXRechnung is the wrong way round.
-	ubl, cii := kositBindings(t, "BR-DEX-09")
-	if !ubl {
+	// BR-CO-16 is the one suppression that is not in either map, because it is
+	// conditional on the binding. Its replacement has to exist in the binding that
+	// suppresses it and be absent from the one that does not, or the condition in
+	// validateXRechnung is the wrong way round.
+	dex09 := published["BR-DEX-09"]
+	if !dex09.bindings["UBL"] {
 		t.Error("BR-DEX-09 is not in KoSIT's UBL Schematron, so suppressing BR-CO-16 for a UBL EXTENSION invoice " +
 			"replaces it with nothing")
 	}
-	if cii {
+	if dex09.bindings["CII"] {
 		t.Error("BR-DEX-09 is in KoSIT's CII Schematron now, so a CII EXTENSION invoice should have BR-CO-16 " +
 			"suppressed too and validateXRechnung does not")
 	}
 }
 
-// xrEvaluated is the set of replacement identifiers the case table above gives a
-// violating verdict, which is the operational meaning of "this package evaluates
-// it". Only the test above reads it.
+// xrEvaluated is the set of identifiers the table above gives a violating case,
+// which is the operational meaning of "this package evaluates it". It is derived
+// rather than declared, and only the suppression test uses it.
 var xrEvaluated = map[string]bool{
-	"BR-DEX-01": true, "BR-DEX-04": true, "BR-DEX-05": true,
-	"BR-DEX-06": true, "BR-DEX-07": true, "BR-DEX-08": true, "BR-DEX-09": true,
-	"BR-TMP-CVD-01": true,
+	"BR-DEX-01": true, "BR-DEX-04": true, "BR-DEX-05": true, "BR-DEX-06": true,
+	"BR-DEX-07": true, "BR-DEX-08": true, "BR-DEX-09": true, "BR-TMP-CVD-01": true,
 }
 
-// kositExtensionRules and kositBindings read the vendored XRechnung Schematron.
-// The full reader, which also carries each rule's flag, arrives with the last of
-// the rules.
-func kositExtensionRules(t *testing.T) map[string]bool {
+// ---------------------------------------------------------------------------
+// KoSIT's own per-rule fixtures as an oracle
+// ---------------------------------------------------------------------------
+
+// xrExpectation is one instance file and the verdicts its unmutated form declares.
+type xrExpectation struct {
+	file           string
+	invalid, valid map[string]bool
+}
+
+var (
+	xrMuteRE = regexp.MustCompile(`(?s)<\?xmute([^?]*)\?>`)
+	xrAttrRE = regexp.MustCompile(`([\w-]+)="([^"]*)"`)
+	// A rule list is separated by whitespace, or by commas, or by both.
+	xrRuleSepRE = regexp.MustCompile(`[,\s]+`)
+)
+
+// xrInstanceExpectations reads the verdicts KoSIT's per-rule fixtures declare for
+// themselves.
+//
+// Each of the 349 instances under the Schematron's test/instances carries
+// <?xmute?> processing instructions describing a mutation and the rules the
+// mutated document must and must not trip. The mutations need KoSIT's own Java
+// tooling to apply, but `mutator="identity"` means "the document as it stands", so
+// every identity instruction is a verdict about a file already on disk — 326 files
+// and 451 verdicts, in both directions, written by the authority whose rules they
+// are. Nothing in this repository had read them.
+//
+// Only XRechnung identifiers are returned. The same instructions also declare
+// PEPPOL-EN16931-* verdicts, because the released XRechnung Schematron merges
+// those rules in, and ValidateXRechnung evaluates none of them —
+// Coverage(SourceXRechnung) is where that is recorded.
+func xrInstanceExpectations(t *testing.T) []xrExpectation {
 	t.Helper()
-	out := map[string]bool{}
-	for _, name := range kositSchematronFiles(t) {
-		data, err := os.ReadFile(name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for id := range assertFlags(t, name, data) {
-			out[id] = true
-		}
+	root := filepath.Join("testdata", "xrechnung", "schematron", "test", "instances")
+	if _, err := os.Stat(root); err != nil {
+		t.Skip("KoSIT Schematron test instances not present (make cius-oracles)")
 	}
+	var out []xrExpectation
+	err := filepath.Walk(root, func(p string, fi os.FileInfo, e error) error {
+		if e != nil || fi.IsDir() || !strings.HasSuffix(p, ".xml") {
+			return e
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		ex := xrExpectation{file: p, invalid: map[string]bool{}, valid: map[string]bool{}}
+		for _, m := range xrMuteRE.FindAllStringSubmatch(string(data), -1) {
+			attrs := map[string]string{}
+			for _, a := range xrAttrRE.FindAllStringSubmatch(m[1], -1) {
+				attrs[a[1]] = a[2]
+			}
+			if attrs["mutator"] != "identity" {
+				continue
+			}
+			for key, into := range map[string]map[string]bool{
+				"schematron-invalid": ex.invalid,
+				"schematron-valid":   ex.valid,
+			} {
+				for _, rule := range xrRuleSepRE.Split(attrs[key], -1) {
+					// The prefix names the binding the rule was published in
+					// ("xrubl:BR-DE-18"), which the identifier does not need.
+					if i := strings.LastIndex(rule, ":"); i >= 0 {
+						rule = rule[i+1:]
+					}
+					if rule == "" || strings.HasPrefix(rule, "PEPPOL-") {
+						continue
+					}
+					into[rule] = true
+				}
+			}
+		}
+		if len(ex.invalid) > 0 || len(ex.valid) > 0 {
+			out = append(out, ex)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].file < out[j].file })
 	return out
 }
 
-func kositBindings(t *testing.T, id string) (ubl, cii bool) {
-	t.Helper()
-	for _, name := range kositSchematronFiles(t) {
-		data, err := os.ReadFile(name)
+// TestXRechnungSchematronInstanceExpectations validates each of KoSIT's per-rule
+// fixtures and checks the verdicts it declares for itself, in both directions.
+//
+// It is deliberately narrow: it asserts only about the rules an instruction names,
+// and says nothing about the rest of the finding set. These fixtures are written
+// one rule at a time and most of them break several others on the way — the
+// BR-DEX-02 sum fixtures have sub invoice lines with no VAT group and therefore
+// trip BR-DEX-03, and the BR-DEX-10/11/12 fixtures leave a third-party payment out
+// of the amount due and therefore trip BR-DEX-09. Pinning the whole set would make
+// each verdict fail for another rule's reasons, which is the argument
+// en16931_core_rules_test.go makes for the same shape.
+func TestXRechnungSchematronInstanceExpectations(t *testing.T) {
+	exps := xrInstanceExpectations(t)
+	ctx := context.Background()
+	var checked int
+	for _, ex := range exps {
+		data, err := os.ReadFile(ex.file)
 		if err != nil {
-			t.Fatal(err)
-		}
-		if _, ok := assertFlags(t, name, data)[id]; !ok {
+			t.Errorf("%s: %v", ex.file, err)
 			continue
 		}
-		if strings.Contains(name, string(filepath.Separator)+"ubl"+string(filepath.Separator)) {
-			ubl = true
-		} else {
-			cii = true
+		got := map[string]bool{}
+		for _, v := range mustReport(t, ctx, ValidateXRechnung, data).Violations {
+			if v.Source == SourceXRechnung {
+				got[v.Rule] = true
+			}
+		}
+		for rule := range ex.invalid {
+			checked++
+			if !got[rule] {
+				t.Errorf("%s: KoSIT declares this document invalid against %s and ValidateXRechnung does not report it",
+					filepath.Base(ex.file), rule)
+			}
+		}
+		for rule := range ex.valid {
+			checked++
+			if got[rule] {
+				t.Errorf("%s: KoSIT declares this document valid against %s and ValidateXRechnung reports it",
+					filepath.Base(ex.file), rule)
+			}
 		}
 	}
-	return ubl, cii
-}
-
-func kositSchematronFiles(t *testing.T) []string {
-	t.Helper()
-	dir := filepath.Join("testdata", "xrechnung", "schematron", "src", "validation", "schematron")
-	if _, err := os.Stat(dir); err != nil {
-		t.Skip("KoSIT Schematron not present (make cius-oracles)")
-	}
-	return []string{
-		filepath.Join(dir, "ubl", "XRechnung-UBL-validation.sch"),
-		filepath.Join(dir, "cii", "XRechnung-CII-validation.sch"),
-	}
+	atLeast(t, "KoSIT per-rule instances", len(exps), minXRechnungRuleInstances)
+	atLeast(t, "KoSIT per-rule verdicts", checked, minXRechnungRuleVerdicts)
+	t.Logf("XRechnung per-rule instances: %d verdicts across %d KoSIT fixtures, both directions", checked, len(exps))
 }
 
 // TestXRechnungCoverageNamesTheImportedRules is the honesty check on the one entry
@@ -876,4 +1120,78 @@ func TestXRechnungCoverageNamesTheImportedRules(t *testing.T) {
 		}
 	}
 	t.Logf("XRechnung imports %d Peppol rules; the coverage entry names all of them", len(want))
+}
+
+// TestXRechnungSubProfilesAreIdentifiedAsKoSITIdentifiesThem pins the one place
+// this package deliberately differs from the Schematron, so the difference is a
+// decision on the record rather than a substring test nobody looked at.
+//
+// KoSIT compares BT-24 with a whole identifier built from a version literal, so
+// its Schematron answers for XRechnung 3.0 and CVD 0.9 and reads an EXTENSION
+// document of any other version as a plain CIUS one. This package matches the
+// segment of the identifier that names the sub-profile and leaves the version out.
+// The cases below are the three that matter: the identifiers KoSIT publishes must
+// select the right sub-profile, an older version's must select the same one, and a
+// document belonging to another authority must select neither — which the previous
+// test, strings.Contains(specID, "extension"), could not promise.
+func TestXRechnungSubProfilesAreIdentifiedAsKoSITIdentifiesThem(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		specID   string
+		ext, cvd bool
+	}{
+		{"the CIUS identifier", xrCIUSID, false, false},
+		{"the EXTENSION identifier", xrExtensionID, true, false},
+		{"the CVD identifier", xrCVDID, false, true},
+		{"an XRechnung 2.3 EXTENSION identifier",
+			"urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_2.3#conformant#urn:xoev-de:kosit:extension:xrechnung_2.3", true, false},
+		{"a Peppol identifier", "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0", false, false},
+		// The shape the old test would have taken for a German EXTENSION invoice.
+		{"another authority's identifier with the word in it",
+			"urn:cen.eu:en16931:2017#conformant#urn:example:some-extension-profile", false, false},
+		{"empty", "", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ext, cvd := xrSubProfiles(tc.specID)
+			if ext != tc.ext || cvd != tc.cvd {
+				t.Errorf("xrSubProfiles(%q) = (ext=%v, cvd=%v), want (ext=%v, cvd=%v)", tc.specID, ext, cvd, tc.ext, tc.cvd)
+			}
+		})
+	}
+	// And the identifiers the Schematron builds are the ones tested above, so a
+	// change to common.sch that renamed a sub-profile fails here rather than
+	// quietly turning both maps off.
+	data, err := os.ReadFile(filepath.Join("testdata", "xrechnung", "schematron", "src", "validation", "schematron", "common.sch"))
+	if err != nil {
+		t.Skip("KoSIT Schematron not present (make cius-oracles)")
+	}
+	for _, marker := range []string{xrExtensionMarker, xrCVDMarker} {
+		if !strings.Contains(string(data), marker) {
+			t.Errorf("common.sch does not contain %q, so this package's sub-profile test matches nothing KoSIT publishes", marker)
+		}
+	}
+}
+
+// TestXRechnungFlagsCoverEverythingEmitted is the emission-site half of the
+// severity claim: every XRechnung identifier the corpus sweep sees emitted must be
+// one KoSIT publishes, so a typo in a rule identifier cannot invent a rule.
+func TestXRechnungFlagsCoverEverythingEmitted(t *testing.T) {
+	published := kositRules(t)
+	emitted := corpusSweep().byRule[SourceXRechnung]
+	if len(emitted) < 40 {
+		t.Fatalf("the sweep saw only %d XRechnung rules; the corpus is not present, so this proves nothing", len(emitted))
+	}
+	for rule := range emitted {
+		if _, ok := published[rule]; !ok {
+			t.Errorf("ValidateXRechnung emitted %q, which KoSIT's Schematron does not publish", rule)
+		}
+	}
+	var silent []string
+	for id := range published {
+		if !emitted[id] {
+			silent = append(silent, id)
+		}
+	}
+	sort.Strings(silent)
+	t.Logf("the corpus exercises %d of the %d XRechnung rules; silent on %v", len(emitted), len(published), silent)
 }

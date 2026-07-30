@@ -91,18 +91,30 @@ const (
 	// 86 KoSIT business cases, and it is no longer only CEN's binding rules: KoSIT
 	// flags eleven of its own fifty-seven identifiers warning or information, and
 	// BR-DE-TMP-32 — "an invoice should state its delivery date" — applies to a
-	// conforming invoice that simply does not. It went from 10 to 46 when the
-	// provisional rules arrived, and 36 of the 46 are BR-DE-TMP-32.
+	// conforming invoice that simply does not. It went from 10 to 46 when those
+	// eleven were implemented and their severity corrected, and 36 of the 46 are
+	// BR-DE-TMP-32.
 	minXRechnungAdvisory = 46
 
 	// EN 16931 and the CIUS layered on it.
 	minEN16931UBLInvoices = 15
 	minXRechnungInstances = 86
-	minPeppolExamples     = 9
-	minCIUSPTInstances    = 20
-	minCIUSROInstances    = 44
-	minUBLBEInstances     = 36
-	minSRBDTInstances     = 10
+
+	// The KoSIT Schematron's own per-rule fixtures, and the verdicts they declare
+	// for themselves in <?xmute mutator="identity"?> instructions. They are a
+	// different kind of oracle from every other number here: not documents that
+	// must be clean, but documents an authority says are invalid against one named
+	// rule and valid against another, which is the only oracle in this repository
+	// that gives a *violating* verdict for a CIUS rule. Both are floors — upstream
+	// adds fixtures — and a number that falls means either a short fetch or a rule
+	// that stopped being exercised.
+	minXRechnungRuleInstances = 242
+	minXRechnungRuleVerdicts  = 269
+	minPeppolExamples         = 9
+	minCIUSPTInstances        = 20
+	minCIUSROInstances        = 44
+	minUBLBEInstances         = 36
+	minSRBDTInstances         = 10
 
 	// NLCIUS is the one suite that carries both verdicts: the instances named
 	// for a BR-NL rule, and the subset of those that are deliberately broken and
