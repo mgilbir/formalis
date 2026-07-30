@@ -571,8 +571,7 @@ var notEvaluated = map[Source][]RuleFamily{
 	SourcePeppol: {
 		{
 			Rules: "DE-R-001..011, DE-R-014..016, DE-R-018, DE-R-022, DE-R-023-1, DE-R-023-2, DE-R-024-1, DE-R-024-2, " +
-				"DE-R-025-1, DE-R-025-2, DE-R-030, DE-R-031, " +
-				"IS-R-002..010",
+				"DE-R-025-1, DE-R-025-2, DE-R-030, DE-R-031",
 			Severity: SeverityFatal,
 			Reason: "the fatal half of the country-specific rules OpenPEPPOL publishes in the same two Schematron files, under the " +
 				"comment \"National rules\": German, Danish, Greek, Icelandic, Italian, Dutch, Norwegian and Swedish organisation-number " +
@@ -581,7 +580,7 @@ var notEvaluated = map[Source][]RuleFamily{
 				"therefore runs them, which is why they are a gap rather than a different product",
 		},
 		{
-			Rules:    "DE-R-017, DE-R-019, DE-R-020, DE-R-026..028, IS-R-001",
+			Rules:    "DE-R-017, DE-R-019, DE-R-020, DE-R-026..028",
 			Severity: SeverityWarning,
 			Reason:   "the advisory half of the same country-specific rule sets: recommendations rather than rejections",
 		},
