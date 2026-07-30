@@ -189,14 +189,20 @@ func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
 // closing the last gap in an authority's rule set is a deliberate act rather
 // than a side effect.
 //
-// It is a strange test to write and it is the honest one. Conformant returns
-// false for every document this package can be handed, because every rule set
-// it implements is a subset — including the EN 16931 core, which looked
-// complete only because the CEN unit-test oracle has error fragments for 198
-// rules and says nothing about the rest. When someone finishes a rule set this
-// test fails and asks them to move the Source to completeSources, at which
-// point Conformant starts returning true for documents validated by it, which
-// is a claim that deserves to be made on purpose.
+// It is a strange test to write and it is the honest one. Complete returns false
+// for every document this package can be handed, because every rule set it
+// implements is a subset — including the EN 16931 core, which looked complete
+// only because the CEN unit-test oracle has error fragments for 198 rules and
+// says nothing about the rest. When someone finishes a rule set this test fails
+// and asks them to move the Source to completeSources, at which point Complete
+// starts returning true for documents validated by it, which is a claim that
+// deserves to be made on purpose.
+//
+// It is about Complete and not Conformant, and the two have parted company: the
+// EN 16931 core's *fatal* half is finished, so its clean documents are already
+// Conformant, while its 1,168 advisory binding rules keep it out of
+// completeSources. TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is the
+// same kind of record for the fatal half.
 func TestNoRuleSetIsCompleteToday(t *testing.T) {
 	for _, src := range allSources {
 		if completeSources[src] {
@@ -876,21 +882,49 @@ func coverageText(src Source) string {
 	return b.String()
 }
 
-// TestEveryValidatorNamesAFatalGap is why Conformant is false for every document
-// today, stated as the property rather than as the consequence.
+// validatorsWithNoFatalGap are the validators whose rule sets have no fatal
+// coverage gap left, so Conformant for them is decided by the findings alone.
+//
+// This set was empty until the two fatal UBL-CR-* rules were implemented (C27).
+// They were the last fatal gap in the EN 16931 core, and closing them changed the
+// answer to the question this package exists to ask: a clean UBL or CII invoice
+// validated against the core now reports Conformant() == true, where before it
+// reported false with "UBL-CR-666, UBL-CR-673" as the reason. Every validator
+// here reaches that state through the core:
+//
+//   - Validate with ProfileEN16931 runs the core and nothing else;
+//   - ValidateNLCIUS runs the core and NLCIUS, and NLCIUS is the one CIUS whose
+//     own gap (BR-NL-19..35, "not recommended") is advisory;
+//   - ValidateCIUS on a document that declares no recognised CIUS routes to the
+//     core alone, which is the fixture below.
+//
+// Every other validator in allValidators still names a fatal gap, and the test
+// asserts that too. A list is the point rather than a relaxation: "every validator
+// names a fatal gap" was the property before, and it held for the CIUS and
+// national rule sets because their fatal halves really are partial, but it held
+// for the EN 16931 core only because of a defect. Naming the exceptions keeps both
+// directions guarded — a rule set that quietly stops naming a fatal gap fails
+// here, and so does one that acquires a new fatal gap after finishing its fatal
+// half.
+var validatorsWithNoFatalGap = map[string]bool{
+	"Validate":       true,
+	"ValidateNLCIUS": true,
+	"ValidateCIUS":   true,
+}
+
+// TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of
+// each rule set is recorded, because it is what decides Conformant.
 //
 // Complete being false everywhere follows from the table being non-empty, which
 // TestNoRuleSetIsCompleteToday records. Conformant needs more than that, because
-// it passes over advisory gaps: it is false only because every validator's report
-// names a gap its authority flags fatal. NLCIUS is the one rule set whose own gap
-// is purely advisory, and it reaches the same answer because every CIUS validator
-// also runs the EN 16931 core, whose two unimplemented fatal UBL-CR-* rules are a
-// fatal gap.
+// it passes over advisory gaps: it is false for a clean document only when the
+// rule set that ran names a gap its authority flags fatal.
 //
-// When that stops being true — when a rule set's last fatal gap closes — this
-// test fails and says so, which is the moment Conformant starts returning true
-// for documents and therefore the moment that deserves a deliberate change.
-func TestEveryValidatorNamesAFatalGap(t *testing.T) {
+// Both directions fail here, and both are moments that deserve to be deliberate:
+// a rule set finishing its fatal half is the moment Conformant starts returning
+// true for documents it validated, and a rule set that had finished acquiring a
+// new fatal gap is a regression of exactly that claim.
+func TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre(t *testing.T) {
 	ctx := context.Background()
 	for name, fn := range allValidators {
 		t.Run(name, func(t *testing.T) {
@@ -900,9 +934,50 @@ func TestEveryValidatorNamesAFatalGap(t *testing.T) {
 					fatal = append(fatal, g.Rules)
 				}
 			}
-			if len(fatal) == 0 {
+			switch {
+			case len(fatal) == 0 && !validatorsWithNoFatalGap[name]:
 				t.Errorf("%s names no fatal coverage gap, so Conformant now depends only on the findings. "+
-					"If a rule set's fatal half is finished, say so in the commit", name)
+					"If a rule set's fatal half is finished, add it to validatorsWithNoFatalGap and say so in the commit", name)
+			case len(fatal) > 0 && validatorsWithNoFatalGap[name]:
+				t.Errorf("%s is listed as having no fatal coverage gap, but names %v. A rule set whose fatal half was "+
+					"finished has acquired a new fatal gap, which un-does the Conformant claim made when it was added to that list", name, fatal)
+			}
+		})
+	}
+}
+
+// TestTheCoreReportsConformantForACleanInvoice is the other side of that list,
+// asserted on a document rather than on the table: what a caller actually gets.
+//
+// It is the claim the coverage machinery was built to make and could not make
+// until C27 was closed, and it is asserted in both syntaxes because the fatal
+// gap that used to block it was in the UBL binding — a CII invoice was held
+// non-conformant by two rules that could never have applied to it, which is
+// itself a reason the gap was worth closing rather than describing.
+func TestTheCoreReportsConformantForACleanInvoice(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct{ name, doc string }{
+		{"UBL", minimalUBL},
+		{"CII", validCII},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := mustReport(t, ctx, withProfile(ProfileEN16931), []byte(tc.doc))
+			if len(r.Violations) != 0 {
+				t.Fatalf("the fixture is not clean: %v", r.Violations)
+			}
+			if !r.Conformant() {
+				var fatal []string
+				for _, g := range r.NotEvaluated {
+					if g.Severity == SeverityFatal {
+						fatal = append(fatal, g.Rules)
+					}
+				}
+				t.Errorf("a clean %s invoice is not Conformant against the EN 16931 core; fatal gaps: %v", tc.name, fatal)
+			}
+			// Still not Complete: the advisory binding rules are unevaluated, and
+			// that is the distinction D7 put severity on the family for.
+			if r.Complete() {
+				t.Errorf("%s reported Complete while %d advisory rule families are unevaluated", tc.name, len(r.NotEvaluated))
 			}
 		})
 	}

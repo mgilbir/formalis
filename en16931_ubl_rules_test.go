@@ -74,6 +74,18 @@ const (
 	ublOtherScheme = `<PartyTaxScheme><CompanyID>123/456/789</CompanyID><TaxScheme><ID>FC</ID></TaxScheme></PartyTaxScheme>`
 )
 
+// The two halves cac:AdditionalDocumentReference keeps apart, as separate
+// references: the Invoiced object identifier (BT-18), which is the one entitled
+// to a document type code and a scheme identifier, and a supporting document
+// (BG-24) carrying an attachment. UBL-CR-666 and UBL-CR-673 are the rules that
+// forbid putting one reference's payload on the other, so the fixtures below need
+// both shapes and need them apart as well as together.
+const (
+	ublObjectRef      = `<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode></AdditionalDocumentReference>`
+	ublAttachmentBody = `<Attachment><EmbeddedDocumentBinaryObject mimeCode="application/pdf" filename="timesheet.pdf">SGVsbG8=</EmbeddedDocumentBinaryObject></Attachment>`
+	ublAttachmentRef  = `<AdditionalDocumentReference><ID>DOC-1</ID>` + ublAttachmentBody + `</AdditionalDocumentReference>`
+)
+
 // TestUBLSyntaxRules is the per-rule table. Every fatal UBL-SR-* rule appears
 // twice, once with want=false and once with want=true.
 func TestUBLSyntaxRules(t *testing.T) {
@@ -393,6 +405,65 @@ func TestUBLSyntaxRules(t *testing.T) {
 			`<AdditionalDocumentReference><ID schemeID="AAB">DOC-1</ID><DocumentDescription>Timesheet</DocumentDescription></AdditionalDocumentReference>`), "UBL-SR-43", true},
 		{"UBL-SR-43 type code 50 on an invoice rather than a credit note", ublWith(t, ublAtDocument,
 			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>50</DocumentTypeCode></AdditionalDocumentReference>`), "UBL-SR-43", true},
+
+		// --- The two fatal rules of the UBL-CR-* family (C27) --------------
+		//
+		// Both conforming cases carry the invoiced object identifier *and* the
+		// forbidden sibling, on separate cac:AdditionalDocumentReference
+		// elements. That is the shape 50 of the corpus's UBL documents have, and
+		// it is what a transcription that lost the per-reference scoping would
+		// accuse — so it is the case that makes these two rules falsifiable in
+		// the direction that matters.
+		{"UBL-CR-666 attachment on a supporting document beside an invoiced object identifier", ublWith(t, ublAtDocument,
+			ublObjectRef+ublAttachmentRef), "UBL-CR-666", false},
+		{"UBL-CR-666 attachment on the invoiced object identifier itself", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode>`+
+				ublAttachmentBody+`</AdditionalDocumentReference>`), "UBL-CR-666", true},
+		// The context is `/ubl:Invoice | /cn:CreditNote`, one assertion for both
+		// roots, so a credit note answers the same rule.
+		{"UBL-CR-666 attachment on the invoiced object identifier of a credit note", ublCreditNote(ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode>`+
+				ublAttachmentBody+`</AdditionalDocumentReference>`)), "UBL-CR-666", true},
+
+		{"UBL-CR-673 description on a supporting document beside an invoiced object identifier", ublWith(t, ublAtDocument,
+			ublObjectRef+`<AdditionalDocumentReference><ID>DOC-1</ID><DocumentDescription>Timesheet</DocumentDescription></AdditionalDocumentReference>`),
+			"UBL-CR-673", false},
+		{"UBL-CR-673 description on the invoiced object identifier itself", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode>`+
+				`<DocumentDescription>Meter 4711</DocumentDescription></AdditionalDocumentReference>`), "UBL-CR-673", true},
+		// Neither rule is the other: an attachment does not trip UBL-CR-673 and a
+		// description does not trip UBL-CR-666. Two rules, two shapes.
+		{"UBL-CR-673 silent on an attachment", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode>`+
+				ublAttachmentBody+`</AdditionalDocumentReference>`), "UBL-CR-673", false},
+		{"UBL-CR-666 silent on a description", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID schemeID="AAB">OBJ-1</ID><DocumentTypeCode>130</DocumentTypeCode>`+
+				`<DocumentDescription>Meter 4711</DocumentDescription></AdditionalDocumentReference>`), "UBL-CR-666", false},
+
+		// --- The three fatal rules of the UBL-DT-* family ------------------
+		//
+		// These are evaluated on the semantic model (en16931_model.go) rather
+		// than here, because a fraction-digit count and a binary object's
+		// attributes are already fields on it. They are in this table because the
+		// guard below asks the vendored binding for every fatal identifier it
+		// publishes, not for one family of them — which is the check whose
+		// absence let C27 happen.
+		{"UBL-DT-01 amounts with two fraction digits", minimalUBL, "UBL-DT-01", false},
+		{"UBL-DT-01 an amount with three fraction digits", mutate(t, minimalUBL,
+			`<TaxExclusiveAmount>100.00</TaxExclusiveAmount>`,
+			`<TaxExclusiveAmount>100.000</TaxExclusiveAmount>`), "UBL-DT-01", true},
+
+		{"UBL-DT-06 a binary object with a MIME code", ublWith(t, ublAtDocument, ublAttachmentRef), "UBL-DT-06", false},
+		{"UBL-DT-06 a binary object without a MIME code", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID>DOC-1</ID><Attachment>`+
+				`<EmbeddedDocumentBinaryObject filename="timesheet.pdf">SGVsbG8=</EmbeddedDocumentBinaryObject>`+
+				`</Attachment></AdditionalDocumentReference>`), "UBL-DT-06", true},
+
+		{"UBL-DT-07 a binary object with a file name", ublWith(t, ublAtDocument, ublAttachmentRef), "UBL-DT-07", false},
+		{"UBL-DT-07 a binary object without a file name", ublWith(t, ublAtDocument,
+			`<AdditionalDocumentReference><ID>DOC-1</ID><Attachment>`+
+				`<EmbeddedDocumentBinaryObject mimeCode="application/pdf">SGVsbG8=</EmbeddedDocumentBinaryObject>`+
+				`</Attachment></AdditionalDocumentReference>`), "UBL-DT-07", true},
 	}
 	runRuleCases(t, cases)
 
@@ -417,10 +488,23 @@ func TestUBLSyntaxRules(t *testing.T) {
 	}
 }
 
-// ublFatalSyntaxRules reads the fatal UBL-SR-* identifiers out of the vendored
-// CEN Schematron, so the table above is measured against what CEN publishes
-// rather than against a list this package wrote down. It skips when the
-// artefacts are absent, like every other oracle here.
+// ublFatalSyntaxRules reads every fatal identifier out of the vendored CEN UBL
+// syntax binding, so the table above is measured against what CEN publishes
+// rather than against a list this package wrote down. It skips when the artefacts
+// are absent, like every other oracle here.
+//
+// It reads every fatal identifier and not the UBL-SR-* ones deliberately, and
+// that widening is the point of this function rather than a tidy-up. C27 was two
+// fatal rules unimplemented in the UBL binding — UBL-CR-666 and UBL-CR-673 — and
+// nothing here noticed, because the only guard over the binding filtered its
+// identifiers to `UBL-SR-\d+` before counting them. A guard that reads one family
+// out of a file holding three cannot report a gap in the other two, and the two
+// missing rules were instead disclaimed in the coverage table, inside an entry
+// describing their family as advisory. So the filter is now on the flag alone:
+// whatever CEN flags fatal in this binding needs a verdict in the table above,
+// whichever family it is numbered in and whichever file of this package evaluates
+// it. The count assertion is per family so that an upstream revision which adds a
+// fatal rule fails here with a number a reader can act on.
 func ublFatalSyntaxRules(t *testing.T) []string {
 	t.Helper()
 	dir := en16931SuiteDir()
@@ -433,9 +517,10 @@ func ublFatalSyntaxRules(t *testing.T) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	re := regexp.MustCompile(`\bid="(UBL-SR-\d+)"`)
+	re := regexp.MustCompile(`\bid="(UBL-(?:SR|CR|DT)-\d+)"`)
 	fatal := regexp.MustCompile(`flag="fatal"`)
 	seen := map[string]bool{}
+	byFamily := map[string]int{}
 	var out []string
 	for _, m := range regexp.MustCompile(`<assert[^>]*>`).FindAllString(string(data), -1) {
 		if !fatal.MatchString(m) {
@@ -446,11 +531,20 @@ func ublFatalSyntaxRules(t *testing.T) []string {
 			continue
 		}
 		seen[id[1]] = true
+		byFamily[id[1][:len("UBL-XX")]]++
 		out = append(out, id[1])
 	}
 	sort.Strings(out)
-	if len(out) != 54 {
-		t.Fatalf("expected 54 fatal UBL-SR-* assertions in the CEN Schematron, found %d", len(out))
+	// 54 fatal cardinality rules, the two fatal core-restriction rules of the
+	// 678-rule UBL-CR-* family, and three fatal datatype rules of 24. Every
+	// other assertion in this file is flagged warning.
+	for family, want := range map[string]int{"UBL-SR": 54, "UBL-CR": 2, "UBL-DT": 3} {
+		if byFamily[family] != want {
+			t.Fatalf("expected %d fatal %s-* assertions in the CEN Schematron, found %d", want, family, byFamily[family])
+		}
+	}
+	if len(out) != 59 {
+		t.Fatalf("expected 59 fatal assertions in the CEN UBL syntax binding, found %d", len(out))
 	}
 	return out
 }
