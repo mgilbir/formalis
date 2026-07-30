@@ -770,14 +770,17 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 	}
 	// The floor is on the helper below, not on a corpus: it is what stops
 	// coverageIdentifiers from silently regressing to reading only the identifiers
-	// written out in full. It was 30 and is 60, because two bugs in that helper —
-	// see numTailRE and fullIDRE — meant that of the 67 identifiers this table
-	// names and the artefacts publish, 44 were skipped without a word, and the 23
-	// that were left cleared a floor of 30 only while the XRechnung entries were
-	// long. A number that has to come down again means either the table shrank
-	// because rules were implemented, which belongs in a commit message, or the
-	// helper broke.
-	if checked < 60 {
+	// written out in full. Two bugs in that helper — see numTailRE and fullIDRE —
+	// meant that of the identifiers this table names and the artefacts publish, 44
+	// were skipped without a word, and the 23 left cleared the previous floor of 30
+	// only while the XRechnung entries were long.
+	//
+	// It is 45 rather than the number the log line below reports, because the table
+	// legitimately shrinks as rules are implemented: this test's own population is
+	// the *gaps*. What it has to catch is the helper regressing, which took it to
+	// 23. A number that has to come down again means either the helper broke or a
+	// rule set finished, and the second belongs in a commit message.
+	if checked < 45 {
 		t.Fatalf("only %d coverage identifiers could be looked up; the harness is reading the wrong artefacts", checked)
 	}
 	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish, with no exceptions", checked)

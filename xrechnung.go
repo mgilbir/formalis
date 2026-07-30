@@ -14,8 +14,8 @@ import (
 // validates CII (ZUGFeRD/XRechnung-CII) and UBL (XRechnung-UBL) alike.
 //
 // xrechnung_rules.go holds the rules whose subject is a position in the document
-// tree — the payment-means groups and the settlement-discount text — and argues
-// why they are per-syntax.
+// tree — the payment-means groups, the settlement-discount text and the EXTENSION
+// sub-profile — and argues why they are per-syntax.
 //
 // Not vendored: the KoSIT Schematron and instance test suite are cloned by
 // `make cius-oracles` and used only as the FP=0 oracle.
@@ -26,9 +26,24 @@ var xrechnungTypeCodes = map[string]bool{
 	"381": true, "875": true, "876": true, "877": true,
 }
 
-// xrExtItemSchemes are the item standard-identifier schemes the XRechnung
-// EXTENSION adds to the ISO 6523 ICD list (BR-CL-21 override).
-var xrExtItemSchemes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
+// xrechnungSuppressedForExtension are the EN 16931 rules a document claiming the
+// EXTENSION sub-profile is not judged by, each because KoSIT publishes a
+// BR-DEX-* rule that replaces it. The replacement is evaluated — see
+// xrUBLExtensionRules and xrCIIExtensionRules — so this is a swap and not a
+// discount, which is the property the map's second column exists to state and
+// TestEveryExtensionSuppressionHasAReplacement checks.
+//
+// BR-CO-16 is not here, because BR-DEX-09 exists in KoSIT's UBL Schematron and
+// not in its CII one: a CII EXTENSION invoice's amount due is judged by CEN's
+// rule, unchanged. validateXRechnung applies that one by syntax.
+var xrechnungSuppressedForExtension = map[string]string{
+	"BR-CL-10": "BR-DEX-04", // party identifier scheme, with XR01..XR03 added
+	"BR-CL-11": "BR-DEX-05", // party legal registration scheme
+	"BR-CL-21": "BR-DEX-06", // item standard identifier scheme
+	"BR-CL-25": "BR-DEX-07", // electronic address scheme
+	"BR-CL-26": "BR-DEX-08", // deliver-to location identifier scheme
+	"BR-CL-24": "BR-DEX-01", // attachment MIME code, with application/xml added
+}
 
 // The XRechnung specification identifiers, from common.sch:
 //
@@ -131,28 +146,26 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	// identical finding set on every EN 16931 document in testdata.
 	for _, v := range validateEN16931(r, p, ProfileEN16931) {
 		switch {
-		// The EXTENSION and CVD sub-profiles extend the item identifier code lists;
-		// re-checked below against the XRechnung-extended sets.
-		case v.Rule == "BR-CL-21" || v.Rule == "BR-CL-13":
+		case ext && xrechnungSuppressedForExtension[v.Rule] != "":
 			continue
-		// The EXTENSION replaces the amount-due formula (BR-CO-16) with BR-DEX-09,
-		// which accounts for third-party payments.
-		case ext && v.Rule == "BR-CO-16":
+		// The CVD sub-profile adds the scheme identifier 'CVD' to the item
+		// classification code list; re-checked below until BR-TMP-CVD-01 arrives.
+		case cvd && v.Rule == "BR-CL-13":
+			continue
+		// BR-DEX-09 replaces the amount-due formula, and KoSIT publishes it for the
+		// UBL binding only. A CII EXTENSION invoice keeps CEN's BR-CO-16.
+		case ext && inv.syntax == "UBL" && v.Rule == "BR-CO-16":
 			continue
 		}
 		out = append(out, v)
 	}
-	// Re-apply the item identifier scheme checks with the XRechnung extensions.
 	for _, li := range inv.lines {
-		if s := li.stdIDScheme; s != "" && !en16931ICD[s] && !(ext && xrExtItemSchemes[s]) {
-			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-21", Severity: SeverityFatal, Message: fmt.Sprintf("Item standard identifier scheme (%q) is not permitted", s)})
-		}
 		if l := li.classListID; l != "" && !en16931ItemClassCodes[l] && !(cvd && l == "CVD") {
 			out = append(out, Violation{Source: SourceEN16931, Rule: "BR-CL-13", Severity: SeverityFatal, Message: fmt.Sprintf("Item classification scheme (%q) is not permitted", l)})
 		}
 	}
 	out = append(out, validateXRechnungRules(inv, ext, cvd)...)
-	out = append(out, validateXRechnungTreeRules(r, p)...)
+	out = append(out, validateXRechnungTreeRules(r, p, ext)...)
 	return out
 }
 
