@@ -510,3 +510,35 @@ func advisoryAdder(out *[]Violation, src Source) func(rule, msg string) {
 		*out = append(*out, Violation{Source: src, Rule: rule, Severity: SeverityWarning, Message: msg})
 	}
 }
+
+// ruleContexts counts, per rule identifier, how many context nodes a hand-written
+// rule set was asked about. It is nil on every production path and non-nil only in
+// the reachability tests, where writing to it costs one map increment per context
+// node.
+//
+// It exists because a clean sweep is not evidence. A rule that reports nothing over
+// 1,680 documents is either a rule that was asked and answered "conforms" or a rule
+// that was never asked at all — bound to a misspelt element name, or to a path the
+// mapper never builds — and the two are indistinguishable from the outside. The
+// generated CIUS-PT and CIUS-RO tiers get this for free, because their contexts are
+// data and a test can walk them (TestCIUSPTDatatypeContextsAreReachable,
+// TestCIUSRORuleContextsAreReachable). A hand-written rule body has no such
+// structure, so the count has to be taken where the context is: at the point the
+// rule body reaches a node it is about, before it decides anything.
+//
+// reached is called with the identifiers evaluated at that node, which is why it is
+// variadic: three of UBL.BE's rules share the context //cac:TaxTotal/cac:TaxSubtotal/
+// cac:TaxCategory and two of SRBDT's share cac:AccountingCustomerParty/cac:Party/
+// cac:PartyLegalEntity/cbc:CompanyID, exactly as their Schematron writes them.
+type ruleContexts map[string]int
+
+// reached records one context node for each identifier evaluated at it. A nil
+// receiver is the production case and does nothing.
+func (c ruleContexts) reached(ids ...string) {
+	if c == nil {
+		return
+	}
+	for _, id := range ids {
+		c[id]++
+	}
+}
