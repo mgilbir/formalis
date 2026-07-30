@@ -81,7 +81,11 @@ national ones — because the document *was* read.
 
 Every `Violation` carries the severity its authority gave the rule: CEN's
 `flag="fatal"` or `flag="warning"` in the Schematron, and the national
-authorities' equivalents. `SeverityFatal` is the zero value, so an unstamped
+authorities' equivalents. Every one of those flags is a quotation checked against
+the artefact that publishes it — for CEN, KoSIT and OpenPEPPOL, and since
+`make cius-schematron` for the Portuguese, Romanian, Belgian, Serbian and Dutch
+rule sets as well, whose severities used to be this package's fail-safe reading of
+prose. `SeverityFatal` is the zero value, so an unstamped
 finding reads as blocking rather than as advisory — the fail-safe direction.
 
 Three rule sets report warnings, and everything else this package implements is
@@ -396,7 +400,12 @@ download.
 ```
 make check-deps                    # what the fetch targets need
 make cius-oracles                  # ~600 documents: XRechnung, Peppol, NLCIUS,
-                                   # the CIUS and the national-format samples
+                                   # the CIUS and the national-format samples,
+                                   # plus (via cius-schematron) the five national
+                                   # Schematrons the severity and coverage guards
+                                   # read
+make cius-schematron               # those Schematrons on their own: CIUS-PT,
+                                   # CIUS-RO, UBL.BE, SRBDT and NLCIUS
 make en16931-artefacts             # the CEN/TC 434 per-rule unit-test suite
 make en16931-ubl                   # the EN 16931 UBL example invoices
 make en16931-genericode            # the official code lists (needs unzip)
