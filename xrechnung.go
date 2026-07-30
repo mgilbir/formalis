@@ -13,6 +13,10 @@ import (
 // schemes, the amount-due formula). The same syntax-neutral model feeds it, so it
 // validates CII (ZUGFeRD/XRechnung-CII) and UBL (XRechnung-UBL) alike.
 //
+// xrechnung_rules.go holds the rules whose subject is a position in the document
+// tree — the payment-means groups and the settlement-discount text — and argues
+// why they are per-syntax.
+//
 // Not vendored: the KoSIT Schematron and instance test suite are cloned by
 // `make cius-oracles` and used only as the FP=0 oracle.
 
@@ -148,6 +152,7 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 		}
 	}
 	out = append(out, validateXRechnungRules(inv, ext, cvd)...)
+	out = append(out, validateXRechnungTreeRules(r, p)...)
 	return out
 }
 
@@ -234,27 +239,9 @@ func validateXRechnungRules(inv *en16931Invoice, ext, cvd bool) []Violation {
 		add("BR-DE-16", "A taxed VAT category requires the Seller VAT identifier, tax registration or tax representative VAT identifier")
 	}
 
-	// BR-DE-19/20: the credit-transfer / direct-debit account identifiers shall be
-	// a valid IBAN for the SEPA payment means.
-	for _, pm := range inv.paymentMeans {
-		if pm == "58" && inv.creditAccountID != "" && !validIBAN(inv.creditAccountID) {
-			add("BR-DE-19", "The Payment account identifier (BT-84) shall be a valid IBAN for a SEPA credit transfer")
-		}
-		if pm == "59" && inv.debitedAccount != "" && !validIBAN(inv.debitedAccount) {
-			add("BR-DE-20", "The Debited account identifier (BT-91) shall be a valid IBAN for a SEPA direct debit")
-		}
-	}
-
 	// BR-DE-26: a corrected invoice (type 384) requires a preceding invoice reference.
 	if inv.typeCode == "384" && !inv.hasBillingRef {
 		add("BR-DE-26", "A corrected invoice (type code 384) shall contain a Preceding Invoice reference (BG-3)")
-	}
-
-	// BR-DE-30/31: a direct debit requires the creditor identifier and the debited
-	// account identifier.
-	if inv.directDebitPresent {
-		req("BR-DE-30", "A direct debit (BG-19) shall carry the Bank assigned creditor identifier (BT-90)", inv.creditorID)
-		req("BR-DE-31", "A direct debit (BG-19) shall carry the Debited account identifier (BT-91)", inv.debitedAccount)
 	}
 	return out
 }
