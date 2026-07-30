@@ -573,7 +573,9 @@ var ruleIDRE = regexp.MustCompile(`\b[A-Z]{2,7}(?:-[A-Z]{1,4})*-[0-9][A-Za-z0-9-
 // rather than only unimplemented ones. See the convention documented on
 // notEvaluated.
 func carveOut(entry string) bool {
-	return strings.Contains(entry, "other than") || strings.Contains(entry, "emits only")
+	return strings.Contains(entry, "other than") ||
+		strings.Contains(entry, "emits only") ||
+		strings.Contains(entry, "binding only")
 }
 
 // TestCoverageNamesNoRuleThePackageEmits is the over-claim guard, and the
@@ -796,6 +798,13 @@ func severityOfFlag(flag string) (Severity, bool) {
 //     harness could not see at all.
 //   - peppolRules is OpenPEPPOL's flag for every identifier it publishes, and
 //     peppolXRFlags is KoSIT's where the merge into XRechnung changes it.
+//   - nlciusAdvisoryRuleIDs() is the "not recommended" tier of SimplerInvoicing's
+//     two bindings: the identifiers nlcius.go emits through advisoryAdder, read
+//     out of the two tables that drive it rather than listed again here.
+//     ciusEvaluated in cius_artefacts_test.go is what holds those identifiers to
+//     the flag SimplerInvoicing publishes for each, against the artefact and in
+//     both directions, so this entry does not have to repeat that claim — it only
+//     has to say which identifiers a warning is expected from.
 //
 // The value is a *set* of severities rather than one severity, and that is the one
 // widening this test has taken. It is not an excuse list: it exists because a rule
@@ -812,6 +821,7 @@ func severityTables() map[Source]map[string]map[Severity]bool {
 		SourceEN16931:   {},
 		SourceXRechnung: {},
 		SourcePeppol:    {},
+		SourceNLCIUS:    {},
 	}
 	record := func(src Source, rule string, sev Severity) {
 		if out[src][rule] == nil {
@@ -836,6 +846,28 @@ func severityTables() map[Source]map[string]map[Severity]bool {
 	}
 	for rule, sev := range peppolXRFlags {
 		record(SourcePeppol, rule, sev)
+	}
+	for rule := range nlciusAdvisoryRuleIDs() {
+		record(SourceNLCIUS, rule, SeverityWarning)
+	}
+	return out
+}
+
+// nlciusAdvisoryRuleIDs is the set of identifiers nlcius.go emits as warnings,
+// gathered from the tables that drive it rather than written out a second time.
+// A list maintained beside the one it describes is a list that drifts.
+func nlciusAdvisoryRuleIDs() map[string]bool {
+	out := map[string]bool{}
+	for _, table := range [][]nlciusDiscouraged{nlciusUBLDiscouraged, nlciusCIIDiscouraged} {
+		for _, d := range table {
+			out[d.id] = true
+		}
+	}
+	// The four that test something rather than merely being reached, and so are not
+	// in either forbidden-path table. BR-NL-31 is UBL-only: the CII binding's copy
+	// is unevaluable.
+	for _, id := range []string{"BR-NL-25", "BR-NL-29", "BR-NL-31", "BR-NL-33"} {
+		out[id] = true
 	}
 	return out
 }
@@ -1357,6 +1389,12 @@ var sourcesWithUnevaluableFamilies = map[Source]bool{
 	// this package before it was read, so recording them is a false-positive fix.
 	// TestSRBDTUnevaluableRulesAreDerivedFromTheArtefact re-derives all fifteen.
 	SourceSRBDT: true,
+	// NLCIUS joined with four, and it is the first Source whose unevaluable claim is
+	// per *binding*: BR-NL-9 and BR-NL-31 are reachable in the UBL binding and not in
+	// the CII one, and BR-NL-32-2/-3 are published only in the UBL binding and are
+	// unreachable there. Same cause, same evidence, read by
+	// TestNLCIUSUnevaluableRulesAreDerivedFromTheArtefacts.
+	SourceNLCIUS: true,
 	// CIUS-RO joined with six identifiers and two distinct reasons, both read out
 	// of cius-ro/RO16931-rules.sch rather than argued: three rules whose context is
 	// claimed by an earlier rule of the same pattern, which under ISO Schematron

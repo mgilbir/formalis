@@ -324,11 +324,32 @@ var ciusEvaluated = map[Source]map[string]Severity{
 		"RSK-X-07": SeverityFatal, "RSK-X-08": SeverityFatal, "RSK-X-09": SeverityFatal,
 		"RSK-X-10": SeverityFatal,
 	},
+	// NLCIUS is the fourth complete rule set here, and the only one with two
+	// bindings: 12 fatal identifiers and 22 advisory ones in UBL, 11 and 22 in CII.
+	// This is the one place in the table where the value is not SeverityFatal, and
+	// it is the reason the table is per identifier rather than an assertion that
+	// everything is fatal.
+	//
+	// BR-NL-9 appears here at SeverityFatal because the UBL binding publishes it
+	// reachably; the CII binding's copy is unevaluable and is in
+	// Coverage(SourceNLCIUS). BR-NL-31 is the mirror image, advisory rather than
+	// fatal. BR-NL-32-2 and BR-NL-32-3 are absent for the same reason ubl-BE-13 is:
+	// no processor reaches them.
 	SourceNLCIUS: {
 		"BR-NL-1": SeverityFatal, "BR-NL-2": SeverityFatal, "BR-NL-3": SeverityFatal,
 		"BR-NL-4": SeverityFatal, "BR-NL-5": SeverityFatal, "BR-NL-7": SeverityFatal,
 		"BR-NL-8": SeverityFatal, "BR-NL-9": SeverityFatal, "BR-NL-10": SeverityFatal,
 		"BR-NL-11": SeverityFatal, "BR-NL-12": SeverityFatal, "BR-NL-13": SeverityFatal,
+		"BR-NL-19": SeverityWarning, "BR-NL-20": SeverityWarning, "BR-NL-21": SeverityWarning,
+		"BR-NL-22": SeverityWarning, "BR-NL-23": SeverityWarning, "BR-NL-24": SeverityWarning,
+		"BR-NL-25": SeverityWarning, "BR-NL-26": SeverityWarning,
+		"BR-NL-27-1": SeverityWarning, "BR-NL-27-2": SeverityWarning,
+		"BR-NL-27-3": SeverityWarning, "BR-NL-27-4": SeverityWarning,
+		"BR-NL-28-1": SeverityWarning, "BR-NL-28-2": SeverityWarning,
+		"BR-NL-28-3": SeverityWarning, "BR-NL-28-4": SeverityWarning,
+		"BR-NL-29": SeverityWarning, "BR-NL-30": SeverityWarning, "BR-NL-31": SeverityWarning,
+		"BR-NL-32-1": SeverityWarning, "BR-NL-32-and-34": SeverityWarning,
+		"BR-NL-33": SeverityWarning, "BR-NL-35": SeverityWarning,
 	},
 }
 

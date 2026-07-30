@@ -414,13 +414,21 @@ func Coverage(src Source) []RuleFamily {
 //     by both guards, so moving a claim into the prose cannot dodge either; what
 //     the split buys is that the severity and the identifiers sit where a caller
 //     can use them without parsing a sentence.
+//
 //   - An entry that carves out the implemented part of a family says "other
-//     than" or "emits only" in Rules and then lists it. Those two phrases mark
-//     the *entry* as containing identifiers this package does report, so the
-//     over-claim test skips both its fields — a Reason that explains such a
-//     carve-out has to be able to name the evaluated half (BR-51 in the CII
-//     binding is the example). Any other phrasing is taken as a plain claim that
-//     everything the entry names is unevaluated.
+//     than", "emits only" or "binding only" in Rules and then lists it. Those
+//     three phrases mark the *entry* as containing identifiers this package does
+//     report, so the over-claim test skips both its fields — a Reason that
+//     explains such a carve-out has to be able to name the evaluated half (BR-51
+//     in the CII binding is the example). Any other phrasing is taken as a plain
+//     claim that everything the entry names is unevaluated.
+//
+//     "binding only" is the third of them and the newest. It is what an entry says
+//     when a rule is evaluable in one of an authority's syntax bindings and not in
+//     the other, which NLCIUS is the first rule set here to have: SI-UBL's BR-NL-9
+//     is reached and NLCIUS-CII's copy of it is not, so the identifier is both
+//     evaluated and named as a gap, and the entry has to be able to say which is
+//     which.
 //
 // A family whose members do not share one flag is split into one entry per
 // severity rather than recorded at the stronger of the two. That is not
@@ -585,27 +593,57 @@ var notEvaluated = map[Source][]RuleFamily{
 	// holds it up: every one of the 244 published (identifier, binding) pairs has a
 	// document that trips it and one that does not.
 
-	// NLCIUS is the one CIUS whose fatal rule set is implemented in full, and the
-	// one whose authority publishes both syntax bindings. The two do not publish
-	// the same identifiers, so the advisory gap is written per binding.
+	// NLCIUS is finished in both halves and in both bindings — 34 identifiers in
+	// UBL, 33 in CII — and it was the last rule set in this package whose only gap
+	// was advisory. Its "not recommended" tier is evaluated now, as warnings, so a
+	// Dutch invoice reports Complete() as well as Conformant().
 	//
-	// It used to read "BR-NL-19..35", which is a range and not a set: SI-UBL
-	// publishes no BR-NL-22, -23 or -34 at all, and its BR-NL-27, -28 and -32 exist
-	// only as numbered sub-rules (BR-NL-27-1 … -4). Four of the seventeen
-	// identifiers that range expands to are published by neither binding, and
-	// BR-NL-34 is stranger than the others: the UBL file carries three assertions
-	// whose message text reads "[BR-NL-34]" under the identifiers BR-NL-32-1/2/3,
-	// so the rule exists and its identifier does not.
+	// The gap that entry used to describe read "BR-NL-19..35", which is a range and
+	// not a set: SI-UBL publishes no BR-NL-22, -23 or -34 at all, and its BR-NL-27,
+	// -28 and -32 exist only as numbered sub-rules (BR-NL-27-1 … -4).
+	//
+	// What is left is four identifiers neither authority's own validator can report,
+	// all for the same reason and all derived from the artefacts rather than argued:
+	// a rule whose context an earlier rule of the same pattern has already claimed is
+	// never reached, because ISO Schematron processes a node with the first matching
+	// rule and no other. TestNLCIUSUnevaluableRulesAreDerivedFromTheArtefacts
+	// re-derives all four.
+	//
+	// BR-NL-9 is the consequential one and it is per binding rather than per rule
+	// set: it is evaluated for a UBL document, where SI-UBL binds it in the same
+	// Schematron rule as BR-NL-7 and BR-NL-8, and it is unevaluable for a CII one,
+	// where the NLCIUS-CII file gives it a rule of its own against a context BR-NL-7's
+	// rule already holds. This package reported it for CII until that was read.
 	SourceNLCIUS: {
 		{
-			Rules:    "BR-NL-19..21, 24..26, 27-1..27-4, 28-1..28-4, 29..31, 32-1..32-3, 33, 35 (UBL)",
-			Severity: SeverityWarning,
-			Reason:   "SI-UBL 2.0's \"not recommended\" rules, which do not make an invoice non-conformant",
+			Rules:       "BR-NL-9, in the CII binding only",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "NLCIUS-CII-validation.sch gives it a rule of its own with the context " +
+				"`/*/rsm:ExchangedDocument/ram:TypeCode[$si]`, which the immediately preceding rule of the same " +
+				"pattern already claims, so no CII invoice type code ever reaches it. The UBL binding puts the " +
+				"same assertion in a rule that is reached, and this package evaluates it there",
 		},
 		{
-			Rules:    "BR-NL-19..26, 27-1..27-4, 28-1..28-4, 29..31, 32-and-34, 33, 35 (CII)",
-			Severity: SeverityWarning,
-			Reason:   "the same advisory tier in NLCIUS-CII-validation.sch, which publishes two rules the UBL one does not",
+			Rules:       "BR-NL-31, in the CII binding only",
+			Severity:    SeverityWarning,
+			Unevaluable: true,
+			Reason: "NLCIUS-CII-validation.sch gives it a rule of its own with the context " +
+				"`ram:SpecifiedTradeSettlementPaymentMeans[$s]`, which the immediately preceding rule of the " +
+				"same pattern already claims, so no CII payment means group ever reaches it. The UBL binding " +
+				"puts the same assertion in a rule that is reached, and this package evaluates it there",
+		},
+		{
+			Rules:       "BR-NL-32-2, BR-NL-32-3, in the UBL binding only",
+			Severity:    SeverityWarning,
+			Unevaluable: true,
+			Reason: "si-ubl-2.0-nlcius.sch binds them to the contexts " +
+				"`cac:InvoiceLine/cac:AllowanceCharge/cbc:AllowanceChargeReasonCode` and " +
+				"`cac:CreditNoteLine/cac:AllowanceCharge/cbc:AllowanceChargeReasonCode`, and an earlier rule of " +
+				"the same pattern matches every node either of them does: an XSLT match pattern is anchored at " +
+				"its last step, so `cac:AllowanceCharge/cbc:AllowanceChargeReasonCode` claims the line-level " +
+				"reason codes as well as the document-level ones. The identifier bound to that earlier rule is " +
+				"what this package reports for a reason code at either level",
 		},
 	},
 
@@ -701,30 +739,6 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
-	// SRBDT's fatal half is finished: all 46 identifiers the Ministry of Finance
-	// publishes are accounted for — 31 evaluated in cius_rs.go (21 RSR business
-	// rules, the 3 RSE extension rules, and the 7 assertions of the abstract pdvcat
-	// pattern, which the validation schema instantiates four times) and the 15
-	// below, which the Ministry published and no conforming Schematron processor can
-	// report.
-	//
-	// The two families that had no entry until the Schematron was vendored are
-	// evaluated rather than named now: RSK-X-* is the Serbian zero-rate VAT-category
-	// tier and RSE-* the srbdtext extension tier.
-	//
-	// Every entry here is Unevaluable, so none of them holds Conformant down. All
-	// fifteen have the same cause and it is not a judgement:
-	// EN16931-UBL-srbdt.sch is one pattern, eleven of its rules repeat the context
-	// `/ubl:Invoice | /cn:CreditNote` and four more repeat three other contexts, and
-	// ISO Schematron gives a node to the first matching rule in a pattern and to no
-	// other. TestSRBDTUnevaluableRulesAreDerivedFromTheArtefact re-derives the whole
-	// list from the file, so a Ministry that splits its pattern turns these back into
-	// gaps on the day the artefact is re-fetched.
-	//
-	// Eight of them — RSR-09, 10, 13, 16, 17, 20, 22 and 25 — were being *emitted*
-	// until this was read, so recording them here is a false-positive fix and not a
-	// coverage reduction: they are findings the Ministry's own validator cannot
-	// produce. It is the same reading that put ubl-BE-13 in Coverage(SourceUBLBE).
 	// SRBDT's fatal half is finished: all 46 identifiers the Ministry of Finance
 	// publishes are accounted for — 31 evaluated in cius_rs.go (21 RSR business
 	// rules, the 3 RSE extension rules, and the 7 assertions of the abstract pdvcat

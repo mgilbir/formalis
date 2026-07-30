@@ -42,15 +42,54 @@ import (
 //
 // BR-NL-8 is published in the UBL binding only (it asserts that the type code
 // agrees with the UBL document element, a question CII does not have), and
-// BR-NL-22/23 in the CII binding only; this package evaluates neither of the
-// latter. cius_artefacts_test.go pins the difference between the two bindings, so a
-// rule cannot quietly start firing in a syntax that does not publish it.
+// BR-NL-22/23 in the CII binding only. cius_artefacts_test.go pins the difference
+// between the two bindings, so a rule cannot quietly start firing in a syntax that
+// does not publish it.
 //
-// Severity needed no correction: the twelve fatal identifiers this package
-// evaluates are flagged fatal in both bindings, and the 22 advisory ones it does not
-// are flagged warning, which is what Coverage(SourceNLCIUS) already said.
+// Severity needed no correction: the twelve fatal identifiers are flagged fatal in
+// both bindings and the 22 advisory ones warning, which is what
+// Coverage(SourceNLCIUS) already said.
 //
-// Not evaluated: the advisory "not recommended" rules. See Coverage(SourceNLCIUS).
+// # The advisory tier
+//
+// The "not recommended" rules — BR-NL-19 to BR-NL-35, in the numbered sub-rule form
+// the artefacts actually publish — are evaluated now, as warnings. They are the
+// most mechanical rules in either binding: all but four are `test="false"` in a
+// context, which is the Schematron way of writing "this element should not be
+// here", and the four that are not test one attribute each. NLCIUS was the last
+// rule set in this package whose gap was advisory-only, so closing it is what makes
+// Report.Complete() true for a Dutch invoice.
+//
+// # The rules neither binding's own validator can report
+//
+// Reading the two files as ISO Schematron rather than as a list changed four
+// things, and one of them was a live false positive.
+//
+// A node is processed by the first rule in a pattern whose context matches it and
+// by no other. Both bindings put every BR-NL rule in one pattern, and four rules
+// repeat a context an earlier rule in that pattern has already claimed:
+//
+//   - CII: BR-NL-9's rule repeats BR-NL-7's context /*/rsm:ExchangedDocument/
+//     ram:TypeCode[$si], and BR-NL-31's repeats BR-NL-12's context
+//     ram:SpecifiedTradeSettlementPaymentMeans[$s]. **This package reported BR-NL-9
+//     on CII documents**, which no NLCIUS-CII validator can do — the same defect as
+//     C36, found the same way. BR-NL-9 is evaluated for UBL, where its rule is
+//     reachable, and for CII it is in Coverage(SourceNLCIUS) as unevaluable.
+//   - UBL: BR-NL-32-2 and BR-NL-32-3 are bound to cac:InvoiceLine/ and
+//     cac:CreditNoteLine/cac:AllowanceCharge/cbc:AllowanceChargeReasonCode, both of
+//     which BR-NL-32-1's context cac:AllowanceCharge/cbc:AllowanceChargeReasonCode
+//     already matches — an XSLT match pattern is anchored at its last step, so the
+//     shorter path claims the line-level nodes too. So BR-NL-32-1 is the identifier
+//     that reports an allowance or charge reason code at *either* level, and its two
+//     siblings report nothing.
+//
+// That also settles the BR-NL-34 curiosity PR 22 recorded. The UBL file carries a
+// second trio of assertions whose message text reads "[BR-NL-34]" — the charge
+// wording, against BR-NL-32's allowance wording — under the same three identifiers
+// and against the same three contexts, later in the same pattern. Every one of them
+// is unreachable, so BR-NL-34 is not an identifier this package fails to emit: it is
+// a message the authority's own validator never prints. The CII binding says the
+// same thing in one assertion and gives it the honest identifier BR-NL-32-and-34.
 
 // nlciusPaymentMeans is the payment means code set BR-NL-12 permits: 30 credit
 // transfer, 48 bank card, 49 direct debit, 57 standing agreement, 58 SEPA credit
@@ -112,12 +151,16 @@ func ValidateNLCIUS(ctx context.Context, xmlData []byte) (Report, error) {
 
 func validateNLCIUS(r *run, p *parsed) []Violation {
 	out := validateEN16931(r, p, ProfileEN16931)
-	return append(out, validateNLCIUSRules(p.inv)...)
+	return append(out, validateNLCIUSRules(p, nil)...)
 }
 
-// validateNLCIUSRules applies the fatal NLCIUS rules, in the binding that publishes
-// each and behind the gate that publishes it.
-func validateNLCIUSRules(inv *en16931Invoice) []Violation {
+// validateNLCIUSRules applies the NLCIUS rules, in the binding that publishes each
+// and behind the gate that publishes it.
+//
+// seen is nil on every production path; the reachability test passes a map. See
+// ruleContexts.
+func validateNLCIUSRules(p *parsed, seen ruleContexts) []Violation {
+	inv := p.inv
 	// $si. Everything below is inside it.
 	if !nlciusApplies(inv) {
 		return nil
@@ -128,6 +171,9 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 	// BR-NL-13 is gated on $si alone, in both bindings: an order line reference
 	// (BT-132) requires a document-level order reference (BT-13) whatever country
 	// the supplier is in. It sits before the $s guard for that reason.
+	if inv.hasOrderLineRef {
+		seen.reached("BR-NL-13")
+	}
 	if inv.hasOrderLineRef && inv.orderRef == "" {
 		add("BR-NL-13", "an order line reference (BT-132) requires a document-level Purchase order reference (BT-13)")
 	}
@@ -136,8 +182,11 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 	// /*/rsm:ExchangedDocument/ram:TypeCode[$si] — and on $s in the UBL one, where
 	// the context is cbc:InvoiceTypeCode[$s]|cbc:CreditNoteTypeCode[$s]. The same
 	// identifier, two gates.
-	if inv.syntax == "CII" && !nlciusTypeCodes[inv.typeCode] {
-		add("BR-NL-7", fmt.Sprintf("the invoice type code (BT-3=%q) must be one of 380, 381, 384, 389", inv.typeCode))
+	if inv.syntax == "CII" {
+		seen.reached("BR-NL-7")
+		if !nlciusTypeCodes[inv.typeCode] {
+			add("BR-NL-7", fmt.Sprintf("the invoice type code (BT-3=%q) must be one of 380, 381, 384, 389", inv.typeCode))
+		}
 	}
 
 	// $s: everything below additionally requires the supplier to be in the
@@ -148,6 +197,7 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 
 	// BR-NL-1: the supplier must identify its legal entity with a KVK (scheme
 	// 0106) or OIN (scheme 0190) number.
+	seen.reached("BR-NL-1", "BR-NL-2", "BR-NL-3", "BR-NL-4", "BR-NL-5", "BR-NL-10", "BR-NL-11")
 	if !((inv.sellerLegalScheme == "0106" || inv.sellerLegalScheme == "0190") && inv.sellerLegalReg != "") {
 		add("BR-NL-1", "the Seller legal registration identifier (BT-30) must be a KVK (scheme 0106) or OIN (scheme 0190) number")
 	}
@@ -175,26 +225,29 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 		add("BR-NL-5", "a Dutch tax representative postal address must contain a street, city and post code")
 	}
 
-	// BR-NL-7, UBL binding: gated on $s, unlike the CII one above.
-	if inv.syntax != "CII" && !nlciusTypeCodes[inv.typeCode] {
-		add("BR-NL-7", fmt.Sprintf("the invoice type code (BT-3=%q) must be one of 380, 381, 384, 389", inv.typeCode))
-	}
-
-	// BR-NL-8: the type code must match the UBL document element — 381 (credit
-	// note) belongs to a CreditNote, every other permitted code to an Invoice.
-	// Published in the UBL binding only.
-	if inv.syntax == "UBL" {
+	// BR-NL-7/8/9, UBL binding: one Schematron rule with three assertions, on the
+	// context cbc:InvoiceTypeCode[$s]|cbc:CreditNoteTypeCode[$s]. BR-NL-7 is gated
+	// on $s here and on $si in CII, above; BR-NL-8 and BR-NL-9 are UBL-only, the
+	// first because CII has no second document element to disagree with and the
+	// second because the CII file binds it to a context BR-NL-7's rule has already
+	// claimed. See the file comment.
+	if inv.syntax != "CII" {
+		seen.reached("BR-NL-7", "BR-NL-8", "BR-NL-9")
+		if !nlciusTypeCodes[inv.typeCode] {
+			add("BR-NL-7", fmt.Sprintf("the invoice type code (BT-3=%q) must be one of 380, 381, 384, 389", inv.typeCode))
+		}
+		// BR-NL-8: the type code must match the UBL document element — 381 (credit
+		// note) belongs to a CreditNote, every other permitted code to an Invoice.
 		if inv.isCreditNote && inv.typeCode != "381" {
 			add("BR-NL-8", fmt.Sprintf("a CreditNote document must use type code 381, not %q", inv.typeCode))
 		} else if !inv.isCreditNote && inv.typeCode == "381" {
 			add("BR-NL-8", "type code 381 (credit note) must not be used in an Invoice document")
 		}
-	}
-
-	// BR-NL-9: a corrective invoice (type 384) must reference the preceding
-	// invoice it corrects (BT-25).
-	if inv.typeCode == "384" && !(inv.hasBillingRef && !inv.billingRefNoID) {
-		add("BR-NL-9", "a corrective invoice (type 384) must contain a Preceding Invoice reference (BT-25)")
+		// BR-NL-9: a corrective invoice (type 384) must reference the preceding
+		// invoice it corrects (BT-25).
+		if inv.typeCode == "384" && !(inv.hasBillingRef && !inv.billingRefNoID) {
+			add("BR-NL-9", "a corrective invoice (type 384) must contain a Preceding Invoice reference (BT-25)")
+		}
 	}
 
 	// BR-NL-10: a Dutch Buyer must identify its legal entity with a KVK (0106) or
@@ -226,6 +279,9 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 	}
 
 	// BR-NL-12: each payment means code must be one NLCIUS permits.
+	for range inv.paymentMeans {
+		seen.reached("BR-NL-12")
+	}
 	for _, code := range inv.paymentMeans {
 		if !nlciusPaymentMeans[code] {
 			add("BR-NL-12", fmt.Sprintf("the payment means code (BT-81=%q) must be one of 30, 48, 49, 57, 58, 59", code))
@@ -233,5 +289,190 @@ func validateNLCIUSRules(inv *en16931Invoice) []Violation {
 		}
 	}
 
+	return append(out, validateNLCIUSAdvisory(p, seen)...)
+}
+
+// nlciusDiscouraged is one "not recommended" rule of the shape both bindings write
+// most of them in: a Schematron rule whose context is a location path and whose
+// single assertion is test="false", i.e. "reaching this node is the finding".
+//
+// path is the context written as local element names, because parseCII keys on
+// local names and the two bindings name the same term differently anyway
+// (cbc:CountrySubentity against ram:CountrySubDivisionName).
+type nlciusDiscouraged struct {
+	id   string
+	path []string
+	what string
+}
+
+// nlciusUBLDiscouraged is si-ubl-2.0-nlcius.sch's forbidden-path tier.
+//
+// BR-NL-32-1 covers the line-level allowance and charge reason codes as well as the
+// document-level ones, and that is not a shortcut: its context
+// cac:AllowanceCharge/cbc:AllowanceChargeReasonCode is an XSLT match pattern
+// anchored at its last step, so it matches a reason code under any cac:AllowanceCharge
+// at any depth, and it is the first rule in the pattern that does. BR-NL-32-2 and
+// BR-NL-32-3, which name the two line paths explicitly, are therefore unreachable —
+// see Coverage(SourceNLCIUS).
+var nlciusUBLDiscouraged = []nlciusDiscouraged{
+	{"BR-NL-19", []string{"TaxCurrencyCode"}, "a VAT accounting currency code (BT-6)"},
+	{"BR-NL-20", []string{"TaxPointDate"}, "a tax point date (BT-7); its value is ignored"},
+	{"BR-NL-21", []string{"InvoicePeriod", "DescriptionCode"}, "a tax point date code (BT-8); its value is ignored"},
+	{"BR-NL-24", []string{"BillingReference", "InvoiceDocumentReference", "IssueDate"}, "a preceding invoice issue date (BT-26)"},
+	{"BR-NL-26", []string{"AccountingSupplierParty", "Party", "PartyLegalEntity", "CompanyLegalForm"}, "the Seller additional legal information (BT-33), which does not apply to a Dutch supplier"},
+	{"BR-NL-27-1", []string{"AccountingSupplierParty", "Party", "PostalAddress", "AddressLine", "Line"}, "a Seller address line 3 (BT-163)"},
+	{"BR-NL-27-2", []string{"AccountingCustomerParty", "Party", "PostalAddress", "AddressLine", "Line"}, "a Buyer address line 3 (BT-53)"},
+	{"BR-NL-27-3", []string{"TaxRepresentativeParty", "PostalAddress", "AddressLine", "Line"}, "a tax representative address line 3"},
+	{"BR-NL-27-4", []string{"Delivery", "DeliveryLocation", "Address", "AddressLine", "Line"}, "a delivery address line 3 (BT-79)"},
+	{"BR-NL-28-1", []string{"AccountingSupplierParty", "Party", "PostalAddress", "CountrySubentity"}, "a Seller country subdivision (BT-39)"},
+	{"BR-NL-28-2", []string{"AccountingCustomerParty", "Party", "PostalAddress", "CountrySubentity"}, "a Buyer country subdivision (BT-54)"},
+	{"BR-NL-28-3", []string{"TaxRepresentativeParty", "PostalAddress", "CountrySubentity"}, "a tax representative country subdivision"},
+	{"BR-NL-28-4", []string{"Delivery", "DeliveryLocation", "Address", "CountrySubentity"}, "a delivery country subdivision (BT-79)"},
+	{"BR-NL-30", []string{"PaymentMeans", "PayeeFinancialAccount", "Name"}, "a payment account name (BT-85)"},
+	{"BR-NL-32-1", []string{"AllowanceCharge", "AllowanceChargeReasonCode"}, "an allowance or charge reason code (BT-98/BT-105/BT-140/BT-145)"},
+	{"BR-NL-35", []string{"TaxTotal", "TaxSubtotal", "TaxCategory", "TaxExemptionReasonCode"}, "a VAT exemption reason code (BT-121)"},
+}
+
+// nlciusCIIDiscouraged is NLCIUS-CII-validation.sch's forbidden-path tier. It is not
+// the same list: this binding publishes BR-NL-22 and BR-NL-23, which the UBL one
+// does not, and it writes the allowance and charge reason codes as one rule with the
+// honest identifier BR-NL-32-and-34 rather than as three under two numberings.
+var nlciusCIIDiscouraged = []nlciusDiscouraged{
+	{"BR-NL-19", []string{"TaxCurrencyCode"}, "a VAT accounting currency code (BT-6)"},
+	{"BR-NL-20", []string{"TaxPointDate", "DateString"}, "a tax point date (BT-7); its value is ignored"},
+	{"BR-NL-21", []string{"DueDateTypeCode"}, "a tax point date code (BT-8); its value is ignored"},
+	{"BR-NL-22", []string{"SubjectCode"}, "an invoice note subject code (BT-21), which has to be agreed with the receiving party"},
+	{"BR-NL-23", []string{"BusinessProcessSpecifiedDocumentContextParameter", "ID"}, "a business process identifier (BT-23), unless a particular network wants one"},
+	{"BR-NL-24", []string{"InvoiceReferencedDocument", "FormattedIssueDateTime", "DateTimeString"}, "a preceding invoice issue date (BT-26)"},
+	{"BR-NL-26", []string{"SellerTradeParty", "Description"}, "the Seller additional legal information (BT-33), which does not apply to a Dutch supplier"},
+	{"BR-NL-27-1", []string{"SellerTradeParty", "PostalTradeAddress", "LineThree"}, "a Seller address line 3 (BT-163)"},
+	{"BR-NL-27-2", []string{"BuyerTradeParty", "PostalTradeAddress", "LineThree"}, "a Buyer address line 3 (BT-53)"},
+	{"BR-NL-27-3", []string{"SellerTaxRepresentativeTradeParty", "PostalTradeAddress", "LineThree"}, "a tax representative address line 3"},
+	{"BR-NL-27-4", []string{"ShipToTradeParty", "PostalTradeAddress", "LineThree"}, "a delivery address line 3 (BT-79)"},
+	{"BR-NL-28-1", []string{"SellerTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}, "a Seller country subdivision (BT-39)"},
+	{"BR-NL-28-2", []string{"BuyerTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}, "a Buyer country subdivision (BT-54)"},
+	{"BR-NL-28-3", []string{"SellerTaxRepresentativeTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}, "a tax representative country subdivision"},
+	{"BR-NL-28-4", []string{"ShipToTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}, "a delivery country subdivision (BT-79)"},
+	{"BR-NL-29", []string{"SpecifiedTradeSettlementPaymentMeans", "Information"}, "a payment means text (BT-82)"},
+	{"BR-NL-30", []string{"PayeePartyCreditorFinancialAccount", "AccountName"}, "a payment account name (BT-85)"},
+	{"BR-NL-32-and-34", []string{"SpecifiedTradeAllowanceCharge", "ReasonCode"}, "an allowance or charge reason code (BT-98/BT-105/BT-140/BT-145), at document or line level"},
+}
+
+// validateNLCIUSAdvisory applies the "not recommended" tier of the binding the
+// document is written in. It is reached inside $s, which is where both artefacts put
+// every one of these rules.
+//
+// The findings are warnings, so they are absent from Report.Fatal and do not move
+// Report.Conformant: an invoice whose only NLCIUS findings are these is conformant
+// to NLCIUS, which is exactly what "not recommended" means. What they change is
+// Report.Complete, which was false for every Dutch invoice while this tier was a
+// named gap.
+func validateNLCIUSAdvisory(p *parsed, seen ruleContexts) []Violation {
+	var out []Violation
+	warn := advisoryAdder(&out, SourceNLCIUS)
+
+	table := nlciusUBLDiscouraged
+	if p.inv.syntax == "CII" {
+		table = nlciusCIIDiscouraged
+	}
+	for _, d := range table {
+		for range p.root.matchPath(d.path...) {
+			seen.reached(d.id)
+			warn(d.id, "the invoice states "+d.what+", which NLCIUS does not recommend")
+		}
+	}
+
+	if p.inv.syntax == "CII" {
+		nlciusCIIConditional(p.root, warn, seen)
+	} else {
+		nlciusUBLConditional(p.root, warn, seen)
+	}
 	return out
+}
+
+// nlciusUBLConditional is the four UBL advisory rules that test something rather
+// than merely being reached.
+func nlciusUBLConditional(root *ciiNode, warn func(rule, msg string), seen ruleContexts) {
+	// BR-NL-25, context cac:AccountingSupplierParty/cac:Party/cac:PartyTaxScheme[$s]:
+	//   not(cbc:CompanyID) or cac:TaxScheme/cbc:ID = 'VAT'
+	for _, pts := range root.matchPath("AccountingSupplierParty", "Party", "PartyTaxScheme") {
+		seen.reached("BR-NL-25")
+		if pts.child("CompanyID") != nil && pts.str("TaxScheme", "ID") != "VAT" {
+			warn("BR-NL-25", "the invoice states a Seller tax registration identifier under a tax scheme that is "+
+				"not VAT, which does not apply to a Dutch supplier")
+		}
+	}
+
+	// BR-NL-29, context cac:PaymentMeans/cbc:PaymentMeansCode[$s]: not(@name).
+	// BR-NL-31, context cac:PaymentMeans[$s]: a SEPA payment (58 or 59) shall not
+	// name a payment service provider.
+	for _, pm := range root.matchPath("PaymentMeans") {
+		for _, code := range pm.all("PaymentMeansCode") {
+			seen.reached("BR-NL-29")
+			if code.hasAttr("name") {
+				warn("BR-NL-29", "the invoice states a payment means text (BT-82) on the payment means code, "+
+					"which NLCIUS does not recommend")
+			}
+		}
+		seen.reached("BR-NL-31")
+		c := normSpace(pm.str("PaymentMeansCode"))
+		if (c == "58" || c == "59") && pm.child("PayeeFinancialAccount", "FinancialInstitutionBranch", "ID") != nil {
+			warn("BR-NL-31", "the invoice names a payment service provider (BT-86) for a SEPA payment, "+
+				"which NLCIUS does not recommend")
+		}
+	}
+
+	// BR-NL-33, context cac:TaxTotal/cbc:TaxAmount[$s]:
+	//   @currencyID = //cbc:DocumentCurrencyCode
+	// The context is every VAT total, line-level ones included, and an absent
+	// @currencyID equals nothing, so it reports too.
+	doc := ""
+	if c := root.child("DocumentCurrencyCode"); c != nil {
+		doc = normSpace(c.text)
+	}
+	for _, amt := range root.matchPath("TaxTotal", "TaxAmount") {
+		seen.reached("BR-NL-33")
+		if normSpace(amt.attr("currencyID")) != doc {
+			warn("BR-NL-33", "the invoice states a VAT total in a currency other than the document currency, "+
+				"which NLCIUS does not recommend")
+		}
+	}
+}
+
+// nlciusCIIConditional is the two CII advisory rules that test something rather than
+// merely being reached. BR-NL-31 is not among them: the CII file binds it to a
+// context the rule carrying BR-NL-12 has already claimed, so no processor reaches
+// it. See Coverage(SourceNLCIUS).
+func nlciusCIIConditional(root *ciiNode, warn func(rule, msg string), seen ruleContexts) {
+	// BR-NL-25, context ram:SellerTradeParty/ram:SpecifiedTaxRegistration[$s]:
+	//   not(ram:ID) or ram:ID/@schemeID = 'VA'
+	for _, reg := range root.matchPath("SellerTradeParty", "SpecifiedTaxRegistration") {
+		seen.reached("BR-NL-25")
+		id := reg.child("ID")
+		if id != nil && normSpace(id.attr("schemeID")) != "VA" {
+			warn("BR-NL-25", "the invoice states a Seller tax registration identifier under a tax scheme that is "+
+				"not VAT, which does not apply to a Dutch supplier")
+		}
+	}
+
+	// BR-NL-33, context ram:SpecifiedTradeSettlementHeaderMonetarySummation/
+	// ram:TaxTotalAmount[$s]: @currencyID = ../../ram:InvoiceCurrencyCode. The
+	// currency is read from the summation's *grandparent*, so the walk is over the
+	// nodes that can hold one rather than over the amounts alone.
+	var rec func(*ciiNode)
+	rec = func(n *ciiNode) {
+		for _, sum := range n.all("SpecifiedTradeSettlementHeaderMonetarySummation") {
+			for _, amt := range sum.all("TaxTotalAmount") {
+				seen.reached("BR-NL-33")
+				if normSpace(amt.attr("currencyID")) != normSpace(n.str("InvoiceCurrencyCode")) {
+					warn("BR-NL-33", "the invoice states a VAT total in a currency other than the invoice "+
+						"currency, which NLCIUS does not recommend")
+				}
+			}
+		}
+		for _, c := range n.children {
+			rec(c)
+		}
+	}
+	rec(root)
 }
