@@ -574,7 +574,7 @@ var notEvaluated = map[Source][]RuleFamily{
 				"DE-R-025-1, DE-R-025-2, DE-R-030, DE-R-031, DK-R-002, DK-R-004..011, DK-R-013, DK-R-014, DK-R-016, " +
 				"GR-R-001-1, GR-R-001-2, GR-R-001-3, GR-R-001-4, GR-R-001-5, GR-R-001-6, GR-R-001-7, GR-R-002, GR-R-003, " +
 				"GR-R-004-1, GR-R-004-2, GR-R-005, GR-R-006, GR-R-008-2, GR-R-008-3, GR-R-009, GR-R-010, IS-R-002..010, " +
-				"NL-R-001..009, SE-R-001..006, SE-R-013",
+				"SE-R-001..006, SE-R-013",
 			Severity: SeverityFatal,
 			Reason: "the fatal half of the country-specific rules OpenPEPPOL publishes in the same two Schematron files, under the " +
 				"comment \"National rules\": German, Danish, Greek, Icelandic, Italian, Dutch, Norwegian and Swedish organisation-number " +

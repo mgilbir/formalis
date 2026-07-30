@@ -73,11 +73,25 @@ import "strings"
 // TestEveryPublishedPeppolRuleHasBothVerdicts requires a document that trips each
 // entry and one that does not.
 var peppolCountryRules = map[string]peppolRule{
+
+	// The Netherlands — 9 fatal, both bindings. Distinct from the BR-NL-* of
+	// SourceNLCIUS: this is OpenPEPPOL's Dutch rule set, not NLCIUS's.
+	"NL-R-001": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-002": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-003": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-004": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-005": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-006": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-007": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-008": {peppolUBL | peppolCII, SeverityFatal},
+	"NL-R-009": {peppolUBL | peppolCII, SeverityFatal},
+
 	// Italy — 4 fatal, both bindings.
 	"IT-R-001": {peppolUBL | peppolCII, SeverityFatal},
 	"IT-R-002": {peppolUBL | peppolCII, SeverityFatal},
 	"IT-R-003": {peppolUBL | peppolCII, SeverityFatal},
 	"IT-R-004": {peppolUBL | peppolCII, SeverityFatal},
+
 	// Norway — 1 fatal, 1 advisory, both bindings.
 	"NO-R-001": {peppolUBL | peppolCII, SeverityFatal},
 	"NO-R-002": {peppolUBL | peppolCII, SeverityWarning},
@@ -227,6 +241,10 @@ func peppolCountryUBLRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolItalianUBLRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolDutchUBLRules(e, root)
 }
 
 // peppolCountryCIIRules evaluates the country-specific rules of
@@ -240,6 +258,10 @@ func peppolCountryCIIRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolItalianCIIRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolDutchCIIRules(e, root)
 }
 
 // ---------------------------------------------------------------------------
@@ -425,4 +447,294 @@ func peppolItalianTaxRegOK(s string) bool {
 		}
 	}
 	return true
+}
+
+// ---------------------------------------------------------------------------
+// The Netherlands
+// ---------------------------------------------------------------------------
+
+// peppolDutchUBLRules is OpenPEPPOL's Dutch pattern in the UBL binding.
+//
+// This is not the NLCIUS rule set of nlcius.go. That one is BR-NL-* under
+// SourceNLCIUS and belongs to a different specification identifier; these nine
+// identifiers are OpenPEPPOL's, published in the Peppol BIS Billing files, and
+// several say something NLCIUS does not — NL-R-003/005 restrict the legal
+// registration scheme to KVK or OIN, and NL-R-008 restricts the payment means
+// code, neither of which BR-NL-* states.
+//
+// The gates are the three <let> variables of the pattern, and all three read a
+// postal address rather than a VAT prefix:
+//
+//	$supplierCountryIsNL          upper-case(normalize-space(/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode)) = 'NL'
+//	$customerCountryIsNL          the same over cac:AccountingCustomerParty
+//	$taxRepresentativeCountryIsNL the same over /*/cac:TaxRepresentativeParty/cac:PostalAddress
+func peppolDutchUBLRules(e *peppolEval, root *ciiNode) {
+	isNL := func(s string) bool { return strings.EqualFold(normalizeSpace(s), "NL") }
+	supplier := isNL(peppolUBLPostalCountry(root, "AccountingSupplierParty"))
+	if !supplier {
+		return
+	}
+	customer := isNL(peppolUBLPostalCountry(root, "AccountingCustomerParty"))
+	taxRep := isNL(root.child("TaxRepresentativeParty", "PostalAddress", "Country", "IdentificationCode").rawText())
+
+	// NL-R-001, context cbc:CreditNoteTypeCode[$supplierCountryIsNL]:
+	//   /*/cac:BillingReference/cac:InvoiceDocumentReference/cbc:ID
+	//
+	// The context is the credit-note type code, so an invoice is out of scope
+	// without the rule needing to say so.
+	for range root.all("CreditNoteTypeCode") {
+		if len(nodesAt(root, "BillingReference", "InvoiceDocumentReference", "ID")) == 0 {
+			e.add("NL-R-001", "For suppliers in the Netherlands, a credit note MUST contain a Preceding Invoice "+
+				"reference (BT-25)")
+		}
+	}
+	// NL-R-002 / NL-R-004 / NL-R-006: cbc:StreetName and cbc:CityName and
+	// cbc:PostalZone, over the seller's, the buyer's and the tax representative's
+	// postal address. Existence tests, so an empty element satisfies them.
+	address := func(rule string, addr *ciiNode, who string) {
+		if addr == nil {
+			return
+		}
+		if addr.child("StreetName") == nil || addr.child("CityName") == nil || addr.child("PostalZone") == nil {
+			e.addf(rule, "For suppliers in the Netherlands, the %s address MUST contain a street name, a city and a "+
+				"post code", who)
+		}
+	}
+	for _, addr := range nodesAt(root, "AccountingSupplierParty", "Party", "PostalAddress") {
+		address("NL-R-002", addr, "supplier's")
+	}
+	// NL-R-003 / NL-R-005: the legal registration identifier's scheme (BT-30/BT-47)
+	//   (contains(concat(' ', string-join(@schemeID, ' '), ' '), ' 0106 ') or
+	//    contains(..., ' 0190 ')) and (normalize-space(.) != '')
+	//
+	// Both halves matter: the second is the one existence-test reading would miss,
+	// and unlike NL-R-002 this rule does reject an empty element.
+	legalID := func(rule string, party *ciiNode, who string) {
+		for _, le := range party.orNil().all("PartyLegalEntity") {
+			for _, id := range le.all("CompanyID") {
+				if peppolDutchLegalScheme(id.attr("schemeID")) && normalizeSpace(id.rawText()) != "" {
+					continue
+				}
+				e.addf(rule, "For suppliers in the Netherlands, the %s legal registration identifier MUST be a KVK or "+
+					"OIN number (scheme 0106 or 0190) with a value", who)
+			}
+		}
+	}
+	legalID("NL-R-003", root.child("AccountingSupplierParty", "Party"), "supplier's")
+	if customer {
+		for _, addr := range nodesAt(root, "AccountingCustomerParty", "Party", "PostalAddress") {
+			address("NL-R-004", addr, "customer's")
+		}
+		legalID("NL-R-005", root.child("AccountingCustomerParty", "Party"), "customer's")
+	}
+	if taxRep {
+		for _, addr := range nodesAt(root, "TaxRepresentativeParty", "PostalAddress") {
+			address("NL-R-006", addr, "fiscal representative's")
+		}
+	}
+	// NL-R-007, context cac:LegalMonetaryTotal[$supplierCountryIsNL]:
+	//   (/ubl:Invoice and xs:decimal(cbc:PayableAmount) <= 0.0) or
+	//   (/cn:CreditNote and xs:decimal(cbc:PayableAmount) >= 0.0) or (//cac:PaymentMeans)
+	//
+	// "A means of payment is required if the payment runs from customer to
+	// supplier", expressed as: either nothing is owed, or payment instructions are
+	// present.
+	hasPaymentMeans := len(root.findAll("PaymentMeans")) > 0
+	isCredit := root.name == "CreditNote"
+	for _, total := range root.all("LegalMonetaryTotal") {
+		if hasPaymentMeans {
+			continue
+		}
+		amt := total.child("PayableAmount")
+		if amt == nil {
+			// xs:decimal(()) is the empty sequence, and both comparisons against it are
+			// false, so the assertion rests on the payment means alone.
+			e.add("NL-R-007", "For suppliers in the Netherlands, Payment instructions (BG-16) MUST be provided when "+
+				"the payment is from the customer to the supplier")
+			continue
+		}
+		due, ok := parseAmount(amt.text)
+		if !ok {
+			// XPath raises a dynamic error rather than reporting the assertion; that is
+			// peppolDecimalOr's argument for R120 and it holds here.
+			continue
+		}
+		if (!isCredit && due <= 0) || (isCredit && due >= 0) {
+			continue
+		}
+		e.add("NL-R-007", "For suppliers in the Netherlands, Payment instructions (BG-16) MUST be provided when the "+
+			"payment is from the customer to the supplier")
+	}
+	// NL-R-008, context cac:PaymentMeans[$supplierCountryIsNL and $customerCountryIsNL].
+	if customer {
+		for _, pm := range root.findAll("PaymentMeans") {
+			code := normalizeSpace(pm.child("PaymentMeansCode").rawText())
+			if !peppolDutchPaymentMeans[code] {
+				e.addf("NL-R-008", "For suppliers in the Netherlands invoicing a Dutch customer, the Payment means "+
+					"type code (BT-81=%q) MUST be one of 30, 48, 49, 57, 58 or 59", code)
+			}
+		}
+	}
+	// NL-R-009, context cac:OrderLineReference/cbc:LineID[$supplierCountryIsNL]:
+	//   exists(/*/cac:OrderReference/cbc:ID)
+	if len(nodesAt(root, "OrderReference", "ID")) == 0 {
+		for _, olr := range root.findAll("OrderLineReference") {
+			for range olr.all("LineID") {
+				e.add("NL-R-009", "For suppliers in the Netherlands, an Invoice line order line reference (BT-132) "+
+					"requires a Purchase order reference (BT-13) on document level")
+			}
+		}
+	}
+}
+
+// peppolDutchCIIRules is the same pattern in the CII binding.
+//
+// Two rules are written differently there and the difference is not cosmetic:
+// NL-R-001's context is a document type code drawn from a five-code list rather
+// than a credit-note root, because CII expresses both document kinds with one
+// root; and NL-R-007 discriminates the two by BT-3 = '381' for the same reason.
+func peppolDutchCIIRules(e *peppolEval, root *ciiNode) {
+	isNL := func(s string) bool { return strings.EqualFold(normalizeSpace(s), "NL") }
+	if !isNL(peppolCIIPostalCountry(root, "SellerTradeParty")) {
+		return
+	}
+	customer := isNL(peppolCIIPostalCountry(root, "BuyerTradeParty"))
+	taxRep := isNL(peppolCIIPostalCountry(root, "SellerTaxRepresentativeTradeParty"))
+	seller := peppolCIIParty(root, "SellerTradeParty")
+	buyer := peppolCIIParty(root, "BuyerTradeParty")
+	settlements := nodesAt(root, "SupplyChainTradeTransaction", "ApplicableHeaderTradeSettlement")
+
+	// NL-R-001, context rsm:ExchangedDocument[some $code in tokenize('81 83 381
+	// 396 532', '\s') satisfies normalize-space(ram:TypeCode) = $code]:
+	//   //ram:ApplicableHeaderTradeSettlement/ram:InvoiceReferencedDocument/ram:IssuerAssignedID
+	for _, doc := range root.all("ExchangedDocument") {
+		credit := false
+		for _, tc := range doc.all("TypeCode") {
+			if peppolDutchCreditNoteTypes[normalizeSpace(tc.rawText())] {
+				credit = true
+			}
+		}
+		if !credit {
+			continue
+		}
+		found := false
+		for _, st := range root.findAll("ApplicableHeaderTradeSettlement") {
+			if len(nodesAt(st, "InvoiceReferencedDocument", "IssuerAssignedID")) > 0 {
+				found = true
+			}
+		}
+		if !found {
+			e.add("NL-R-001", "For suppliers in the Netherlands, a credit note MUST contain a Preceding Invoice "+
+				"reference (BT-25)")
+		}
+	}
+	address := func(rule string, party *ciiNode, who string) {
+		for _, addr := range party.orNil().all("PostalTradeAddress") {
+			if addr.child("LineOne") == nil || addr.child("CityName") == nil || addr.child("PostcodeCode") == nil {
+				e.addf(rule, "For suppliers in the Netherlands, the %s address MUST contain a street name, a city "+
+					"and a post code", who)
+			}
+		}
+	}
+	legalID := func(rule string, party *ciiNode, who string) {
+		for _, org := range party.orNil().all("SpecifiedLegalOrganization") {
+			for _, id := range org.all("ID") {
+				if peppolDutchLegalScheme(id.attr("schemeID")) && normalizeSpace(id.rawText()) != "" {
+					continue
+				}
+				e.addf(rule, "For suppliers in the Netherlands, the %s legal registration identifier MUST be a KVK "+
+					"or OIN number (scheme 0106 or 0190) with a value", who)
+			}
+		}
+	}
+	address("NL-R-002", seller, "supplier's")
+	legalID("NL-R-003", seller, "supplier's")
+	if customer {
+		address("NL-R-004", buyer, "customer's")
+		legalID("NL-R-005", buyer, "customer's")
+	}
+	if taxRep {
+		address("NL-R-006", peppolCIIParty(root, "SellerTaxRepresentativeTradeParty"), "fiscal representative's")
+	}
+	// NL-R-007, context ram:SpecifiedTradeSettlementHeaderMonetarySummation.
+	isCredit := false
+	for _, doc := range root.all("ExchangedDocument") {
+		if normalizeSpace(doc.child("TypeCode").rawText()) == "381" {
+			isCredit = true
+		}
+	}
+	hasPaymentMeans := false
+	for _, st := range settlements {
+		if len(st.all("SpecifiedTradeSettlementPaymentMeans")) > 0 {
+			hasPaymentMeans = true
+		}
+	}
+	for _, st := range settlements {
+		for _, sum := range st.all("SpecifiedTradeSettlementHeaderMonetarySummation") {
+			if hasPaymentMeans {
+				continue
+			}
+			amt := sum.child("DuePayableAmount")
+			if amt != nil {
+				due, ok := parseAmount(amt.text)
+				if !ok {
+					continue
+				}
+				if (!isCredit && due <= 0) || (isCredit && due >= 0) {
+					continue
+				}
+			}
+			e.add("NL-R-007", "For suppliers in the Netherlands, Payment instructions (BG-16) MUST be provided when "+
+				"the payment is from the customer to the supplier")
+		}
+	}
+	// NL-R-008, context ram:SpecifiedTradeSettlementPaymentMeans.
+	if customer {
+		for _, st := range settlements {
+			for _, pm := range st.all("SpecifiedTradeSettlementPaymentMeans") {
+				code := normalizeSpace(pm.child("TypeCode").rawText())
+				if !peppolDutchPaymentMeans[code] {
+					e.addf("NL-R-008", "For suppliers in the Netherlands invoicing a Dutch customer, the Payment means "+
+						"type code (BT-81=%q) MUST be one of 30, 48, 49, 57, 58 or 59", code)
+				}
+			}
+		}
+	}
+	// NL-R-009, context ram:IncludedSupplyChainTradeLineItem/
+	// ram:SpecifiedLineTradeAgreement/ram:BuyerOrderReferencedDocument/ram:LineID.
+	if len(nodesAt(root, "SupplyChainTradeTransaction", "ApplicableHeaderTradeAgreement",
+		"BuyerOrderReferencedDocument", "IssuerAssignedID")) > 0 {
+		return
+	}
+	for _, li := range nodesAt(root, "SupplyChainTradeTransaction", "IncludedSupplyChainTradeLineItem") {
+		for range nodesAt(li, "SpecifiedLineTradeAgreement", "BuyerOrderReferencedDocument", "LineID") {
+			e.add("NL-R-009", "For suppliers in the Netherlands, an Invoice line order line reference (BT-132) "+
+				"requires a Purchase order reference (BT-13) on document level")
+		}
+	}
+}
+
+// peppolDutchLegalScheme is NL-R-003/005's scheme test:
+//
+//	contains(concat(' ', string-join(@schemeID, ' '), ' '), ' 0106 ') or
+//	contains(concat(' ', string-join(@schemeID, ' '), ' '), ' 0190 ')
+//
+// KVK (the Dutch chamber-of-commerce register) or OIN (the government
+// organisation identifier). An absent attribute joins to "" and matches neither.
+func peppolDutchLegalScheme(scheme string) bool {
+	padded := " " + scheme + " "
+	return strings.Contains(padded, " 0106 ") || strings.Contains(padded, " 0190 ")
+}
+
+// peppolDutchPaymentMeans is NL-R-008's permitted set of BT-81 values.
+var peppolDutchPaymentMeans = map[string]bool{
+	"30": true, "48": true, "49": true, "57": true, "58": true, "59": true,
+}
+
+// peppolDutchCreditNoteTypes is the code list NL-R-001's CII context draws on,
+// `tokenize('81 83 381 396 532', '\s')` — the UNTDID 1001 codes that make a CII
+// document a credit note. The UBL binding needs no such list because it has a
+// credit-note root element.
+var peppolDutchCreditNoteTypes = map[string]bool{
+	"81": true, "83": true, "381": true, "396": true, "532": true,
 }
