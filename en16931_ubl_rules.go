@@ -47,8 +47,9 @@ import (
 // UBL-CR-* rules sat unevaluated inside a coverage entry that described their
 // family as advisory, so a fatal gap was filed in a line a reader would skim
 // past. The remaining 676 advisory UBL-CR-* rules and the 21 advisory UBL-DT-*
-// rules are still not evaluated, and Coverage(SourceEN16931) names them as the
-// advisory gap they are.
+// rules are evaluated too, but not here: they are generated from the same
+// Schematron and run by en16931_syntax_advisory.go, which argues why a thousand
+// mechanical forbidden-path rules belong in a table rather than in this file.
 //
 // Source. These findings are stamped SourceEN16931, not a source of their own:
 // CEN publishes the syntax bindings as normative parts of EN 16931 itself, and

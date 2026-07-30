@@ -82,15 +82,28 @@ func TestValidateXRechnungRules(t *testing.T) {
 }
 
 // TestValidateXRechnungCorpus is the FP=0 oracle: every KoSIT XRechnung test-suite
-// instance (which is a conforming invoice) must validate with no violations. The
-// oracle is not vendored; the test skips when it is absent (run `make cius-oracles`).
+// instance (which is a conforming invoice) must validate with no *fatal*
+// violation. The oracle is not vendored; the test skips when it is absent (run
+// `make cius-oracles`).
+//
+// It asserted no violation at all until CEN's advisory binding rules were
+// implemented, and the change is deliberate rather than a concession. Eight of
+// the eighty-six instances carry UBL or CII that the EN 16931 core subset leaves
+// out and XRechnung permits — cac:SubInvoiceLine in the four 04.x instances,
+// cac:PrepaidPayment in 05.01a, two BT-123 attachment names on one CII
+// AdditionalReferencedDocument in three of the uncefact instances — and CEN flags
+// every one of those warning. A reference validator reports them; KoSIT does not
+// reject the invoice for them; and this test would have read them as false
+// positives, which they are not. What must stay exactly zero is the fatal half,
+// and the advisory half is ratcheted below rather than ignored, so an oracle that
+// stops seeing the warnings it saw is as red as one that starts seeing fatals.
 func TestValidateXRechnungCorpus(t *testing.T) {
 	root := filepath.Join("testdata", "xrechnung", "testsuite", "src", "test")
 	if _, err := os.Stat(root); err != nil {
 		t.Skip("XRechnung test suite not present (make cius-oracles)")
 	}
 	isInvoice := regexp.MustCompile(`(?s)<([\w.]+:)?(CrossIndustryInvoice|Invoice|CreditNote)[\s>]`)
-	var files, clean int
+	var files, clean, advisory int
 	filepath.Walk(root, func(p string, fi os.FileInfo, e error) error {
 		if e != nil || !strings.HasSuffix(p, ".xml") {
 			return nil
@@ -106,8 +119,10 @@ func TestValidateXRechnungCorpus(t *testing.T) {
 			return nil
 		}
 		files++
-		if v := findings(t, context.Background(), ValidateXRechnung, data); len(v) != 0 {
-			t.Errorf("%s: conforming XRechnung reported %d violations (first: %s: %s)",
+		r := mustReport(t, context.Background(), ValidateXRechnung, data)
+		advisory += len(r.Warnings())
+		if v := r.Fatal(); len(v) != 0 {
+			t.Errorf("%s: conforming XRechnung reported %d fatal violations (first: %s: %s)",
 				filepath.Base(p), len(v), v[0].Rule, v[0].Message)
 		} else {
 			clean++
@@ -118,5 +133,10 @@ func TestValidateXRechnungCorpus(t *testing.T) {
 	// skip above covers: finding nothing under it, or finding less than the
 	// clone carries, is a broken fetch and must say so.
 	atLeast(t, "XRechnung corpus", files, minXRechnungInstances)
+	// The other half of the loosened assertion: this corpus is the one place in
+	// the suite where a real, published, conforming invoice trips CEN's advisory
+	// bindings, so it is where a regression that stopped emitting them would show.
+	atLeast(t, "XRechnung corpus advisory findings", advisory, minXRechnungAdvisory)
 	t.Logf("XRechnung corpus: %d/%d instances clean (FP=0)", clean, files)
+	t.Logf("XRechnung corpus: %d advisory EN 16931 binding findings (baseline %d)", advisory, minXRechnungAdvisory)
 }

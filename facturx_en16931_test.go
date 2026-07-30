@@ -159,8 +159,21 @@ const subLineCII = `<CrossIndustryInvoice>
 </CrossIndustryInvoice>`
 
 func TestValidateFacturXSubLines(t *testing.T) {
-	if v := findings(t, context.Background(), withProfile(ProfileExtended), []byte(subLineCII)); len(v) != 0 {
-		t.Fatalf("valid sub-invoice-line document reported %d violation(s): %v", len(v), v)
+	// No fatal finding rather than no finding, and the advisory finding is pinned
+	// rather than waved through. The parent line of a sub-line group carries no
+	// ram:ApplicableTradeTax of its own — its children do, and rolling them up is
+	// what this fixture exists to test — and CEN's CII-SR-454 asserts
+	// count(ram:ApplicableTradeTax) = 1 on every line settlement, flagged warning.
+	// So a reference validator reports exactly this on exactly this document, and
+	// the EXTENDED profile it is written for is where sub-lines are legal at all.
+	// Asserting the identity of the warning keeps the fixture as tightly pinned as
+	// it was when the assertion read len(v) != 0.
+	r := mustReport(t, context.Background(), withProfile(ProfileExtended), []byte(subLineCII))
+	if v := r.Fatal(); len(v) != 0 {
+		t.Fatalf("valid sub-invoice-line document reported %d fatal violation(s): %v", len(v), v)
+	}
+	if w := r.Warnings(); len(w) != 1 || w[0].Rule != "CII-SR-454" {
+		t.Fatalf("expected exactly the advisory CII-SR-454 on the parent line, got %v", w)
 	}
 	// Breaking a child amount so the top-level rollup no longer matches must fire.
 	bad := strings.Replace(subLineCII, "<LineTotalAmount>100.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", "<LineTotalAmount>90.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", 1)

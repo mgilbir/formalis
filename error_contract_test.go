@@ -324,6 +324,26 @@ func findings(t *testing.T, ctx context.Context, fn validator, data []byte) []Vi
 	return mustReport(t, ctx, fn, data).Violations
 }
 
+// fatalFindings is findings restricted to the half an authority rejects a
+// document for.
+//
+// It exists because "a conforming document produces no finding at all" stopped
+// being the right assertion when the advisory halves of CEN's syntax bindings
+// arrived. Those 1,168 rules hold a document down to the EN 16931 core subset,
+// and a document can be impeccably conformant to XRechnung or Peppol while
+// carrying UBL that the core subset leaves out — a cac:SubInvoiceLine, a
+// cac:PrepaidPayment — which a reference validator reports and no authority
+// rejects. An oracle written over Violations would read those as false
+// positives.
+//
+// It is used at exactly two call sites, both named in the commit that introduced
+// it, and it is not the default: an assertion that a fixture is clean is
+// stronger when it covers the warnings too, and every other one still does.
+func fatalFindings(t *testing.T, ctx context.Context, fn validator, data []byte) []Violation {
+	t.Helper()
+	return mustReport(t, ctx, fn, data).Fatal()
+}
+
 // mustReport is findings for the assertions that are about the whole Report.
 func mustReport(t *testing.T, ctx context.Context, fn validator, data []byte) Report {
 	t.Helper()

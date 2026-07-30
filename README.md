@@ -84,10 +84,18 @@ Every `Violation` carries the severity its authority gave the rule: CEN's
 authorities' equivalents. `SeverityFatal` is the zero value, so an unstamped
 finding reads as blocking rather than as advisory — the fail-safe direction.
 
-Today every rule this package implements is fatal, and that is checked rather
-than assumed: one test sweeps the whole corpus for a finding at any other
-severity, and another reads the flag off each of the 108 EN 16931 rules the
-corpus exercises straight from the vendored CEN Schematron.
+The warnings are one rule set and one only: the advisory halves of CEN's two
+EN 16931 syntax bindings — 676 `UBL-CR-*`, 21 `UBL-DT-*`, 440 `CII-SR-*` and 31
+`CII-DT-*` assertions, generated from CEN's Schematron into a table this package
+evaluates. Their job is to hold a document down to the EN 16931 core subset of
+UBL and CII, which is a thing a reference validator reports and no authority
+rejects an invoice for. Everything else this package implements is fatal.
+
+That is checked rather than assumed, in both directions: one test sweeps the whole
+corpus and fails on any finding whose severity does not match the half of the
+package it came from, and another reads the flag off each of the EN 16931 rules the
+corpus exercises straight from the vendored CEN Schematron and compares it with the
+severity the finding carried.
 
 Where the identifier was minted here rather than quoted — `FPA-*`, `ZA-*`,
 `ORDER-*` and the rest — there is no flag to quote, and fatal is a decision: each
@@ -102,9 +110,9 @@ fatal gap means a rule that could have rejected this document was never run.
 
 ## What a clean report does and does not mean
 
-**`Complete()` returns false for every document today, and `Conformant()` for
-every document except one validated against the EN 16931 core alone.** That is not
-a bug and it is the first thing to understand about this package.
+**`Complete()` returns false for every document, and `Conformant()` for every
+document except one validated against the EN 16931 core alone.** That is not a bug
+and it is the first thing to understand about this package.
 
 `len(report.Violations) == 0` means only *the checks that ran found nothing*. It
 is equally true of a run that checked everything, a run that was cancelled or hit
@@ -118,9 +126,18 @@ rule set with no **fatal** gap left: every fatal rule of the semantic model, of
 the UBL binding and of the CII binding is evaluated, bar the few CEN's own
 reference implementation cannot report, so `Validate` with `ProfileEN16931` — and
 `ValidateCIUS` on a document that declares no CIUS — returns `Conformant() == true`
-for a clean invoice, and `Complete() == false` because CEN's advisory binding
-rules are still unevaluated. Every CIUS and national validator still names a gap
-its authority flags fatal, so those return false whatever the document.
+for a clean invoice.
+
+`Complete()` is still false there, and now permanently. The advisory bindings used
+to be the reason, and they are evaluated now; what is left in
+`Coverage(SourceEN16931)` is seven rules **CEN made unevaluable** — four it binds to
+the XPath expression `true()`, three that sit behind an earlier matching Schematron
+rule, so no conforming validator anywhere reports any of them — plus one assertion
+CEN flags warning in the UBL binding whose own test a correctly PCI-masked card
+number trips. No amount of work in this package can close those, so for the EN
+16931 core `Complete()` now answers a question with a permanent answer. Every CIUS
+and national validator still names a gap its authority flags fatal, so those return
+false whatever the document.
 
 Rather than hide that behind a number in this file that would drift as rules
 land, the package makes it machine-readable:
@@ -315,15 +332,23 @@ make cius-oracles                  # ~600 documents: XRechnung, Peppol, NLCIUS,
 make en16931-artefacts             # the CEN/TC 434 per-rule unit-test suite
 make en16931-ubl                   # the EN 16931 UBL example invoices
 make en16931-genericode            # the official code lists (needs unzip)
+make en16931-syntax-rules          # regenerate the advisory binding table
 make test
 ```
 
 Each target is stamped, so re-running it is a no-op rather than an error; the
 matching `clean-*` target removes the stamp and the data, and is how you force a
-re-fetch. `make en16931-codelists` goes one step further and *regenerates* the
-committed code-list tables from the genericode with `gen.py` — a deliberate act,
-not part of running the tests, which is why fetching the oracle is its own
-target.
+re-fetch.
+
+Two targets go one step further and *regenerate* committed source. `make
+en16931-codelists` rewrites the code-list tables from the genericode bundle, and
+`make en16931-syntax-rules` rewrites the advisory syntax-binding table from the CEN
+Schematron. Both are deliberate acts and neither is part of running the tests,
+which is why fetching each oracle is its own target — and in both cases a test
+re-derives the same data from the same source on every run and fails if the
+committed table has drifted. The generators refuse to write anything they cannot
+describe rather than skipping it: a rule quietly dropped by a generator is a rule
+that silently stops being checked, with nothing to notice.
 
 With the corpora present the suite runs with no skips, and each oracle ratchets
 the number of documents it saw — the constants are collected in

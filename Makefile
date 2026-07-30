@@ -25,7 +25,7 @@ CURL := curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused
 URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(x) for x in sys.argv[1].split('/')))"
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
-	en16931-ubl cius-oracles \
+	en16931-syntax-rules en16931-ubl cius-oracles \
 	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles
 
 # Run the tests. Oracle-backed tests skip when their (gitignored) data is absent;
@@ -97,6 +97,22 @@ en16931-codelists: en16931-genericode
 	python3 $(CODELISTS_DIR)/gen.py
 clean-en16931-codelists:
 	rm -rf $(CODELISTS_DIR)/genericode $(CODELISTS_DIR)/*.zip $(CODELISTS_DIR)/*.xlsx
+
+# The advisory halves of CEN's two syntax bindings, generated from the vendored
+# Schematron into en16931_syntax_advisory_table.go. Same arrangement as the code
+# lists above: the generator is a deliberate act, and the test that re-derives the
+# same table from the Schematron runs on every `make test`.
+#
+# The test run at the end is not belt-and-braces. gen.py refuses an assertion
+# whose XPath is outside the subset it recognises, and the package refuses to
+# compile a table its own parser cannot read; those are two independent gates on
+# the same property, and the second one is only reached by running the tests. A
+# regeneration that wrote a file the package cannot read should fail here rather
+# than in someone's build.
+SYNTAX_RULES_DIR := testdata/en16931-syntax-rules
+en16931-syntax-rules: en16931-artefacts
+	python3 $(SYNTAX_RULES_DIR)/gen.py
+	go test -count=1 -run 'TestAdvisory' .
 
 # National CIUS oracles: KoSIT XRechnung, OpenPEPPOL BIS 3, the Dutch NLCIUS
 # (SimplerInvoicing SI-UBL) instance test suite, and the national-format sample

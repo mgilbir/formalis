@@ -530,27 +530,38 @@ func severityOfFlag(flag string) (Severity, bool) {
 	return SeverityFatal, false
 }
 
-// TestEveryEmittedFindingIsFatalToday verifies the claim that lets Severity have
-// a zero value at all: every rule this package implements is one its authority
-// rejects a document for, so the fail-safe default is also the correct answer
-// everywhere, and no emission site is relying on the default to mean something it
-// did not decide.
+// TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings verifies the claim that lets
+// Severity have a zero value at all: outside the two advisory syntax bindings,
+// every rule this package implements is one its authority rejects a document for,
+// so the fail-safe default is also the correct answer everywhere and no emission
+// site is relying on the default to mean something it did not decide.
 //
 // It sweeps the whole corpus through every validator — the same sweep the
-// identifier-collision guard uses — and fails on any finding that is not fatal.
-// That makes it a ratchet in the other direction from most of this suite: when
-// the advisory binding rules are implemented and start arriving as warnings, this
-// test fails and asks whoever did it to say so here. That is the point. A package
-// that silently began emitting advisory findings would change what
-// len(r.Violations) == 0 means for every existing caller.
-func TestEveryEmittedFindingIsFatalToday(t *testing.T) {
+// identifier-collision guard uses — and checks each rule's severity against which
+// half of the package it came from, in both directions: an advisory binding rule
+// must never arrive fatal, and anything else must never arrive as a warning.
+//
+// This was TestEveryEmittedFindingIsFatalToday, which asserted the stronger claim
+// that *nothing* was advisory and said in its own comment that implementing the
+// advisory bindings should make it fail and be rewritten here. This is that
+// rewrite. The set it excuses is not a pattern on the identifier but the generated
+// tables themselves (advisoryRuleIDs), so a rule cannot become excusable by being
+// named like one.
+func TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings(t *testing.T) {
+	advisory := advisoryRuleIDs()
 	s := corpusSweep()
 	for src, rules := range s.bySeverity {
 		for rule, sevs := range rules {
+			isAdvisory := src == SourceEN16931 && advisory[rule]
 			for sev := range sevs {
-				if sev != SeverityFatal {
-					t.Errorf("%s/%s was reported as %s; every rule this package implements today is one its authority "+
-						"flags fatal. If that has changed, this test is the place to record it", src, rule, sev)
+				switch {
+				case isAdvisory && sev != SeverityWarning:
+					t.Errorf("%s/%s is in the generated advisory binding table, which CEN flags warning, but it was "+
+						"reported as %s", src, rule, sev)
+				case !isAdvisory && sev != SeverityFatal:
+					t.Errorf("%s/%s was reported as %s; every rule this package implements outside the two advisory "+
+						"syntax bindings is one its authority flags fatal. If that has changed, this test is the "+
+						"place to record it", src, rule, sev)
 				}
 			}
 		}
@@ -560,24 +571,29 @@ func TestEveryEmittedFindingIsFatalToday(t *testing.T) {
 	}
 }
 
-// TestEveryEmittedEN16931RuleIsFatalInCENsSchematron is the same claim checked
-// against ground truth rather than against itself, for the one authority whose
-// rule set this repository vendors.
+// TestEveryEmittedEN16931RuleCarriesCENsFlag is the same claim checked against
+// ground truth rather than against itself, for the one authority whose rule set
+// this repository vendors.
 //
 // The test above only proves the package is self-consistent: it would pass if
-// every finding were stamped fatal and half of them were advisory rules CEN
-// flags warning. This one reads the flag off the assertion CEN published. It is
-// what makes "this package reports what an authority makes fatal" a checked
-// statement, and it is what would catch an advisory rule implemented by accident
-// and stamped fatal by the zero value.
-func TestEveryEmittedEN16931RuleIsFatalInCENsSchematron(t *testing.T) {
+// every finding were stamped from the right table and the tables themselves were
+// wrong about CEN. This one reads the flag off the assertion CEN published, for
+// every rule the sweep saw emitted, and compares it with the severity the finding
+// carried. It is what makes "this package reports the severity its authority
+// published" a checked statement in both directions — a fatal rule mislabelled
+// advisory would let a real non-conformance past Report.Conformant, and an
+// advisory rule mislabelled fatal would fail a conforming invoice.
+//
+// It was TestEveryEmittedEN16931RuleIsFatalInCENsSchematron, which could only
+// express one of those two directions because only one was possible.
+func TestEveryEmittedEN16931RuleCarriesCENsFlag(t *testing.T) {
 	flags := schematronFlags(t)
-	emitted := corpusSweep().byRule[SourceEN16931]
+	emitted := corpusSweep().bySeverity[SourceEN16931]
 	if len(emitted) < 100 {
 		t.Fatalf("the sweep saw only %d EN 16931 rules; the corpus is not present, so this proves nothing", len(emitted))
 	}
 	var unpublished []string
-	for rule := range emitted {
+	for rule, sevs := range emitted {
 		got, ok := flags[rule]
 		if !ok {
 			// The VAT-category families are generated from one template per
@@ -587,9 +603,16 @@ func TestEveryEmittedEN16931RuleIsFatalInCENsSchematron(t *testing.T) {
 			unpublished = append(unpublished, rule)
 			continue
 		}
-		if !got["fatal"] {
-			t.Errorf("this package reports EN 16931 %s as fatal, but CEN flags it %v; a rule an authority does not "+
-				"reject a document for must be emitted with SeverityWarning", rule, keysOf(got))
+		want, known := severityOfFlag(pickFlag(got))
+		if !known {
+			t.Errorf("%s carries the flag %v, which this package does not know how to fold onto a Severity", rule, keysOf(got))
+			continue
+		}
+		for sev := range sevs {
+			if sev != want {
+				t.Errorf("this package reports EN 16931 %s as %s, but CEN flags it %v; the severity a finding carries "+
+					"is a quotation and not a choice", rule, sev, keysOf(got))
+			}
 		}
 	}
 	sort.Strings(unpublished)

@@ -67,6 +67,28 @@ const (
 	minEN16931UnitTestFiles = 277
 	minEN16931RulesCaught   = 198
 
+	// The advisory halves of CEN's two syntax bindings — 1,168 generated rules,
+	// reported as warnings. These two are a different kind of ratchet from every
+	// other number here: the rest guard against a corpus that arrived short, and
+	// these guard against a *rule set* that stopped firing.
+	//
+	// They exist because the assertions that would otherwise have caught that were
+	// weakened on purpose. An FP=0 oracle reading "a conforming document produces
+	// no finding" could not survive rules whose whole job is to report legal-but-
+	// non-core UBL, so the XRechnung oracle now reads "no fatal finding" — and a
+	// change that silently stopped emitting four hundred advisory rules would have
+	// left every oracle in this suite green. These are the compensating floor.
+	// TestAdvisoryBindingsFireAcrossTheCorpus measures both over the whole corpus;
+	// minXRechnungAdvisory is the same guard scoped to the one corpus whose
+	// assertion was loosened.
+	//
+	// They are floors, so implementing more rules or fetching more documents only
+	// makes them stronger. A number that has to be lowered means a rule genuinely
+	// stopped applying, and that belongs in a commit message.
+	minAdvisoryRulesFiring = 158
+	minAdvisoryFindings    = 3157
+	minXRechnungAdvisory   = 10
+
 	// EN 16931 and the CIUS layered on it.
 	minEN16931UBLInvoices = 15
 	minXRechnungInstances = 86
