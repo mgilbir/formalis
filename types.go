@@ -305,12 +305,24 @@ const (
 	// see the comment on the coverage table in report.go.
 	SourcePeppol Source = "Peppol"
 	// SourceNLCIUS is the Dutch SimplerInvoicing NLCIUS (BR-NL-*).
+	//
+	// SI-UBL includes CEN's Schematron from a copy of its own, in both bindings and
+	// in the G-account extension. Every CEN condition in all three copies is one CEN
+	// published at some release — none is Dutch — so nothing here is overridden, and
+	// that is derived rather than assumed: see ciusCENCopyVerdicts.
 	SourceNLCIUS Source = "NLCIUS"
 	// SourceCIUSPT is the Portuguese AT/eSPap CIUS-PT: BR-CIUS-PT-*, and AT's own
 	// BR-AA-* — eight rules for the "Lower rate" (AA) VAT category, written by
 	// cloning CEN's BR-S-* template for a category code EN 16931 leaves out of
 	// BT-118's restricted list. CEN publishes no BR-AA-* family, so the identifier
 	// looks like CEN's and is not, and this Source is where it belongs.
+	//
+	// It is also the one authority whose *conditions* this package substitutes for
+	// CEN's. AT/eSPap ships a copy of CEN's UBL binding in which nine CEN
+	// identifiers carry a condition CEN never published, and under ValidateCIUSPT
+	// those nine are evaluated as AT/eSPap wrote them. Such a finding keeps
+	// SourceEN16931 and CEN's identifier and carries Reading == SourceCIUSPT; see
+	// Violation.Reading and cius_overrides.go.
 	SourceCIUSPT Source = "CIUS-PT"
 	// SourceCIUSRO is the Romanian ANAF RO e-Factura CIUS. Its identifiers are
 	// BR-RO-* — the business rules, the BR-RO-L* length limits, the BR-RO-DT* date
@@ -321,6 +333,11 @@ const (
 	// BR-27 is not among them although ANAF re-publishes it inside its own national
 	// file: it is a CEN identifier and this package reports CEN's under
 	// SourceEN16931, with CEN's condition.
+	//
+	// ANAF also ships a whole copy of CEN's UBL binding beside its own file, and
+	// every one of the 930 CEN identifiers in it carries a condition CEN published
+	// at some release — none is Romanian. So there is nothing to override here, and
+	// that is a derived fact rather than a decision: see ciusCENCopyVerdicts.
 	SourceCIUSRO Source = "CIUS-RO"
 	// SourceUBLBE is the Belgian UBL.BE CIUS (ubl-BE-*).
 	SourceUBLBE Source = "UBL.BE"
@@ -455,13 +472,40 @@ type Violation struct {
 	Rule     string
 	Severity Severity
 	Message  string
+
+	// Reading names the authority whose *condition* for Rule was evaluated, when
+	// that is not Source's own. It is SourceNone — the zero value, and the case on
+	// every finding this package reports outside a CIUS with condition overrides —
+	// when the rule was judged by the condition its own Source publishes.
+	//
+	// It exists because a national CIUS may ship a modified copy of CEN's
+	// Schematron rather than referencing it, so a document validated under that
+	// CIUS is judged by its authority's reading of a CEN rule. The finding is still
+	// CEN's BR-02 or BR-S-02: the identifier was minted by CEN, means what CEN says
+	// it means, and re-stamping it with the CIUS's Source would make one identifier
+	// name two rules — the collision TestNoRuleIdentifierIsClaimedByTwoSources
+	// exists to prevent. What changes is *whose condition decided it*, and that is
+	// what this field carries. See cius_overrides.go.
+	//
+	// A caller gating on "no fatal finding" is unaffected. A caller reconciling
+	// this package's verdict against a reference validator needs it: a
+	// SourceEN16931/BR-S-02 with Reading == SourceCIUSPT will not reproduce under a
+	// plain EN 16931 validation, and that is correct rather than a defect.
+	Reading Source
 }
 
 // Error renders the finding, severity included. The severity is in the string
 // rather than only in the field because this type satisfies error: a caller that
 // logs a Violation would otherwise present an advisory finding in exactly the
 // same words as a blocking one, which is the confusion Severity exists to end.
+// The authority whose condition was evaluated is in the string for the same
+// reason: a caller who logs the finding would otherwise be unable to tell a BR-S-02
+// CEN's own condition reported from one AT/eSPap's copy of it reported, and those
+// are different claims about the document.
 func (v Violation) Error() string {
+	if v.Reading != SourceNone && v.Reading != v.Source {
+		return fmt.Sprintf("%s %s (%s, as %s reads it): %s", v.Source, v.Rule, v.Severity, v.Reading, v.Message)
+	}
 	return fmt.Sprintf("%s %s (%s): %s", v.Source, v.Rule, v.Severity, v.Message)
 }
 
