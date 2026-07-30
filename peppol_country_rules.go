@@ -130,6 +130,18 @@ var peppolCountryRules = map[string]peppolRule{
 	"GR-S-008-1": {peppolUBL, SeverityWarning},
 	"GR-S-011":   {peppolUBL, SeverityWarning},
 
+	// Iceland — UBL only. 9 fatal, 1 advisory.
+	"IS-R-001": {peppolUBL, SeverityWarning},
+	"IS-R-002": {peppolUBL, SeverityFatal},
+	"IS-R-003": {peppolUBL, SeverityFatal},
+	"IS-R-004": {peppolUBL, SeverityFatal},
+	"IS-R-005": {peppolUBL, SeverityFatal},
+	"IS-R-006": {peppolUBL, SeverityFatal},
+	"IS-R-007": {peppolUBL, SeverityFatal},
+	"IS-R-008": {peppolUBL, SeverityFatal},
+	"IS-R-009": {peppolUBL, SeverityFatal},
+	"IS-R-010": {peppolUBL, SeverityFatal},
+
 	// Italy — 4 fatal, both bindings.
 	"IT-R-001": {peppolUBL | peppolCII, SeverityFatal},
 	"IT-R-002": {peppolUBL | peppolCII, SeverityFatal},
@@ -316,6 +328,10 @@ func peppolCountryUBLRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolGreekUBLRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolIcelandicUBLRules(e, root)
 }
 
 // peppolCountryCIIRules evaluates the country-specific rules of
@@ -1826,4 +1842,174 @@ func peppolGreekTIN(v string) bool {
 		return false
 	}
 	return (sum%11)%10 == check
+}
+
+// ---------------------------------------------------------------------------
+// Iceland
+// ---------------------------------------------------------------------------
+
+// peppolIcelandicEindagi is the supporting-document description the Icelandic
+// rules key on: "eindagi" is the final day for payment, carried as BT-122 on an
+// Additional supporting document whose identifier is the date itself.
+const peppolIcelandicEindagi = "EINDAGI"
+
+// peppolIcelandicUBLRules is the Icelandic rule set, which the CII binding does
+// not publish. Ten identifiers over two contexts, gated on the same pair of
+// pattern variables the Danish family uses — a concat of the two possible roots,
+// compared against 'IS' untrimmed.
+//
+// Iceland is the only family for which OpenPEPPOL ships no per-rule test set: there
+// is no rules/unit-UBL-IS directory upstream. peppolCountryExtraCases is therefore
+// where all twenty of its verdicts come from, and
+// TestEveryPublishedPeppolRuleHasBothVerdicts is what says nothing else is missing.
+//
+// Nine of the ten are existence tests or conditionals on an element's presence, and
+// the two that are neither — IS-R-006 and IS-R-007 — are both `A and B or not(C)`,
+// which XPath reads as `(A and B) or not(C)`: a document with no payment means of
+// that code is exempt rather than reported.
+func peppolIcelandicUBLRules(e *peppolEval, root *ciiNode) {
+	if peppolUBLPostalCountry(root, "AccountingSupplierParty") != "IS" {
+		return
+	}
+	seller := root.child("AccountingSupplierParty", "Party")
+
+	// IS-R-001: the document type code is 380 or 381, tested over whichever of the
+	// two type-code elements this root carries. The `not(contains(…, ' '))` guard is
+	// what stops a value like "380 381" satisfying the containment test.
+	if !peppolIcelandicTypeCode(root.child("InvoiceTypeCode")) &&
+		!peppolIcelandicTypeCode(root.child("CreditNoteTypeCode")) {
+		e.add("IS-R-001", "If the seller is Icelandic the document type code (BT-3) should be 380 or 381")
+	}
+	// IS-R-002: the seller's legal registration identifier (BT-30) exists and declares
+	// scheme 0196 — Iceland's kennitala.
+	if !peppolIcelandicLegalID(seller) {
+		e.add("IS-R-002", "If the seller is Icelandic the invoice MUST carry the Seller legal registration "+
+			"identifier (BT-30) under scheme 0196")
+	}
+	// IS-R-003: the seller address carries a street name and a post code. Existence
+	// tests, so an empty element satisfies them.
+	if !peppolIcelandicAddress(seller.child("PostalAddress")) {
+		e.add("IS-R-003", "If the seller is Icelandic the Seller postal address MUST carry a street name (BT-35) "+
+			"and a post code (BT-38)")
+	}
+	// IS-R-006 / IS-R-007: a claim (payment means 9) or a transfer (42) carries a
+	// twelve-character account identifier — the Icelandic bank, ledger and account
+	// numbers concatenated.
+	for _, tc := range []struct {
+		rule, code, what string
+	}{
+		{"IS-R-006", "9", "a claim"},
+		{"IS-R-007", "42", "a transfer"},
+	} {
+		var accounts []*ciiNode
+		present := false
+		for _, pm := range root.all("PaymentMeans") {
+			if !peppolAnyChildValue(pm, "PaymentMeansCode", tc.code) {
+				continue
+			}
+			present = true
+			accounts = append(accounts, nodesAt(pm, "PayeeFinancialAccount", "ID")...)
+		}
+		if !present {
+			continue
+		}
+		if len(accounts) == 0 || len([]rune(normalizeSpace(accounts[0].rawText()))) != 12 {
+			e.addf(tc.rule, "If the seller is Icelandic and the Payment means type code (BT-81) is %s (%s), the "+
+				"Payment account identifier (BT-84) MUST be twelve characters", tc.code, tc.what)
+		}
+	}
+	// IS-R-008 / IS-R-009 / IS-R-010, all conditional on an EINDAGI supporting
+	// document being present.
+	if eindagi := peppolIcelandicEindagiRefs(root); len(eindagi) > 0 {
+		// The three assertions read `<eindagi>/cbc:ID` as a node-set and take its first
+		// node's string value, which is what string-length() and the comparison below
+		// do.
+		eindagiID := ""
+		if ids := nodesAt(eindagi[0], "ID"); len(ids) > 0 {
+			eindagiID = ids[0].rawText()
+		}
+		dueDate := root.child("DueDate")
+		if len([]rune(eindagiID)) != 10 || !peppolIsCalendarDate(eindagiID) {
+			e.addf("IS-R-008", "If the seller is Icelandic the eindagi (BT-122=%q) MUST be formatted YYYY-MM-DD",
+				normalizeSpace(eindagiID))
+		}
+		if dueDate == nil {
+			e.add("IS-R-009", "If the seller is Icelandic and an eindagi is present, the invoice MUST carry a Payment "+
+				"due date (BT-9)")
+		}
+		// IS-R-010: cbc:DueDate <= <eindagi>/cbc:ID. Both operands are untyped, which
+		// XPath 2.0 compares as strings — so the comparison is the lexicographic one an
+		// ISO 8601 date makes correct, and an absent due date is an empty sequence,
+		// which compares false and reports.
+		if dueDate == nil || dueDate.rawText() > eindagiID {
+			e.addf("IS-R-010", "If the seller is Icelandic the eindagi (BT-122=%q) MUST NOT precede the Payment due "+
+				"date (BT-9=%q)", normalizeSpace(eindagiID), normalizeSpace(dueDate.rawText()))
+		}
+	}
+	// IS-R-004 / IS-R-005 are a second Schematron rule, context
+	// …/cac:AccountingCustomerParty, gated on both parties being Icelandic. They are
+	// last because they are the only ones that need the customer's country, not
+	// because anything above them is a precondition — an early return here would make
+	// the three EINDAGI rules depend on the buyer being Icelandic, which they do not.
+	if peppolUBLPostalCountry(root, "AccountingCustomerParty") != "IS" {
+		return
+	}
+	for _, party := range root.all("AccountingCustomerParty") {
+		if !peppolIcelandicLegalID(party.child("Party")) {
+			e.add("IS-R-004", "If both parties are Icelandic the invoice MUST carry the Buyer legal registration "+
+				"identifier (BT-47) under scheme 0196")
+		}
+		if !peppolIcelandicAddress(party.child("Party", "PostalAddress")) {
+			e.add("IS-R-005", "If both parties are Icelandic the Buyer postal address MUST carry a street name "+
+				"(BT-50) and a post code (BT-53)")
+		}
+	}
+}
+
+// peppolIcelandicEindagiRefs is `cac:AdditionalDocumentReference[cbc:DocumentDescription
+// = 'EINDAGI']`.
+func peppolIcelandicEindagiRefs(root *ciiNode) []*ciiNode {
+	var out []*ciiNode
+	for _, ref := range root.all("AdditionalDocumentReference") {
+		if peppolAnyChildValue(ref, "DocumentDescription", peppolIcelandicEindagi) {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// peppolIcelandicTypeCode is IS-R-001's half-assertion over one type-code element:
+//
+//	not(contains(normalize-space(<code>), ' ')) and
+//	contains(' 380 381 ', concat(' ', normalize-space(<code>), ' '))
+//
+// An absent element normalizes to ”, and contains(' 380 381 ', '  ') is false, so
+// a missing type code fails the half rather than passing it vacuously.
+func peppolIcelandicTypeCode(code *ciiNode) bool {
+	value := normalizeSpace(code.rawText())
+	if strings.Contains(value, " ") {
+		return false
+	}
+	return strings.Contains(" 380 381 ", " "+value+" ")
+}
+
+// peppolIcelandicLegalID is IS-R-002/IS-R-004's assertion: the party has a legal
+// registration identifier and some one of them declares scheme 0196.
+func peppolIcelandicLegalID(party *ciiNode) bool {
+	ids := nodesAt(party, "PartyLegalEntity", "CompanyID")
+	if len(ids) == 0 {
+		return false
+	}
+	for _, id := range ids {
+		if id.attr("schemeID") == "0196" {
+			return true
+		}
+	}
+	return false
+}
+
+// peppolIcelandicAddress is IS-R-003/IS-R-005's assertion: a street name and a post
+// code are present, whatever their content.
+func peppolIcelandicAddress(addr *ciiNode) bool {
+	return addr.child("StreetName") != nil && addr.child("PostalZone") != nil
 }

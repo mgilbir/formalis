@@ -750,7 +750,106 @@ func TestPeppolNationalExamplesCarryNoFatalCountryFinding(t *testing.T) {
 // unit-UBL-IS directory upstream, so all ten IS-R-* rules need a verdict here.
 func peppolCountryExtraCases(t *testing.T) []peppolExtraCase {
 	t.Helper()
-	return nil
+	base := peppolIcelandicUBL(t)
+	// Each mutation is checked to have applied, so a fixture edit cannot turn a
+	// violating case into a conforming one in silence.
+	mut := func(from, to string) string { return mustReplace(t, base, from, to) }
+	// The three EINDAGI rules need the supporting document present, and two of the
+	// three also need a due date, so they are built up rather than mutated.
+	eindagi := func(id, due string) string {
+		doc := mut("<cac:TaxTotal>",
+			`<cac:AdditionalDocumentReference><cbc:ID>`+id+`</cbc:ID>`+
+				`<cbc:DocumentDescription>EINDAGI</cbc:DocumentDescription></cac:AdditionalDocumentReference>`+
+				"<cac:TaxTotal>")
+		if due == "" {
+			return doc
+		}
+		return mustReplace(t, doc, "<cbc:IssueDate>2024-01-15</cbc:IssueDate>",
+			"<cbc:IssueDate>2024-01-15</cbc:IssueDate><cbc:DueDate>"+due+"</cbc:DueDate>")
+	}
+	// A payment means of the given code, carrying the given account identifier.
+	payment := func(code, account string) string {
+		return mut("<cac:TaxTotal>",
+			`<cac:PaymentMeans><cbc:PaymentMeansCode>`+code+`</cbc:PaymentMeansCode>`+
+				`<cac:PayeeFinancialAccount><cbc:ID>`+account+`</cbc:ID></cac:PayeeFinancialAccount>`+
+				"</cac:PaymentMeans><cac:TaxTotal>")
+	}
+	return []peppolExtraCase{
+		{"an Icelandic invoice type code (IS-R-001)", base, "IS-R-001", false, false},
+		{"a type code outside 380/381 (IS-R-001)",
+			mut("<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>386</cbc:InvoiceTypeCode>"),
+			"IS-R-001", false, true},
+
+		{"an Icelandic seller kennitala (IS-R-002)", base, "IS-R-002", false, false},
+		{"a seller legal identifier outside scheme 0196 (IS-R-002)",
+			mut(`<cbc:CompanyID schemeID="0196">1234567890</cbc:CompanyID><cbc:RegistrationName>Seller Ltd`,
+				`<cbc:CompanyID schemeID="0088">1234567890</cbc:CompanyID><cbc:RegistrationName>Seller Ltd`),
+			"IS-R-002", false, true},
+
+		{"an Icelandic seller address (IS-R-003)", base, "IS-R-003", false, false},
+		{"a seller address with no street name (IS-R-003)",
+			mut("<cbc:StreetName>Laugavegur 1</cbc:StreetName><cbc:CityName>Reykjavik</cbc:CityName>",
+				"<cbc:CityName>Reykjavik</cbc:CityName>"),
+			"IS-R-003", false, true},
+
+		{"an Icelandic buyer kennitala (IS-R-004)", base, "IS-R-004", false, false},
+		{"a buyer legal identifier outside scheme 0196 (IS-R-004)",
+			mut(`<cbc:CompanyID schemeID="0196">2345678901</cbc:CompanyID><cbc:RegistrationName>Buyer Ltd`,
+				`<cbc:CompanyID schemeID="0088">2345678901</cbc:CompanyID><cbc:RegistrationName>Buyer Ltd`),
+			"IS-R-004", false, true},
+
+		{"an Icelandic buyer address (IS-R-005)", base, "IS-R-005", false, false},
+		{"a buyer address with no post code (IS-R-005)",
+			mut("<cbc:CityName>Akureyri</cbc:CityName><cbc:PostalZone>600</cbc:PostalZone>",
+				"<cbc:CityName>Akureyri</cbc:CityName>"),
+			"IS-R-005", false, true},
+
+		{"a twelve character claim account (IS-R-006)", payment("9", "010266123456"), "IS-R-006", false, false},
+		{"a short claim account (IS-R-006)", payment("9", "01026612345"), "IS-R-006", false, true},
+		{"no claim at all (IS-R-006)", base, "IS-R-006", false, false},
+
+		{"a twelve character transfer account (IS-R-007)", payment("42", "010266123456"), "IS-R-007", false, false},
+		{"a short transfer account (IS-R-007)", payment("42", "01026612345"), "IS-R-007", false, true},
+
+		{"an eindagi formatted YYYY-MM-DD (IS-R-008)", eindagi("2024-02-15", "2024-02-01"), "IS-R-008", false, false},
+		{"an eindagi that is not a ten character date (IS-R-008)", eindagi("2024-2-15", "2024-02-01"), "IS-R-008", false, true},
+		{"no eindagi at all (IS-R-008)", base, "IS-R-008", false, false},
+
+		{"an eindagi with a due date (IS-R-009)", eindagi("2024-02-15", "2024-02-01"), "IS-R-009", false, false},
+		{"an eindagi with no due date (IS-R-009)", eindagi("2024-02-15", ""), "IS-R-009", false, true},
+
+		{"an eindagi on or after the due date (IS-R-010)", eindagi("2024-02-15", "2024-02-15"), "IS-R-010", false, false},
+		{"an eindagi before the due date (IS-R-010)", eindagi("2024-02-15", "2024-02-16"), "IS-R-010", false, true},
+	}
+}
+
+// peppolIcelandicUBL is a Peppol UBL invoice between two Icelandic parties that
+// satisfies all ten IS-R-* rules, derived from minimalPeppolUBL.
+//
+// It is derived rather than written out so that a change to the shared baseline
+// cannot leave this fixture quietly stale, and every replacement is checked to have
+// applied. What it adds over the baseline is exactly what the Icelandic rules ask
+// for: postal countries of IS, a street name and post code on both addresses, and a
+// legal registration identifier under scheme 0196 on both parties.
+func peppolIcelandicUBL(t *testing.T) string {
+	t.Helper()
+	doc := mustReplace(t, minimalPeppolUBL,
+		"<cbc:CityName>Berlin</cbc:CityName><cbc:PostalZone>10115</cbc:PostalZone>",
+		"<cbc:StreetName>Laugavegur 1</cbc:StreetName><cbc:CityName>Reykjavik</cbc:CityName><cbc:PostalZone>101</cbc:PostalZone>")
+	doc = mustReplace(t, doc,
+		"<cbc:CityName>Bonn</cbc:CityName><cbc:PostalZone>53113</cbc:PostalZone>",
+		"<cbc:StreetName>Hafnarstraeti 2</cbc:StreetName><cbc:CityName>Akureyri</cbc:CityName><cbc:PostalZone>600</cbc:PostalZone>")
+	doc = mustReplace(t, doc, "<cbc:RegistrationName>Seller Ltd</cbc:RegistrationName>",
+		`<cbc:CompanyID schemeID="0196">1234567890</cbc:CompanyID><cbc:RegistrationName>Seller Ltd</cbc:RegistrationName>`)
+	doc = mustReplace(t, doc, "<cbc:RegistrationName>Buyer Ltd</cbc:RegistrationName>",
+		`<cbc:CompanyID schemeID="0196">2345678901</cbc:CompanyID><cbc:RegistrationName>Buyer Ltd</cbc:RegistrationName>`)
+	// Both postal countries, which is what puts the document inside the Icelandic
+	// pattern in the first place.
+	if n := strings.Count(doc, "<cbc:IdentificationCode>DE</cbc:IdentificationCode>"); n != 2 {
+		t.Fatalf("the baseline carries %d country codes to replace, want 2", n)
+	}
+	return strings.ReplaceAll(doc, "<cbc:IdentificationCode>DE</cbc:IdentificationCode>",
+		"<cbc:IdentificationCode>IS</cbc:IdentificationCode>")
 }
 
 // TestPeppolCountryExtraCases runs them.
