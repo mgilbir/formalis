@@ -305,12 +305,24 @@ var ciusEvaluated = map[Source]map[string]Severity{
 		// that cannot be false, so it is Unevaluable rather than evaluated. See
 		// ublBE13Reason and TestUBLBE13IsBoundToATautology.
 	},
+	// SRBDT is the third complete rule set here: the 21 reachable RSR business
+	// rules, the 3 RSE extension rules and the 7 assertions of the abstract pdvcat
+	// pattern (evaluated once per Serbian zero-rate VAT category, four times over).
+	// The fifteen the Ministry publishes that no processor reaches are in
+	// Coverage(SourceSRBDT) with Unevaluable set, and
+	// TestSRBDTUnevaluableRulesAreDerivedFromTheArtefact is the evidence.
 	SourceSRBDT: {
-		"RSR-03": SeverityFatal, "RSR-04": SeverityFatal, "RSR-09": SeverityFatal,
-		"RSR-10": SeverityFatal, "RSR-11": SeverityFatal, "RSR-13": SeverityFatal,
-		"RSR-14": SeverityFatal, "RSR-16": SeverityFatal, "RSR-17": SeverityFatal,
-		"RSR-20": SeverityFatal, "RSR-21": SeverityFatal, "RSR-22": SeverityFatal,
-		"RSR-23": SeverityFatal, "RSR-25": SeverityFatal,
+		"RSR-01": SeverityFatal, "RSR-02": SeverityFatal, "RSR-03": SeverityFatal,
+		"RSR-04": SeverityFatal, "RSR-05": SeverityFatal, "RSR-06": SeverityFatal,
+		"RSR-07": SeverityFatal, "RSR-11": SeverityFatal, "RSR-12": SeverityFatal,
+		"RSR-14": SeverityFatal, "RSR-18": SeverityFatal, "RSR-19": SeverityFatal,
+		"RSR-21": SeverityFatal, "RSR-23": SeverityFatal, "RSR-27": SeverityFatal,
+		"RSR-28": SeverityFatal, "RSR-29": SeverityFatal, "RSR-30": SeverityFatal,
+		"RSR-34": SeverityFatal, "RSR-35": SeverityFatal, "RSR-36": SeverityFatal,
+		"RSE-01": SeverityFatal, "RSE-02": SeverityFatal, "RSE-03": SeverityFatal,
+		"RSK-X-01": SeverityFatal, "RSK-X-05": SeverityFatal, "RSK-X-06": SeverityFatal,
+		"RSK-X-07": SeverityFatal, "RSK-X-08": SeverityFatal, "RSK-X-09": SeverityFatal,
+		"RSK-X-10": SeverityFatal,
 	},
 	SourceNLCIUS: {
 		"BR-NL-1": SeverityFatal, "BR-NL-2": SeverityFatal, "BR-NL-3": SeverityFatal,
