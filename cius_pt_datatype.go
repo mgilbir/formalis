@@ -236,6 +236,10 @@ const (
 	ptOpNumber
 	// ptOpEvery is `every $v in E satisfies E`.
 	ptOpEvery
+	// ptOpCastable is `E castable as xs:date`, XPath 2.0's type test. CIUS-RO's
+	// seven BR-RO-DT* rules are the only assertions in this package that use it,
+	// and they use it with no other type.
+	ptOpCastable
 )
 
 // ptDTExpr is one node of a parsed assertion.
@@ -245,7 +249,7 @@ type ptDTExpr struct {
 
 	relop string     // ptOpCompare, ptOpArith: the operator's spelling
 	fn    string     // ptOpFunc: the function's name
-	name  string     // ptOpVar, ptOpEvery: the variable's name
+	name  string     // ptOpVar, ptOpEvery: the variable's name; ptOpCastable: the type
 	str   string     // ptOpLiteral
 	num   float64    // ptOpNumber
 	path  *ptDTXPath // ptOpPath
@@ -322,7 +326,21 @@ func (p *ptDTParser) peek(n int) ptDTToken {
 	return p.toks[p.i+n]
 }
 
-func (p *ptDTParser) at(text string) bool { return p.peek(0).text == text }
+// at reports whether the next token is the given *punctuation*.
+//
+// The kind check is load-bearing rather than defensive. Every caller passes an
+// operator or a bracket, and a string literal carries its own text: without it,
+// `substring-after(cbc:Amount,'.')` parses its second argument as the context item
+// `.` rather than as the string ".", so the function is asked to find the empty
+// string and returns its whole first argument. That is a decimal-place rule that
+// passes every document, and it is what CIUS-RO's twenty-one BR-DEC-RO-* rules are
+// made of. CIUS-PT's 291 assertions carry five literals of this shape — all `','`,
+// all in argument position where the ambiguity does not arise — so the correction
+// leaves them evaluating identically, which cius_pt_datatype_test.go pins.
+func (p *ptDTParser) at(text string) bool {
+	t := p.peek(0)
+	return t.kind == ptTokPunct && t.text == text
+}
 
 func (p *ptDTParser) atName(text string) bool {
 	t := p.peek(0)
@@ -330,7 +348,7 @@ func (p *ptDTParser) atName(text string) bool {
 }
 
 func (p *ptDTParser) eat(text string) error {
-	if p.peek(0).text != text {
+	if !p.at(text) {
 		return fmt.Errorf("expected %q, found %q", text, p.peek(0).text)
 	}
 	p.i++
@@ -462,7 +480,28 @@ func (p *ptDTParser) unary() (*ptDTExpr, error) {
 		}
 		return &ptDTExpr{op: ptOpNeg, args: []*ptDTExpr{inner}}, nil
 	}
-	return p.unionExpr()
+	e, err := p.unionExpr()
+	if err != nil {
+		return nil, err
+	}
+	// XPath 2.0 puts `castable as` between the unary operators and the
+	// multiplicative ones, so it binds tighter than every comparison. ANAF writes
+	// it parenthesised — `(string(.) castable as xs:date)` — so the precedence is
+	// not load-bearing in this rule set, but getting it wrong silently would be.
+	for p.atName("castable") {
+		p.i++
+		if !p.atName("as") {
+			return nil, fmt.Errorf("expected 'as' after 'castable', found %q", p.peek(0).text)
+		}
+		p.i++
+		t := p.peek(0)
+		if t.kind != ptTokName {
+			return nil, fmt.Errorf("'castable as' must name a type, found %q", t.text)
+		}
+		p.i++
+		e = &ptDTExpr{op: ptOpCastable, name: t.text, args: []*ptDTExpr{e}}
+	}
+	return e, nil
 }
 
 func (p *ptDTParser) unionExpr() (*ptDTExpr, error) {
@@ -538,8 +577,9 @@ func (p *ptDTParser) valueExpr() (*ptDTExpr, error) {
 // may appear in.
 func (p *ptDTParser) step(head bool) (ptDTStep, *ptDTExpr, error) {
 	t := p.peek(0)
+	punct := t.kind == ptTokPunct
 	switch {
-	case t.text == "@":
+	case punct && t.text == "@":
 		p.i++
 		n := p.peek(0)
 		if n.kind != ptTokName {
@@ -550,7 +590,7 @@ func (p *ptDTParser) step(head bool) (ptDTStep, *ptDTExpr, error) {
 		preds, err := p.predicates()
 		s.preds = preds
 		return s, nil, err
-	case t.text == ".":
+	case punct && t.text == ".":
 		p.i++
 		s := ptDTStep{self: true}
 		preds, err := p.predicates()
@@ -575,7 +615,7 @@ func (p *ptDTParser) step(head bool) (ptDTStep, *ptDTExpr, error) {
 		preds, err := p.predicates()
 		s.preds = preds
 		return s, nil, err
-	case t.kind == ptTokName && p.peek(1).text == "(":
+	case t.kind == ptTokName && p.peek(1).kind == ptTokPunct && p.peek(1).text == "(":
 		name := t.text
 		p.i += 2
 		var args []*ptDTExpr
@@ -641,7 +681,7 @@ func (p *ptDTParser) step(head bool) (ptDTStep, *ptDTExpr, error) {
 			return ptDTStep{}, nil, fmt.Errorf("a number cannot be a path step")
 		}
 		return ptDTStep{}, e, nil
-	case t.text == "(":
+	case punct && t.text == "(":
 		p.i++
 		var items []*ptDTExpr
 		for {
