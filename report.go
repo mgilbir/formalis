@@ -687,19 +687,20 @@ var notEvaluated = map[Source][]RuleFamily{
 
 	SourceSRBDT: {
 		{
-			Rules:    "RSK-X-*",
+			Rules:    "RSK-X-01, RSK-X-05..10",
 			Severity: SeverityFatal,
-			Reason:   "the Serbian VAT-category rules",
+			Reason:   "the Serbian VAT-category rules, in EN16931-UBL-srbdt-pdvcat-gen.sch",
 		},
 		{
-			Rules:    "the finer identifier and endpoint cross-checks",
+			Rules:    "RSE-01, RSE-02, RSE-03",
 			Severity: SeverityFatal,
-			Reason:   "BT-8 code values, endpoint-contains-PIB, buyer registration format",
+			Reason:   "the SRBDT extension rules, which no entry in this table named until the Schematron was vendored",
 		},
 		{
 			Rules:    "any other RSR rule: this package emits only RSR-03, 04, 09, 10, 11, 13, 14, 16, 17, 20, 21, 22, 23, 25",
 			Severity: SeverityFatal,
-			Reason:   "the rest of the published set",
+			Reason: "the rest of the published set: RSR-01, 02, 05..08, 12, 15, 18, 19, 24, 26..36 — the BT-8 code " +
+				"values, the endpoint-contains-PIB cross-checks and the buyer registration format",
 		},
 	},
 
