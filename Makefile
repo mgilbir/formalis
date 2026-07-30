@@ -187,6 +187,16 @@ $(CIUS_STAMP): | check-deps
 	gh api repos/phax/phive-rules/contents/phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing/SI-UBL-2.0.3.2 --jq '.[].name' \
 		| grep '\.xml$$' \
 		| while read f; do $(CURL) "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing/SI-UBL-2.0.3.2/$$f" -o "testdata/nlcius/testsuite/$$f"; done
+	@# The G-account extension's own instances. They are a *separate* directory
+	@# upstream, which is why the SI-UBL-2.0.3.2 fetch above never brought them in and
+	@# why none of the 95 instances that oracle reads exercises the extension. Kept in
+	@# a directory of their own here for the same reason: TestNLCIUSConformanceSuite
+	@# and TestNLCIUSPerRuleFixtures read the file name for the rule it exercises, and
+	@# these are named for the term they break rather than for a BR-GA identifier.
+	mkdir -p testdata/nlcius/gaccount
+	gh api repos/phax/phive-rules/contents/phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing/si-ubl-2.0-ext-gaccount-1.0 --jq '.[].name' \
+		| grep '\.xml$$' \
+		| while read f; do $(CURL) "https://raw.githubusercontent.com/phax/phive-rules/master/phive-rules-simplerinvoicing/src/test/resources/external/test-files/simplerinvoicing/si-ubl-2.0-ext-gaccount-1.0/$$f" -o "testdata/nlcius/gaccount/$$f"; done
 	@# CIUS-PT (Portuguese AT/eSPap) sample instances, from phax/phive-rules.
 	mkdir -p testdata/cius-pt/testsuite
 	for ver in 2.0.0 2.1.1; do \

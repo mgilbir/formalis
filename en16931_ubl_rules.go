@@ -100,7 +100,7 @@ func validateUBLSyntaxRules(r *run, root *ciiNode) []Violation {
 // in one pass.
 //
 // The alternative — one findAll per rule — would walk the tree once per rule,
-// four dozen times over, and this package validates 1,680 UBL documents on every
+// four dozen times over, and this package validates 1,690 UBL documents on every
 // test run. One walk costs what the largest population costs. The struct also
 // makes the rule bodies read as what they are: a count against a bound, with no
 // traversal in the way.
@@ -735,7 +735,7 @@ func ublSyntaxReferenceRules(g *ublSyntaxNodes, add func(rule, msg string)) {
 // path at a time — that is what makes 678 of them — so one path per rule is also
 // simply the shape of the family.
 //
-// Corpus. Neither rule fires on any of the 1,680 documents, and that is the
+// Corpus. Neither rule fires on any of the 1,690 documents, and that is the
 // rules being right rather than the rules being wired to nothing. Of the 785
 // documents with a UBL Invoice or CreditNote root, 58 carry a BT-18 reference,
 // 235 carry a cac:AdditionalDocumentReference/cac:Attachment and 182 a

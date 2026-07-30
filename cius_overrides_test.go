@@ -31,7 +31,7 @@ import (
 //   - does each override *do* anything — is there a document on which the
 //     authority's reading and CEN's differ observably? TestEveryConditionOverrideFires.
 //     A rule that is present, reachable and inert passes every other guard here
-//     (C41), and none of these nine fires differently anywhere in the 1,680-document
+//     (C41), and none of these nine fires differently anywhere in the 1,690-document
 //     corpus, so a fixture is the only thing that can tell them apart.
 //   - is it *contained* — does an override reach any path that did not ask for that
 //     CIUS? TestConditionOverridesApplyOnlyUnderTheirCIUS.
@@ -642,7 +642,7 @@ func TestOverriddenIdentifiersAreCENs(t *testing.T) {
 // This is the guard C41 asks for and the only one that can be given here. The other
 // three tests in this file would all pass over an override that was transcribed
 // correctly, reachable, and inert — and inert is exactly what these nine are on the
-// whole 1,680-document corpus: every one of them fires the same number of times
+// whole 1,690-document corpus: every one of them fires the same number of times
 // through AT's condition as through CEN's, on every document this repository has.
 // A fixture is therefore not a convenience, it is the only evidence that the
 // substitution does anything at all.
@@ -774,7 +774,7 @@ func TestEveryConditionOverrideFires(t *testing.T) {
 		if _, excused := ptOverridesWithNoVisibleEffect[id]; !excused {
 			t.Errorf("%s is overridden and no fixture makes AT/eSPap's condition and this package's "+
 				"differ on it. An override with no such fixture is indistinguishable from no override "+
-				"at all: the corpus does not separate them either, because all nine agree on all 1,680 "+
+				"at all: the corpus does not separate them either, because all nine agree on all 1,690 "+
 				"documents. Add a fixture, or record why none exists in ptOverridesWithNoVisibleEffect", id)
 		}
 	}
@@ -893,7 +893,7 @@ func overrideSetFor(s Source) *ciusOverrides {
 // it asserts an equality rather than an inequality on purpose.
 //
 // AT/eSPap's nine conditions and CEN's agree on the *verdict* for every one of the
-// 1,680 documents this repository holds: the multiset of (Source, rule, severity)
+// 1,690 documents this repository holds: the multiset of (Source, rule, severity)
 // each document reports is unchanged, so no document is newly accused, none stops
 // being accused, and Conformant() moves for none of them. That is a fact about the
 // corpus — nothing in it uses the 'NOR'/'ISE' aliases — and not about the overrides,

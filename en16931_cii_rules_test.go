@@ -24,7 +24,7 @@ import (
 // nor one that fires on a conforming invoice, and the 198-rule ratchet cannot
 // move for this work.
 //
-// The corpus is a real but partial oracle: 181 of its 1,680 documents have a
+// The corpus is a real but partial oracle: 181 of its 1,690 documents have a
 // CrossIndustryInvoice root, and being the shapes real producers emit they are
 // by construction the conforming half. Two rules fire on it — CII-SR-461 on
 // eleven KoSIT per-rule fixtures that repeat BT-7 in two VAT breakdown groups,

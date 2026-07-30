@@ -21,7 +21,7 @@ import (
 // # One walk, not 1,168
 //
 // The naive shape of this — evaluate 1,168 XPaths against the tree — would walk
-// the document a thousand times per invoice, and this package validates 1,680
+// the document a thousand times per invoice, and this package validates 1,690
 // documents on every test run. Two things keep it to one walk and a bounded
 // amount of work per node.
 //

@@ -18,7 +18,7 @@ import (
 // # Why a context count
 //
 // Requirement two of every rule set's oracle in this repository is that a clean
-// sweep is not evidence. A rule that reports nothing over 1,680 documents is either
+// sweep is not evidence. A rule that reports nothing over 1,690 documents is either
 // a rule that was asked and answered "conforms" or a rule that was never asked —
 // bound to an element name the mapper never produces, or behind a gate that never
 // opens — and no findings count can tell the two apart. The generated CIUS-PT and

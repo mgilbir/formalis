@@ -666,7 +666,7 @@ var ptDTVersionChanges = map[string]string{
 // rules, applied to the generated family.
 //
 // It is a different question from "does it fire". A rule that reports nothing across
-// 1,680 documents is either a rule that was asked and kept answering yes — the
+// 1,690 documents is either a rule that was asked and kept answering yes — the
 // desired outcome — or a rule bound to an element name no document contains, which
 // is not a working rule at all and looks identical from the outside.
 func ptDTContextCounts(root *ciiNode, into map[string]int) {
@@ -829,7 +829,7 @@ func TestCIUSPTDatatypeFiresAcrossTheCorpus(t *testing.T) {
 // to preserve.
 //
 // ptDTEvalString, ptDTEvalNum and the numeric comparison exist because this pass
-// runs over 1,680 documents on every test run and the naive shape allocated a
+// runs over 1,690 documents on every test run and the naive shape allocated a
 // sequence per operator. Every one of them is a shortcut around the general
 // evaluator, and a shortcut around an evaluator is exactly the kind of change that
 // alters a rule without anyone noticing — the empty-sequence propagation AT's

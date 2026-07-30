@@ -204,18 +204,33 @@ gap left — the core and every CIUS:
   `EN16931-UBL-srbdt.sch` is a single pattern in which eleven rules repeat the
   context `/ubl:Invoice | /cn:CreditNote` and four more repeat three other contexts,
   and ISO Schematron gives a node to the first matching rule of a pattern only;
-- **NLCIUS**: all 34 identifiers of the UBL binding and all 33 of the CII one, both
-  halves — the twelve fatal rules and the twenty-two "not recommended" ones, which
-  are reported as warnings. Four are `Unevaluable` for the same rule-order reason,
-  and one of them was a live false positive: `BR-NL-9` has a rule of its own in the
-  CII binding, against a context `BR-NL-7`'s rule already holds, so no CII document
-  can be reported for it. This package reported it until the file was read that way.
+- **NLCIUS**: 42 of the 43 identifiers of the UBL binding and 33 of the 34 of the
+  CII one, both halves — the twelve fatal rules, the twenty-two "not recommended"
+  ones, which are reported as warnings, and the eight `BR-GA-*` of the **G-account
+  extension**, which the UBL binding alone publishes. Four are `Unevaluable` for the
+  rule-order reason above, and one of those was a live false positive: `BR-NL-9` has
+  a rule of its own in the CII binding, against a context `BR-NL-7`'s rule already
+  holds, so no CII document can be reported for it. This package reported it until
+  the file was read that way. One identifier per binding is a stated gap — see
+  `Coverage(SourceNLCIUS)`.
+
+  The G-account extension is the invoice form for a Dutch *g-rekening*: a blocked
+  account into which a contractor pays the payroll-tax share of a subcontractor's
+  invoice. Such an invoice carries two payment instructions and two payment terms
+  rather than one of each, and the eight rules are about that split. It is opt-in —
+  the document declares `…#conformant#urn:fdc:nen.nl:gaccount:v1.0` — and it is part
+  of NLCIUS rather than a profile beside it, because both NLCIUS binding files fold
+  the extension's identifier into their own `$si` and `$s` gates and the extension's
+  Schematron `<include>`s the whole of SI-UBL 2.0. `ValidateNLCIUS` applies it to a
+  UBL **Invoice** that declares the extension or carries a `GACCOUNT` payment
+  instruction, and to nothing else: SimplerInvoicing publishes no CII binding of it
+  and none of its rules for a credit note.
 
 Every national format validator still names a gap its authority flags fatal and a
 validator could close, so those return false whatever the document.
 
 `Complete()` is the stricter question — "did this package see everything a
-reference validator could see" — and the same eight rule sets answer yes. The EN 16931
+reference validator could see" — and seven of those eight rule sets answer yes. The EN 16931
 core's 1,168 advisory binding rules used to be the reason it could not;
 they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
 rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
@@ -236,9 +251,24 @@ had been carrying longest: its only gap was 290 fatal rules that had never been
 named anywhere. `ValidateCIUSPT` reported `Conformant() == false` for every
 Portuguese invoice, whatever it contained, until they were implemented.
 
-NLCIUS answers yes for a fifth, and it is the only rule set here whose last gap was
-*advisory*: the "not recommended" tier is what `Complete()` was waiting on, and it
-had never cost `Conformant()` anything.
+NLCIUS is the one that answers **no**, and the reason it does is worth reading.
+Implementing its "not recommended" tier made it the first rule set here whose last
+gap was advisory, and `Complete()` was true for a Dutch invoice on that basis. It is
+false again, because the survey that reached that conclusion had never counted the
+whole rule set: every guard over these five national rule sets asked its question
+about the identifiers a *prefix* admitted, `^BR-NL-` in this case, and the two
+bindings publish three things it does not match — the eight `BR-GA-*` of the
+G-account extension, which are evaluated now, and one advisory rule each binding
+names differently (`SI-UBL-2`, `empty-element-check`), which is not. That last one
+is `Coverage(SourceNLCIUS)`'s only non-`Unevaluable` entry and it is what
+`Complete()` now waits on. `Conformant()` is unaffected: the rule is advisory.
+
+The general defect is fixed rather than the instance. Every identifier a vendored
+national Schematron publishes is now enumerated and then classified — its
+authority's own, another vendored authority's by lookup, or a named withdrawn one —
+and one that no classifier accounts for fails the build. A prefix could only ever
+enumerate what its author anticipated, which is how AT/eSPap's eight `BR-AA-*` rules
+went unnoticed before it and SimplerInvoicing's eight `BR-GA-*` after.
 
 The Peppol path answers yes for a third: its only gap was a rule set nobody had
 counted. Both binding files hold a second family of 101 country-specific rules
@@ -274,16 +304,21 @@ for _, gap := range formalis.Coverage(formalis.SourceFatturaPA) {
 for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
     fmt.Printf("not evaluated: %s [%s] unevaluable=%t\n", gap.Rules, gap.Severity, gap.Unevaluable)
 }
+// not evaluated: SI-UBL-2 (UBL binding), empty-element-check (CII binding) [warning] unevaluable=false
 // not evaluated: BR-NL-9, in the CII binding only [fatal] unevaluable=true
 // not evaluated: BR-NL-31, in the CII binding only [warning] unevaluable=true
 // not evaluated: BR-NL-32-2, BR-NL-32-3, in the UBL binding only [warning] unevaluable=true
 ```
 
-The two answers are different in kind. The Italian entry is work: a rule the SdI
-would reject a document over, which this package does not run. The Dutch ones are
-facts about somebody else's file — assertions SimplerInvoicing publishes that no
-validator, its own included, ever reaches — so they cost neither `Conformant()` nor
-`Complete()`.
+The answers are three kinds, and the Dutch list shows two of them. The Italian entry
+is work: a rule the SdI would reject a document over, which this package does not
+run, so it costs `Conformant()`. The three Dutch `unevaluable=true` entries are facts
+about somebody else's file — assertions SimplerInvoicing publishes that no validator,
+its own included, ever reaches — so they cost neither `Conformant()` nor
+`Complete()`. The Dutch `unevaluable=false` entry is work too, but advisory work: one
+rule, published under a different name in each binding, that a reference validator
+warns about and this package does not evaluate. It costs `Complete()` and not
+`Conformant()`, which is the distinction the two predicates exist for.
 
 Use `Conformant()` when you need the strong claim, and `len(r.Fatal()) == 0` when
 the weaker one will do — with `r.NotEvaluated` beside it saying exactly what it
@@ -407,7 +442,9 @@ minted here. The `Source` is still the format the document was judged against,
 which is what a caller routing or suppressing by format needs; it is not a claim
 that the format's own documentation uses these names. The `Source`s whose
 identifiers *are* quoted from a published rule set are EN 16931, XRechnung,
-Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and SRBDT.
+Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and SRBDT. `BR-GA-*` is SimplerInvoicing's
+too — the G-account extension is published in the same repository under the same
+customization identifier as NLCIUS, so its findings carry `SourceNLCIUS`.
 
 ## A CIUS may re-write a CEN rule's condition
 
@@ -441,7 +478,7 @@ history whether CEN ever published what the copy carries. The result today:
 | CIUS-PT 2.1.1 (UBL) | 771 | 27 | 735 | **9**, applied |
 | CIUS-RO 1.0.9 (UBL) | 930 | 904 | 26 | 0 |
 | NLCIUS SI-UBL 2.0.3.2 | 929 | 866 | 63 | 0 |
-| NLCIUS G-account 1.0.2 | 745 | 700 | 45 | 0 |
+| NLCIUS G-account 1.0.2 | 745 | 700 | 45 | 0 — but see below |
 | NLCIUS 1.0.3 (CII) | 733 | 628 | 105 | 0 |
 | UBL.BE v1.31 | 250 | 205 | 38 | **7**, recorded and not applied |
 | SRBDT 1.0.0 | ships no copy of CEN's files | | | |
@@ -450,6 +487,19 @@ The nine Portuguese ones are the VAT category aliases `NOR`≡`S` and `ISE`≡`E
 across `BR-S-02/03/04/10` and `BR-E-02/03/04/10`, and `BR-23`, which AT/eSPap
 inverts from an assertion into a report. Only `ValidateCIUSPT` applies them, only
 to UBL documents, and only to those nine identifiers.
+
+A copy can also **remove** a rule, which is an axis the table above does not have: it
+compares the condition of each identifier a copy carries, and a commented-out
+assertion is not carried. One copy does. The G-account extension's
+`EN16931-syntax-modified.sch` comments out `UBL-CR-411`, `UBL-CR-453` and
+`UBL-CR-459` — "a UBL invoice should not include the PaymentMeans ID / the
+PaymentTerms PaymentMeansID / the PaymentTerms Amount" — because those three
+elements are precisely what the extension carries its payment split in. All three are
+advisory, and `ValidateNLCIUS` suppresses them for a document inside the extension
+and for no other. The set is derived by comparing the modified file against the
+unmodified one **in the same release directory**, which is what makes it a
+measurement of SimplerInvoicing's edit rather than of the gap between two release
+dates.
 
 ## Bounded work
 

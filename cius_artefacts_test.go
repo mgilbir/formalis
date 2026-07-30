@@ -118,18 +118,197 @@ var ciusArtefacts = []ciusArtefact{{
 	own:     regexp.MustCompile(`^RS[REK]-`),
 	minIDs:  46,
 }, {
+	// SimplerInvoicing mints four identifier shapes and this filter used to admit
+	// one. ^BR-NL- alone hid the eight BR-GA-* rules of the G-account extension —
+	// PR 26 left them out on the reading that the extension is "not NLCIUS", and no
+	// guard here could have contradicted it — and it hid SI-UBL-2 and
+	// empty-element-check, which are one rule under two names that no survey of this
+	// rule set in this repository had ever counted. That is C39 in a second
+	// authority's artefact, and TestEveryPublishedCIUSIdentifierIsClassified is what
+	// makes the next one a red build rather than a reading.
 	source:  SourceNLCIUS,
 	binding: "UBL",
 	globs:   []string{"nlcius/schematron/ubl/*.sch"},
-	own:     regexp.MustCompile(`^BR-NL-`),
-	minIDs:  34,
+	own:     nlciusOwnIDs,
+	minIDs:  43,
 }, {
 	source:  SourceNLCIUS,
 	binding: "CII",
 	globs:   []string{"nlcius/schematron/cii/*.sch"},
-	own:     regexp.MustCompile(`^BR-NL-`),
-	minIDs:  33,
+	own:     nlciusOwnIDs,
+	minIDs:  34,
 }}
+
+// nlciusOwnIDs is every identifier shape SimplerInvoicing mints across its two
+// bindings and the G-account extension: BR-NL-* in both, BR-GA-* in the UBL
+// extension file, and the empty-element rule, which is SI-UBL-2 in the UBL binding
+// and empty-element-check in the CII one.
+var nlciusOwnIDs = regexp.MustCompile(`^(?:BR-NL-|BR-GA-|SI-UBL-)|^empty-element-check$`)
+
+// ciusForeignResidue is the last of the four dispositions
+// TestEveryPublishedCIUSIdentifierIsClassified admits: an identifier a national
+// artefact carries that another authority minted, and that the vendored copy of
+// *that* authority's rule set no longer publishes.
+//
+// Every one is a rule CEN or OpenPEPPOL published in an earlier release and
+// withdrew, sitting in a national file that vendors an older copy. They are listed
+// individually rather than by prefix, because the whole point of the guard is that a
+// prefix is what let a family hide: "BR-IG-*" written as a pattern would also admit
+// a future BR-IG rule some authority invents, and there would be nothing to notice
+// it.
+//
+// The reason column is the evidence for the attribution. Each is checkable against
+// the vendored artefact that does carry the identifier's family, or against the
+// release note that renamed it.
+var ciusForeignResidue = map[string]string{
+	// CEN renamed the two intra-community VAT category families between EN 16931
+	// releases: BR-IG-* became BR-AF-* and BR-IP-* became BR-AG-*. UBL.BE and SI-UBL
+	// both vendor a copy from before the rename, and CEN's current tree publishes
+	// the new names only.
+	"BR-IG-01": "CEN, renamed BR-AF-01", "BR-IG-02": "CEN, renamed BR-AF-02",
+	"BR-IG-03": "CEN, renamed BR-AF-03", "BR-IG-04": "CEN, renamed BR-AF-04",
+	"BR-IP-01": "CEN, renamed BR-AG-01", "BR-IP-02": "CEN, renamed BR-AG-02",
+	"BR-IP-03": "CEN, renamed BR-AG-03", "BR-IP-04": "CEN, renamed BR-AG-04",
+	// CEN identifiers the copies carry and CEN's current files do not.
+	"BR-66":      "CEN, withdrawn after the release GLOBALUBL.BE.sch vendors",
+	"BR-67":      "CEN, withdrawn after the release GLOBALUBL.BE.sch vendors",
+	"UBL-CR-423": "CEN, withdrawn after the release CIUS-PT vendors",
+	"UBL-CR-631": "CEN, withdrawn after the release CIUS-PT and UBL.BE vendor",
+	"ubl-CR-631": "CEN, withdrawn after the release UBL.BE vendors; see ciusLowercasedCEN",
+	"UBL-SR-38":  "CEN, withdrawn after the release CIUS-PT and UBL.BE vendor",
+	"DK-R-015":   "OpenPEPPOL, withdrawn from its Danish rule set after the release GLOBALUBL.BE.sch vendors",
+	"GR-R-007-1": "OpenPEPPOL, its Greek GR-R-007 split into sub-identifiers in the release GLOBALUBL.BE.sch vendors",
+	"GR-R-007-2": "OpenPEPPOL, as GR-R-007-1",
+	"GR-R-007-3": "OpenPEPPOL, as GR-R-007-1",
+}
+
+// ciusLowercasedCEN is the one artefact quirk the classifier folds case for:
+// GLOBALUBL.BE.sch re-publishes CEN's UBL-CR-* and UBL-DT-* binding rules with a
+// lower-case first segment. 671 of the 672 resolve to a CEN identifier that way and
+// the one that does not is in ciusForeignResidue above, which is what makes this a
+// spelling difference rather than a family of Belgian rules.
+//
+// It is scoped to that one prefix on purpose. A blanket case-insensitive lookup
+// would be a second pattern deciding membership, which is the defect this guard
+// exists to remove.
+var ciusLowercasedCEN = regexp.MustCompile(`^ubl-(?:CR|DT)-`)
+
+// TestEveryPublishedCIUSIdentifierIsClassified is the general form of C39, and the
+// reason this PR is worth more than the eight rules it implements.
+//
+// Every guard over these five rule sets asks its question about the identifiers
+// ciusArtefact.own admits. That is a pattern, and a pattern only enumerates what its
+// author anticipated: ^(?:BR|DT)-CIUS-PT- could not see AT/eSPap's eight BR-AA-*
+// rules (C39), and ^BR-NL- could not see SimplerInvoicing's eight BR-GA-*, its
+// SI-UBL-2 or its empty-element-check. In both cases the family was in neither the
+// code, nor the coverage table, nor the record of what the code does not do — and
+// nothing could have said so, because the survey that would have noticed was
+// filtering on the same pattern.
+//
+// So this test does not filter. It decodes **every** assertion identifier out of
+// every vendored national Schematron and requires each to fall into exactly one of
+// four dispositions:
+//
+//   - its authority's own, by ciusArtefact.own — then the guards below take over,
+//     and it is either evaluated or named in that Source's coverage table;
+//   - published by another authority whose artefact this repository also vendors
+//     (CEN's EN 16931 files, KoSIT's, OpenPEPPOL's), which is what a merged artefact
+//     like GLOBALUBL.BE.sch is full of. This is a lookup and not a pattern: the
+//     identifier has to actually be in that authority's file;
+//   - the same, spelt with a lower-case first segment (ciusLowercasedCEN);
+//   - or in ciusForeignResidue, which names the authority and the release.
+//
+// An identifier in none of them fails the build, and the failure message says what
+// to do with it. That is the property: a new family cannot arrive in one of these
+// files and be invisible, whatever it is called, because being unrecognised is now
+// the thing that fails rather than the thing that hides.
+//
+// Two-directional, like the severity guard: an entry in ciusForeignResidue that no
+// artefact carries any more is an excuse with nothing to excuse, and it is removed
+// by the same failure.
+func TestEveryPublishedCIUSIdentifierIsClassified(t *testing.T) {
+	files := map[Source][]string{}
+	for _, a := range ciusArtefacts {
+		for _, g := range a.globs {
+			m, _ := filepath.Glob(filepath.Join("testdata", g))
+			files[a.source] = append(files[a.source], m...)
+		}
+	}
+	total := 0
+	for _, fs := range files {
+		total += len(fs)
+	}
+	if total == 0 {
+		t.Skip("national CIUS Schematron not present; run `make cius-schematron`")
+	}
+	// schematronFlags is every identifier CEN, KoSIT and OpenPEPPOL publish in the
+	// artefacts this repository vendors. It skips when the EN 16931 suite is absent,
+	// which is the right behaviour here too: a classifier that cannot look an
+	// identifier up must not conclude that nobody publishes it.
+	foreign := schematronFlags(t)
+
+	used := map[string]bool{}
+	classified, unclassified := 0, map[string][]string{}
+	for _, a := range ciusArtefacts {
+		for _, f := range files[a.source] {
+			data, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for id := range assertFlags(t, f, data) {
+				switch {
+				case a.own.MatchString(id):
+				case foreign[id] != nil:
+				case ciusLowercasedCEN.MatchString(id) && foreign[strings.ToUpper(id[:3])+id[3:]] != nil:
+				case ciusForeignResidue[id] != "":
+					used[id] = true
+				default:
+					unclassified[filepath.Base(f)] = append(unclassified[filepath.Base(f)], id)
+					continue
+				}
+				classified++
+			}
+		}
+	}
+	for f, ids := range unclassified {
+		sort.Strings(ids)
+		t.Errorf("%s publishes %d identifiers (%v) that are neither %s's own nor published by any authority whose "+
+			"artefact this repository vendors. Decide which: widen that artefact's `own` pattern and evaluate or "+
+			"disclaim them, or add them to ciusForeignResidue with the authority and the release. A published "+
+			"identifier nothing accounts for is exactly how BR-AA-* and BR-GA-* stayed invisible",
+			f, len(ids), ids[:min(len(ids), 8)], ciusSourceOfFile(f))
+	}
+	for id, why := range ciusForeignResidue {
+		if !used[id] {
+			t.Errorf("ciusForeignResidue excuses %s (%q) and no vendored national artefact carries it any more; "+
+				"an excuse with nothing to excuse is an excuse nobody will re-check", id, why)
+		}
+	}
+	// The floor is the same kind as ciusArtefact.minIDs and guards the same failure:
+	// a classifier that reads nothing classifies everything.
+	if classified < 2400 {
+		t.Fatalf("classified only %d published identifiers across the five national rule sets; the harness is "+
+			"not reading the artefacts", classified)
+	}
+	t.Logf("classified %d published identifiers across %d vendored national Schematron files, %d of them by the "+
+		"withdrawn-identifier list", classified, total, len(ciusForeignResidue))
+}
+
+// ciusSourceOfFile names the authority a vendored file belongs to, for the failure
+// message above.
+func ciusSourceOfFile(base string) Source {
+	for _, a := range ciusArtefacts {
+		for _, g := range a.globs {
+			m, _ := filepath.Glob(filepath.Join("testdata", g))
+			for _, f := range m {
+				if filepath.Base(f) == base {
+					return a.source
+				}
+			}
+		}
+	}
+	return SourceNone
+}
 
 // ciusPublished reads the vendored national Schematrons and returns, per Source
 // and per binding, the flag set each published identifier carries.
@@ -350,6 +529,15 @@ var ciusEvaluated = map[Source]map[string]Severity{
 		"BR-NL-29": SeverityWarning, "BR-NL-30": SeverityWarning, "BR-NL-31": SeverityWarning,
 		"BR-NL-32-1": SeverityWarning, "BR-NL-32-and-34": SeverityWarning,
 		"BR-NL-33": SeverityWarning, "BR-NL-35": SeverityWarning,
+		// The G-account extension, UBL binding only. BR-GA-6 is the one assertion in
+		// any of these artefacts that carries no flag attribute at all, and it is
+		// fatal here because that is what a conforming processor makes of it: phive
+		// runs ph-schematron, whose DefaultSVRLErrorLevelDeterminator folds an absent
+		// or unrecognised flag onto DEFAULT_ERROR_LEVEL, and that constant is
+		// EErrorLevel.ERROR. See TestGAccountSeveritiesAreThePublishedFlags.
+		"BR-GA-0": SeverityFatal, "BR-GA-1": SeverityFatal, "BR-GA-2": SeverityFatal,
+		"BR-GA-3": SeverityFatal, "BR-GA-4": SeverityFatal, "BR-GA-5": SeverityFatal,
+		"BR-GA-6": SeverityFatal, "BR-GA-7": SeverityFatal,
 	},
 }
 
@@ -438,17 +626,29 @@ func TestCIUSPublishedInventory(t *testing.T) {
 		{SourceCIUSRO, "UBL", 121, 121, 0},
 		{SourceUBLBE, "UBL", 15, 15, 0},
 		{SourceSRBDT, "UBL", 46, 46, 0},
-		{SourceNLCIUS, "UBL", 34, 12, 22},
-		{SourceNLCIUS, "CII", 33, 11, 22},
+		// 43 and 34, not the 34 and 33 PR 22 recorded: the survey's identifier filter
+		// stopped at ^BR-NL- and did not admit the eight BR-GA-* rules of the
+		// G-account extension, nor the empty-element rule that each binding publishes
+		// under a name of its own (SI-UBL-2, empty-element-check).
+		{SourceNLCIUS, "UBL", 43, 20, 23},
+		{SourceNLCIUS, "CII", 34, 11, 23},
 	} {
 		ids := pub[want.src][want.binding]
 		if ids == nil {
 			t.Errorf("no %s binding was read for %q", want.binding, want.src)
 			continue
 		}
+		// Split by Severity rather than by the literal flag string, because one
+		// published assertion carries no flag at all — BR-GA-6 — and "the string is
+		// not 'fatal'" would file it as advisory, which is neither what
+		// ph-schematron makes of it nor what this package reports. severityOfFlag is
+		// the one place that fold is decided.
 		fatal, warn := 0, 0
 		for id := range ids {
-			if pickFlag(ids[id]) == "fatal" {
+			if sev, known := severityOfFlag(pickFlag(ids[id])); !known {
+				t.Errorf("%s/%s publishes %s with the flag %v, which this package cannot fold onto a Severity",
+					want.src, want.binding, id, keysOf(ids[id]))
+			} else if sev == SeverityFatal {
 				fatal++
 			} else {
 				warn++
@@ -468,13 +668,27 @@ func TestCIUSPublishedInventory(t *testing.T) {
 	// UBL document element, a question CII does not have), and BR-NL-22/23 are
 	// CII-only.
 	ublOnly, ciiOnly := diffIDs(pub[SourceNLCIUS]["UBL"], pub[SourceNLCIUS]["CII"])
-	if strings.Join(ublOnly, " ") != "BR-NL-32-1 BR-NL-32-2 BR-NL-32-3 BR-NL-8" {
-		t.Errorf("NLCIUS publishes %v in UBL and not in CII; the expected difference is BR-NL-8 and the three "+
-			"BR-NL-32-N, and a change here changes which findings a CII document may carry", ublOnly)
+	if strings.Join(ublOnly, " ") != "BR-GA-0 BR-GA-1 BR-GA-2 BR-GA-3 BR-GA-4 BR-GA-5 BR-GA-6 BR-GA-7 "+
+		"BR-NL-32-1 BR-NL-32-2 BR-NL-32-3 BR-NL-8 SI-UBL-2" {
+		t.Errorf("NLCIUS publishes %v in UBL and not in CII; the expected difference is the eight BR-GA-*, "+
+			"BR-NL-8, the three BR-NL-32-N and SI-UBL-2, and a change here changes which findings a CII document "+
+			"may carry", ublOnly)
 	}
-	if strings.Join(ciiOnly, " ") != "BR-NL-22 BR-NL-23 BR-NL-32-and-34" {
-		t.Errorf("NLCIUS publishes %v in CII and not in UBL; the expected difference is BR-NL-22, BR-NL-23 and "+
-			"BR-NL-32-and-34", ciiOnly)
+	if strings.Join(ciiOnly, " ") != "BR-NL-22 BR-NL-23 BR-NL-32-and-34 empty-element-check" {
+		t.Errorf("NLCIUS publishes %v in CII and not in UBL; the expected difference is BR-NL-22, BR-NL-23, "+
+			"BR-NL-32-and-34 and empty-element-check", ciiOnly)
+	}
+	// The G-account extension is UBL's alone, and that is the fact that decides
+	// whether a CII invoice declaring the extension's specification identifier may
+	// carry a BR-GA finding. It may not: SimplerInvoicing publishes no CII G-account
+	// Schematron, and NLCIUS-CII-validation.sch recognises the identifier in its $si
+	// and $s gates without publishing a single rule of the extension. This is the
+	// same question C32 and C36 got wrong twenty times between them.
+	for id := range pub[SourceNLCIUS]["CII"] {
+		if strings.HasPrefix(id, "BR-GA-") {
+			t.Errorf("the NLCIUS CII binding now publishes %s; nlciusGAccountApplies gates the extension on a UBL "+
+				"Invoice root and would have to change", id)
+		}
 	}
 }
 
@@ -544,9 +758,25 @@ func TestCoverageNamesOnlyRulesTheseAuthoritiesPublish(t *testing.T) {
 						continue
 					}
 					checked++
-					if _, ok := published[id]; !ok {
+					got, ok := published[id]
+					if !ok {
 						t.Errorf("Coverage(%q) names %q, which the vendored Schematron does not publish: %q",
 							src, id, text)
+						continue
+					}
+					// And the severity column, which had no guard for these five
+					// Sources at all: TestCoverageSeveritiesMatchThePublishedFlag reads
+					// EN 16931, XRechnung and Peppol only, because until PR 22 these
+					// authorities' artefacts were not here to read. A coverage entry's
+					// Severity is a quotation like a finding's (D10), and an entry that
+					// misquotes it tells a caller a fatal gap is advisory.
+					if want, known := severityOfFlag(pickFlag(got)); !known {
+						t.Errorf("%s/%s carries the flag %v, which this package cannot fold onto a Severity",
+							src, id, keysOf(got))
+					} else if entry.Severity != want {
+						t.Errorf("Coverage(%q) records the family %q as %s, and its authority flags %s %v. A "+
+							"coverage entry's severity is the authority's flag quoted and nothing else",
+							src, entry.Rules, entry.Severity, id, keysOf(got))
 					}
 				}
 			}

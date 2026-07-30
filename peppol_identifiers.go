@@ -21,7 +21,7 @@ import "strings"
 //
 // The whole family fires on a value and never on its absence: a document that uses
 // none of the twelve schemes answers to none of these rules. That is why 7 of the
-// 12 are silent over all 1,680 corpus documents, and it is not mis-wiring —
+// 12 are silent over all 1,690 corpus documents, and it is not mis-wiring —
 // OpenPEPPOL ships a test set for each, and TestEveryPublishedPeppolRuleHasBothVerdicts
 // requires every one of them to have a document that trips it.
 
