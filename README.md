@@ -84,12 +84,25 @@ Every `Violation` carries the severity its authority gave the rule: CEN's
 authorities' equivalents. `SeverityFatal` is the zero value, so an unstamped
 finding reads as blocking rather than as advisory — the fail-safe direction.
 
-The warnings are one rule set and one only: the advisory halves of CEN's two
-EN 16931 syntax bindings — 676 `UBL-CR-*`, 21 `UBL-DT-*`, 440 `CII-SR-*` and 31
-`CII-DT-*` assertions, generated from CEN's Schematron into a table this package
-evaluates. Their job is to hold a document down to the EN 16931 core subset of
-UBL and CII, which is a thing a reference validator reports and no authority
-rejects an invoice for. Everything else this package implements is fatal.
+Three rule sets report warnings, and everything else this package implements is
+fatal:
+
+- the advisory halves of CEN's two EN 16931 syntax bindings — 676 `UBL-CR-*`, 21
+  `UBL-DT-*`, 440 `CII-SR-*` and 31 `CII-DT-*` assertions, generated from CEN's
+  Schematron into a table this package evaluates. Their job is to hold a document
+  down to the EN 16931 core subset of UBL and CII, which is a thing a reference
+  validator reports and no authority rejects an invoice for;
+- eleven of XRechnung's fifty-seven — the invoice type code, the specification
+  identifier, the two IBAN checks, the telephone and email formats and five more,
+  which KoSIT flags `warning` or `information`;
+- six of OpenPEPPOL's — the Italian, Danish and Swedish participant-identifier
+  format checks `PEPPOL-COMMON-R044/R045/R046/R047/R052/R053` — plus
+  `PEPPOL-EN16931-R120`, which OpenPEPPOL flags fatal and KoSIT re-flags `warning`
+  when it merges it into XRechnung, so the same rule is a non-conformance on the
+  Peppol path and a warning on the German one.
+
+(This section said "one rule set and one only" until the second and third arrived;
+the KoSIT half had been true for a release before anyone corrected the sentence.)
 
 That is checked rather than assumed, in both directions: one test sweeps the whole
 corpus and fails on any finding whose severity does not match the half of the
@@ -120,9 +133,10 @@ the two tests that hold the table to it.
 
 ## What a clean report does and does not mean
 
-**`Conformant()` returns false for every document except one validated against the
-EN 16931 core alone.** That is not a bug and it is the first thing to understand
-about this package.
+**`Conformant()` returns false for most documents, whatever they contain.** That is
+not a bug and it is the first thing to understand about this package. Two rule sets
+are exceptions today — the EN 16931 core and XRechnung — and every other validator
+here returns false for a clean invoice.
 
 `len(report.Violations) == 0` means only *the checks that ran found nothing*. It
 is equally true of a run that checked everything, a run that was cancelled or hit
@@ -131,18 +145,29 @@ authority publishes. Every rule set here is a documented subset, and
 `Coverage(src)` is where each one says so.
 
 `Conformant()` is the weaker and more useful question, because it passes over the
-gaps an authority would not reject a document for. The EN 16931 core is the one
-rule set with no **fatal** gap left: every fatal rule of the semantic model, of
-the UBL binding and of the CII binding is evaluated, bar the few CEN's own
-reference implementation cannot report, so `Validate` with `ProfileEN16931` — and
-`ValidateCIUS` on a document that declares no CIUS — returns `Conformant() == true`
-for a clean invoice. Every CIUS and national validator still names a gap its
-authority flags fatal and a validator could close, so those return false whatever
-the document.
+gaps an authority would not reject a document for. Two rule sets have no **fatal**
+gap left:
+
+- the **EN 16931 core**: every fatal rule of the semantic model, of the UBL binding
+  and of the CII binding is evaluated, bar the few CEN's own reference
+  implementation cannot report, so `Validate` with `ProfileEN16931` — and
+  `ValidateCIUS` on a document that declares no CIUS — returns
+  `Conformant() == true` for a clean invoice;
+- **XRechnung**: the Schematron a German buyer validates against is 78 identifiers,
+  KoSIT's own 57 plus 21 it merges in from Peppol BIS Billing 3.0, and all 78 are
+  evaluated. The imported findings carry `SourcePeppol`, because `Source` names the
+  authority that wrote the rule.
+
+Every other CIUS and national validator still names a gap its authority flags fatal
+and a validator could close, so those return false whatever the document. That
+includes `ValidatePeppol`: all 59 `PEPPOL-COMMON-*` and `PEPPOL-EN16931-*`
+identifiers are evaluated, and the 101 country-specific rules OpenPEPPOL publishes
+in the same two Schematron files (`DE-R-*`, `DK-R-*`, `GR-R-*`, `IS-R-*`, `IT-R-*`,
+`NL-R-*`, `NO-R-*`, `SE-R-*`) are not.
 
 `Complete()` is the stricter question — "did this package see everything a
-reference validator could see" — and the EN 16931 core is the first rule set to
-answer yes. Its 1,168 advisory binding rules used to be the reason it could not;
+reference validator could see" — and the same two rule sets answer yes. The EN 16931
+core's 1,168 advisory binding rules used to be the reason it could not;
 they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
 rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
 three unreachable in CEN's own Schematron rule ordering, and one whose UBL test a
@@ -150,6 +175,12 @@ correctly PCI-masked card number trips. Those are marked `Unevaluable`, so they 
 longer hold the answer down — a rule nobody can check is not a rule this package
 skipped. Every other rule set still names a gap it could close, so `Complete()` is
 false there.
+
+The XRechnung path answers yes for a different reason: it had exactly one gap, and
+it was a rule set it *imports* rather than one of its own — the twenty-one Peppol
+rules the released artefact merges in, one of which (`PEPPOL-EN16931-R061`) had
+replaced KoSIT's withdrawn `BR-DE-29`, so BG-19's mandate reference was checked by
+nothing on the German path at all.
 
 Note what `Complete()` is *not*: it says nothing about what was found. A document
 with twenty fatal findings can be `Complete` — every rule ran, and twenty of them

@@ -73,16 +73,21 @@
 // nobody can check is not a rule this package skipped. See RuleFamily.Unevaluable,
 // which documents how narrow that is, Report and Coverage.
 //
-// Two rule sets report warnings, and every other finding in this package is
+// Three rule sets report warnings, and every other finding in this package is
 // fatal. CEN flags 1,168 of its two syntax bindings' assertions warning rather
 // than fatal — the UBL-CR-*, UBL-DT-*, CII-SR-* and CII-DT-* rules that hold a
 // document down to the EN 16931 core subset of UBL and CII — and this package
 // evaluates all of them from tables generated out of CEN's own Schematron. KoSIT
 // flags eleven of XRechnung's fifty-seven rules warning or information: the
 // invoice type code, the specification identifier, the two IBAN checks, the
-// telephone and email formats and five more. Neither set is a verdict: a document
-// whose only findings are these is Conformant, and a caller gating on
-// Report.Fatal never sees them. See Severity and Report.Warnings.
+// telephone and email formats and five more. OpenPEPPOL flags six of its
+// fifty-nine warning — the Italian, Danish and Swedish participant-identifier
+// format checks — and one more, PEPPOL-EN16931-R120, is fatal in OpenPEPPOL's own
+// Schematron and warning in the XRechnung artefact that merges it, so the same
+// rule is a non-conformance on one path and advisory on the other. None of these
+// is a verdict: a document whose only findings are these is Conformant, and a
+// caller gating on Report.Fatal never sees them. See Severity and
+// Report.Warnings.
 //
 // # Concurrency
 //
@@ -283,7 +288,14 @@ const (
 	SourceEN16931 Source = "EN 16931"
 	// SourceXRechnung is the German KoSIT XRechnung CIUS (BR-DE-*).
 	SourceXRechnung Source = "XRechnung"
-	// SourcePeppol is OpenPEPPOL BIS Billing 3.0 (PEPPOL-EN16931-R*).
+	// SourcePeppol is OpenPEPPOL BIS Billing 3.0 (PEPPOL-EN16931-* and
+	// PEPPOL-COMMON-*).
+	//
+	// It is the one Source a validator for another authority emits: the released
+	// XRechnung Schematron merges twenty-one of these rules in, so
+	// ValidateXRechnung reports them — under OpenPEPPOL's Source, because Source
+	// names the authority that wrote the rule. Their coverage is XRechnung's, not
+	// Peppol's; see the comment on the coverage table in report.go.
 	SourcePeppol Source = "Peppol"
 	// SourceNLCIUS is the Dutch SimplerInvoicing NLCIUS (BR-NL-*).
 	SourceNLCIUS Source = "NLCIUS"
@@ -449,13 +461,16 @@ func (v Violation) Error() string {
 // severity a rule carries is a fact about the rule, so it belongs where the rule
 // set decides it and not in an argument a call could get wrong by omission.
 //
-// There are three of them, one per way that fact is known. adder is for a rule
-// set whose rules are all fatal, which is most of them. advisoryAdder is for the
+// There are four of them, one per way that fact is known. adder is for a rule set
+// whose rules are all fatal, which is most of them. advisoryAdder is for the
 // generated EN 16931 syntax bindings, where the whole table is advisory. xrAdder,
 // in xrechnung_rules.go, is for a rule set that is neither: KoSIT flags eleven of
 // its fifty-seven identifiers warning or information and the rest fatal, so its
 // severity is a per-identifier lookup with a test that reads the flags back out of
-// the Schematron.
+// the Schematron. peppolEval.add, in peppol_rules.go, is the fourth and the only one
+// that needs to know *which artefact* is being quoted, because one Peppol rule
+// carries two published flags: fatal in OpenPEPPOL's own Schematron and warning in
+// the XRechnung build that merges it.
 func adder(out *[]Violation, src Source) func(rule, msg string) {
 	return func(rule, msg string) {
 		*out = append(*out, Violation{Source: src, Rule: rule, Severity: SeverityFatal, Message: msg})
