@@ -538,8 +538,9 @@ var notEvaluated = map[Source][]RuleFamily{
 	// SourcePeppol, and a caller reading an XRechnung Report's NotEvaluated is told
 	// what the XRechnung Schematron leaves unchecked rather than what OpenPEPPOL
 	// publishes and KoSIT never imported — which is most of Peppol's rule set,
-	// including every PEPPOL-COMMON-* identifier and the 101 country-specific rules
-	// below.
+	// including every PEPPOL-COMMON-* identifier and all 101 country-specific rules.
+	// Both tables are empty now, so the two coverage answers coincide; the
+	// distinction is still the one that decides which Sources a validator declares.
 
 	// Peppol BIS Billing 3.0. All 59 PEPPOL-COMMON-* and PEPPOL-EN16931-*
 	// identifiers the vendored Schematron publishes are evaluated — 58 in the UBL
