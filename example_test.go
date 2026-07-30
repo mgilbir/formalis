@@ -160,13 +160,15 @@ func ExampleDetect() {
 // — which is why a clean FatturaPA document is reported as not conformant.
 //
 // Unevaluable is the other half of the answer, and it is the difference between a
-// rule this package has not implemented and one nobody can implement.
-// Coverage(SourceNLCIUS) shows both kinds side by side. Three of its entries carry
-// Unevaluable: SimplerInvoicing publishes four assertions whose Schematron rule an
-// earlier rule of the same pattern has already claimed, so no validator — its own
-// included — ever reaches them, and those hold neither Conformant nor Complete down.
-// The first entry does not carry it, and so it does hold Complete down: it is one
-// advisory rule this package could evaluate and does not.
+// rule this package has not implemented and one nobody can implement. The two
+// sources below show the two kinds side by side. The FatturaPA entry does not carry
+// it, so it holds Conformant and Complete down: the SdI's own checks would reject
+// documents this package passes. Every Coverage(SourceNLCIUS) entry does carry it —
+// SimplerInvoicing publishes four assertions whose Schematron rule an earlier rule
+// of the same pattern has already claimed, so no validator, its own included, ever
+// reaches them — and those hold neither predicate down. So a Dutch invoice with no
+// findings is reported Conformant and Complete, and an Italian one is reported
+// neither.
 func ExampleCoverage() {
 	for _, gap := range formalis.Coverage(formalis.SourceFatturaPA) {
 		fmt.Printf("not evaluated: %s [%s]\n", gap.Rules, gap.Severity)
@@ -177,7 +179,6 @@ func ExampleCoverage() {
 
 	// Output:
 	// not evaluated: the SdI FatturaPA XSD and the SdI's consistency checks [fatal]
-	// not evaluated: SI-UBL-2 (UBL binding), empty-element-check (CII binding) [warning, unevaluable=false]
 	// not evaluated: BR-NL-9, in the CII binding only [fatal, unevaluable=true]
 	// not evaluated: BR-NL-31, in the CII binding only [warning, unevaluable=true]
 	// not evaluated: BR-NL-32-2, BR-NL-32-3, in the UBL binding only [warning, unevaluable=true]

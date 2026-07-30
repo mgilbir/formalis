@@ -538,6 +538,11 @@ var ciusEvaluated = map[Source]map[string]Severity{
 		"BR-GA-0": SeverityFatal, "BR-GA-1": SeverityFatal, "BR-GA-2": SeverityFatal,
 		"BR-GA-3": SeverityFatal, "BR-GA-4": SeverityFatal, "BR-GA-5": SeverityFatal,
 		"BR-GA-6": SeverityFatal, "BR-GA-7": SeverityFatal,
+		// The empty-element rule, one per binding: the same assertion under the name
+		// each file gives it. They are the only two identifiers in this whole table
+		// that are evaluated outside their rule set's gate, because they are the only
+		// two whose Schematron rule has no gate — see nlciusEmptyElements.
+		"SI-UBL-2": SeverityWarning, "empty-element-check": SeverityWarning,
 	},
 }
 

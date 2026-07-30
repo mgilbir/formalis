@@ -217,7 +217,7 @@ const (
 	// for a BR-NL rule, and the subset of those that are deliberately broken and
 	// must be caught. A truncation that removed only the broken half would leave
 	// the false-positive assertion looking healthy, so both are ratcheted.
-	minNLCIUSInstances    = 73
+	minNLCIUSInstances    = 74
 	minNLCIUSErrorsCaught = 27
 	// The third verdict the same suite carries, and the one nothing read until the
 	// advisory tier was implemented: the instances SimplerInvoicing ships as
@@ -226,7 +226,7 @@ const (
 	// minAdvisoryRulesFiring above — every other NLCIUS assertion here is about the
 	// *absence* of findings, so a tier that silently stopped firing would leave them
 	// all green.
-	minNLCIUSWarningsReported = 24
+	minNLCIUSWarningsReported = 25
 
 	// The same suite read per rule rather than per family
 	// (TestNLCIUSPerRuleFixtures). SimplerInvoicing is the one of these five
@@ -256,6 +256,23 @@ const (
 	// nothing checked that a rule fires at all.
 	minNLCIUSGAccountInstances  = 10
 	minNLCIUSGAccountRulesFired = 7
+
+	// The empty-element rule, per binding and in total
+	// (TestNLCIUSEmptyElementFindingsAreEmptyElements). It is the one rule in this
+	// package whose context is `//*`, so it is the one whose finding count is a
+	// property of the corpus rather than of a handful of documents: 739 findings over
+	// 233 of the 974 documents parseEN16931 accepts, 615 under SI-UBL-2 and 124 under
+	// empty-element-check. It is also the one NLCIUS rule that is evaluated outside
+	// the $si gate, so almost all of those are documents no other NLCIUS assertion
+	// says anything about — which is exactly why it needs a floor of its own. Every
+	// other NLCIUS number here would stay green if this rule stopped being emitted.
+	//
+	// Both bindings are counted, because the two identifiers are reached by disjoint
+	// halves of the corpus and one of them going silent must not be covered by the
+	// other.
+	minNLCIUSEmptyElementFindings = 700
+	minNLCIUSEmptyElementsUBL     = 590
+	minNLCIUSEmptyElementsCII     = 115
 
 	// National formats. Most corpora hold one document kind and the oracle runs
 	// on all of them. Three do not: the OIOUBL fetch already content-filters,

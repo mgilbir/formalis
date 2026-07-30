@@ -593,10 +593,12 @@ var notEvaluated = map[Source][]RuleFamily{
 	// holds it up: every one of the 244 published (identifier, binding) pairs has a
 	// document that trips it and one that does not.
 
-	// NLCIUS is finished in both halves and in both bindings — 34 identifiers in
-	// UBL, 33 in CII — and it was the last rule set in this package whose only gap
-	// was advisory. Its "not recommended" tier is evaluated now, as warnings, so a
-	// Dutch invoice reports Complete() as well as Conformant().
+	// NLCIUS is finished in both halves and in both bindings — 34 BR-NL identifiers
+	// in UBL, 33 in CII, plus the eight BR-GA-* of the G-account extension and the
+	// empty-element rule each binding ends with — and it was the last rule set in
+	// this package whose only gap was advisory. Its "not recommended" tier is
+	// evaluated now, as warnings, so a Dutch invoice reports Complete() as well as
+	// Conformant().
 	//
 	// The gap that entry used to describe read "BR-NL-19..35", which is a range and
 	// not a set: SI-UBL publishes no BR-NL-22, -23 or -34 at all, and its BR-NL-27,
@@ -615,41 +617,23 @@ var notEvaluated = map[Source][]RuleFamily{
 	// where the NLCIUS-CII file gives it a rule of its own against a context BR-NL-7's
 	// rule already holds. This package reported it for CII until that was read.
 	//
-	// One entry here is not Unevaluable and it is the newest: SI-UBL-2 in the UBL
-	// binding and empty-element-check in the CII one, which are one rule published
-	// under two names. It was found by the enumeration guard PR 28 built — the same
-	// guard that surfaced the eight BR-GA-* rules of the G-account extension, which
-	// *are* evaluated now — and until that guard existed no survey of this rule set
-	// had counted it, because every one of them matched on the prefix "BR-NL-" and
-	// stopped. That is C39's defect, in a second authority's artefact.
+	// The one entry here that was not Unevaluable is gone, and it was the newest:
+	// SI-UBL-2 in the UBL binding and empty-element-check in the CII one, one rule
+	// published under two names. PR 28 found it with the enumeration guard it built
+	// — the same guard that surfaced the eight BR-GA-* rules of the G-account
+	// extension — and named it rather than evaluating it, because it is the only
+	// rule in either binding that carries no gate and evaluating it therefore
+	// changes what ValidateNLCIUS says about a document that is not an NLCIUS
+	// invoice.
 	//
-	// It is named rather than evaluated, and the reason is a property of the rule
-	// rather than of the work. It is the only rule in either binding that carries no
-	// gate: every BR-NL rule is inside $si ("this document declares the NLCIUS
-	// specification identifier") or $s ("$si and the supplier is Dutch"), and this
-	// one is inside neither, so a faithful implementation would report on documents
-	// ValidateNLCIUS has deliberately decided to say nothing about — see
-	// nlciusApplies, where that decision is argued. Evaluating it inside $si instead
-	// would be reporting less than the authority does under a rule of this package's
-	// own invention. Either choice is a change to what ValidateNLCIUS means for a
-	// non-NLCIUS document, which is a decision of its own and not a side effect of
-	// implementing an extension.
-	//
-	// Naming it costs Complete(), which was true for a Dutch invoice and is now
-	// false. That is a correction and not a regression: the claim rested on a survey
-	// that had never seen this rule.
+	// It is evaluated now, ungated, which is what SimplerInvoicing's own validator
+	// does; nlciusEmptyElements is where that decision and the rule-order arithmetic
+	// it needs are argued. Both identifiers are emitted, each in the binding that
+	// publishes it, at the flag="warning" both artefacts carry — so it cannot move
+	// Conformant(), and Complete() is true for a Dutch invoice again. That is not a
+	// return to the earlier claim: the earlier claim rested on a survey that had
+	// never seen this rule, and this one rests on the rule being evaluated.
 	SourceNLCIUS: {
-		{
-			Rules:    "SI-UBL-2 (UBL binding), empty-element-check (CII binding)",
-			Severity: SeverityWarning,
-			Reason: "one rule under two identifiers — `<assert test=\"false()\" flag=\"warning\">Document should " +
-				"not contain empty elements.` on the context `//*[not(*) and not(normalize-space())]`, last in " +
-				"the pattern in both si-ubl-2.0-nlcius.sch and NLCIUS-CII-validation.sch. It is the only rule in " +
-				"either binding that is not gated on the NLCIUS specification identifier, so evaluating it here " +
-				"would report on documents ValidateNLCIUS reports nothing for; and because it is last in the " +
-				"pattern, the identifier a conforming processor reports for any given empty element depends on " +
-				"which earlier rule of that pattern already claims it",
-		},
 		{
 			Rules:       "BR-NL-9, in the CII binding only",
 			Severity:    SeverityFatal,

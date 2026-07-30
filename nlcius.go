@@ -107,10 +107,10 @@ import (
 // The BR-NL-* family is not the whole of either binding. si-ubl-2.0-nlcius.sch ends
 // with one more rule, SI-UBL-2 ("Document should not contain empty elements"), and
 // NLCIUS-CII-validation.sch ends with the same rule under the identifier
-// empty-element-check. Neither is evaluated here and both are named in
-// Coverage(SourceNLCIUS), which is where the reasoning is. The UBL binding also
-// carries the eight BR-GA-* rules of the G-account extension, in a file of their
-// own — see nlcius_gaccount.go.
+// empty-element-check. Both are evaluated now — see nlciusEmptyElements, which is
+// where the two decisions they need are argued. The UBL binding also carries the
+// eight BR-GA-* rules of the G-account extension, in a file of their own — see
+// nlcius_gaccount.go.
 //
 // None of the three families was visible to any guard in this repository until PR
 // 28, because ciusArtefacts decided which published identifiers were NLCIUS's with
@@ -211,6 +211,10 @@ func validateNLCIUSRules(p *parsed, seen ruleContexts) []Violation {
 	// the extension — is precisely a document $si is false for. See
 	// nlcius_gaccount.go.
 	out := validateNLCIUSGAccount(p, seen)
+
+	// The empty-element rule, also outside $si, and for the same kind of reason:
+	// it is the one rule in either binding whose context carries no gate.
+	out = append(out, nlciusEmptyElements(p, seen)...)
 
 	// $si. Everything below is inside it.
 	if !nlciusApplies(inv) {
@@ -525,4 +529,233 @@ func nlciusCIIConditional(root *ciiNode, warn func(rule, msg string), seen ruleC
 		}
 	}
 	rec(root)
+}
+
+// ---------------------------------------------------------------------------
+// The empty-element rule
+// ---------------------------------------------------------------------------
+
+// Both bindings end their pattern with the same rule under a different name:
+//
+//	si-ubl-2.0-nlcius.sch   <rule context="//*[not(*) and not(normalize-space())]">
+//	                          <assert id="SI-UBL-2" test="false()" flag="warning">
+//	NLCIUS-CII-validation.sch  … <assert id="empty-element-check" test="false()" flag="warning">
+//
+// with the text "Document should not contain empty elements." in both. The two
+// identifiers are kept apart rather than folded into one, because each is what its
+// own artefact publishes and a caller comparing this package against a reference
+// validator compares identifiers.
+//
+// The assertion cannot pass, so the context *is* the rule: every element with no
+// child element and no non-whitespace content is a finding, one per element, which
+// is what a Schematron processor reports and what PEPPOL-EN16931-R008 — the same
+// rule, in OpenPEPPOL's and KoSIT's files, fatal there rather than advisory —
+// already does in peppol_rules.go.
+//
+// Two things about it needed deciding, and both are decided from the artefact.
+//
+// # It carries no gate, so neither does this
+//
+// It is the only rule in either binding whose context has no $si or $s predicate.
+// Every BR-NL rule is inside "this document declares the NLCIUS specification
+// identifier", and this one is not, so SimplerInvoicing's own validator reports
+// empty elements in a document that is not an NLCIUS invoice at all. This package
+// does the same: a caller who invoked ValidateNLCIUS asked for NLCIUS's judgement,
+// and answering with less than the authority answers, under a gate of this
+// package's own invention, would be the mirror image of the C36/C42 defect —
+// reporting *more* than the authority can. It is the one NLCIUS rule
+// ValidateNLCIUS can report for a Spanish supplier's Peppol invoice, and it is a
+// warning, so it cannot move Conformant().
+//
+// # It is last in its pattern, so earlier rules take nodes off it
+//
+// ISO Schematron gives a node to the first rule in a pattern whose context matches
+// it and to no other. This rule is rule 35 of 35 in the UBL binding and 34 of 34 in
+// the CII one, so an empty element that an earlier rule of the same pattern already
+// claims is *not* reported as an empty element: an empty cbc:TaxCurrencyCode in a
+// Dutch NLCIUS invoice is BR-NL-19's node, not SI-UBL-2's, and SimplerInvoicing's
+// validator says so. That is the same rule-order fact as C42, in the one position
+// where it subtracts findings from a rule rather than making one unreachable, and
+// nlciusUBLPatternContexts and nlciusCIIPatternContexts are the earlier contexts it
+// needs. Being last also means the rule takes no node off any other, so it changes
+// no other identifier's reachability.
+//
+// The subtraction is gated the way the earlier rules are: outside $si no earlier
+// rule matches anything, so every empty element is reported; inside $si but outside
+// $s only the $si contexts subtract, of which UBL has one and CII two; inside $s
+// all of them do.
+//
+// No document in the corpus exercises the subtraction — the 739 empty elements in
+// 1,690 documents are all outside every earlier context, and 735 of them are in
+// documents outside $si altogether — so it is checked by fixture rather than by
+// sweep. See TestNLCIUSEmptyElementYieldsTheClaimedNode.
+
+// nlciusPatternContext is one Schematron rule context of the nlcius pattern that
+// precedes the empty-element rule, in the form this package matches contexts:
+// local element names, because parseCII keys on local names.
+//
+// absolute distinguishes the two shapes the artefacts use. A relative context
+// ("cac:PaymentMeans/cbc:PaymentMeansCode") is an XSLT match pattern anchored at
+// its last step and matches at any depth, which is matchPath. An absolute one
+// ("/*", "/*/rsm:ExchangedDocument/ram:TypeCode") is anchored at the document
+// element, which is a walk of named children from the root; an empty path with
+// absolute set is the document element itself.
+//
+// si is the gate: false means the context carries [$s], true that it carries [$si].
+// Every context in the two patterns carries one or the other.
+type nlciusPatternContext struct {
+	path     []string
+	absolute bool
+	si       bool
+}
+
+// nodes returns the elements this context claims.
+func (c nlciusPatternContext) nodes(root *ciiNode) []*ciiNode {
+	if !c.absolute {
+		return root.matchPath(c.path...)
+	}
+	cur := []*ciiNode{root}
+	for _, name := range c.path {
+		var next []*ciiNode
+		for _, n := range cur {
+			next = append(next, n.all(name)...)
+		}
+		cur = next
+	}
+	return cur
+}
+
+// nlciusUBLPatternContexts is every distinct rule context of si-ubl-2.0-nlcius.sch's
+// pattern that sits before the SI-UBL-2 rule — rules 1 to 34 of 35, with the three
+// contexts the BR-NL-34 trio repeats folded in and cbc:InvoiceTypeCode[$s]|
+// cbc:CreditNoteTypeCode[$s] split into its two alternatives.
+//
+// TestNLCIUSEmptyElementShadowsAreDerivedFromTheArtefacts re-derives this list from
+// the file, in both directions, so a release that adds a rule to the pattern cannot
+// leave it here as a stale claim about somebody else's Schematron.
+var nlciusUBLPatternContexts = []nlciusPatternContext{
+	{absolute: true},
+	{path: []string{"AccountingSupplierParty", "Party"}},
+	{path: []string{"AccountingSupplierParty", "Party", "PostalAddress"}},
+	{path: []string{"AccountingCustomerParty", "Party", "PostalAddress"}},
+	{path: []string{"TaxRepresentativeParty", "PostalAddress"}},
+	{path: []string{"InvoiceTypeCode"}},
+	{path: []string{"CreditNoteTypeCode"}},
+	{path: []string{"AccountingCustomerParty", "Party", "PartyLegalEntity"}},
+	{path: []string{"LegalMonetaryTotal"}},
+	{path: []string{"PaymentMeans"}},
+	{path: []string{"OrderLineReference", "LineID"}, si: true},
+	{path: []string{"TaxCurrencyCode"}},
+	{path: []string{"TaxPointDate"}},
+	{path: []string{"InvoicePeriod", "DescriptionCode"}},
+	{path: []string{"BillingReference", "InvoiceDocumentReference", "IssueDate"}},
+	{path: []string{"AccountingSupplierParty", "Party", "PartyTaxScheme"}},
+	{path: []string{"AccountingSupplierParty", "Party", "PartyLegalEntity", "CompanyLegalForm"}},
+	{path: []string{"AccountingSupplierParty", "Party", "PostalAddress", "AddressLine", "Line"}},
+	{path: []string{"AccountingCustomerParty", "Party", "PostalAddress", "AddressLine", "Line"}},
+	{path: []string{"TaxRepresentativeParty", "PostalAddress", "AddressLine", "Line"}},
+	{path: []string{"Delivery", "DeliveryLocation", "Address", "AddressLine", "Line"}},
+	{path: []string{"AccountingSupplierParty", "Party", "PostalAddress", "CountrySubentity"}},
+	{path: []string{"AccountingCustomerParty", "Party", "PostalAddress", "CountrySubentity"}},
+	{path: []string{"TaxRepresentativeParty", "PostalAddress", "CountrySubentity"}},
+	{path: []string{"Delivery", "DeliveryLocation", "Address", "CountrySubentity"}},
+	{path: []string{"PaymentMeans", "PaymentMeansCode"}},
+	{path: []string{"PaymentMeans", "PayeeFinancialAccount", "Name"}},
+	{path: []string{"AllowanceCharge", "AllowanceChargeReasonCode"}},
+	{path: []string{"InvoiceLine", "AllowanceCharge", "AllowanceChargeReasonCode"}},
+	{path: []string{"CreditNoteLine", "AllowanceCharge", "AllowanceChargeReasonCode"}},
+	{path: []string{"TaxTotal", "TaxAmount"}},
+	{path: []string{"TaxTotal", "TaxSubtotal", "TaxCategory", "TaxExemptionReasonCode"}},
+}
+
+// nlciusCIIPatternContexts is the same for NLCIUS-CII-validation.sch: rules 1 to 33
+// of 34, with the two contexts BR-NL-9 and BR-NL-31 repeat folded in — those are the
+// two the file cannot reach, and a context claims nodes whether or not the rule
+// holding it says anything about them.
+var nlciusCIIPatternContexts = []nlciusPatternContext{
+	{path: []string{"SellerTradeParty", "SpecifiedLegalOrganization"}},
+	{path: []string{"ApplicableHeaderTradeAgreement"}},
+	{path: []string{"SellerTradeParty", "PostalTradeAddress"}},
+	{path: []string{"BuyerTradeParty", "PostalTradeAddress"}},
+	{path: []string{"SellerTaxRepresentativeTradeParty", "PostalTradeAddress"}},
+	{path: []string{"ExchangedDocument", "TypeCode"}, absolute: true, si: true},
+	{path: []string{"BuyerTradeParty"}},
+	{path: []string{"SpecifiedTradeSettlementHeaderMonetarySummation"}},
+	{path: []string{"SpecifiedTradeSettlementPaymentMeans"}},
+	{path: []string{"BuyerOrderReferencedDocument", "LineID"}, si: true},
+	{path: []string{"TaxCurrencyCode"}},
+	{path: []string{"TaxPointDate", "DateString"}},
+	{path: []string{"DueDateTypeCode"}},
+	{path: []string{"SubjectCode"}},
+	{path: []string{"BusinessProcessSpecifiedDocumentContextParameter", "ID"}},
+	{path: []string{"InvoiceReferencedDocument", "FormattedIssueDateTime", "DateTimeString"}},
+	{path: []string{"SellerTradeParty", "SpecifiedTaxRegistration"}},
+	{path: []string{"SellerTradeParty", "Description"}},
+	{path: []string{"SellerTradeParty", "PostalTradeAddress", "LineThree"}},
+	{path: []string{"BuyerTradeParty", "PostalTradeAddress", "LineThree"}},
+	{path: []string{"SellerTaxRepresentativeTradeParty", "PostalTradeAddress", "LineThree"}},
+	{path: []string{"ShipToTradeParty", "PostalTradeAddress", "LineThree"}},
+	{path: []string{"SellerTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}},
+	{path: []string{"BuyerTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}},
+	{path: []string{"SellerTaxRepresentativeTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}},
+	{path: []string{"ShipToTradeParty", "PostalTradeAddress", "CountrySubDivisionName"}},
+	{path: []string{"SpecifiedTradeSettlementPaymentMeans", "Information"}},
+	{path: []string{"PayeePartyCreditorFinancialAccount", "AccountName"}},
+	{path: []string{"SpecifiedTradeAllowanceCharge", "ReasonCode"}},
+	{path: []string{"SpecifiedTradeSettlementHeaderMonetarySummation", "TaxTotalAmount"}},
+	{path: []string{"ApplicableTradeTax", "ExemptionReasonCode"}},
+}
+
+// nlciusEmptyElements evaluates SI-UBL-2 (UBL) or empty-element-check (CII).
+func nlciusEmptyElements(p *parsed, seen ruleContexts) []Violation {
+	id, contexts := "SI-UBL-2", nlciusUBLPatternContexts
+	if p.inv.syntax == "CII" {
+		id, contexts = "empty-element-check", nlciusCIIPatternContexts
+	}
+	claimed := nlciusClaimedNodes(p, contexts)
+
+	var out []Violation
+	warn := advisoryAdder(&out, SourceNLCIUS)
+	var walk func(*ciiNode)
+	walk = func(n *ciiNode) {
+		// not(*) and not(normalize-space()). The second half reads the element's own
+		// character data rather than stringValue, which is the same thing once the
+		// first half holds: an element with no element children has no descendant
+		// text but its own. A comment or a processing instruction is neither an
+		// element nor text in XPath, and parseCII discards both, so an element
+		// containing only one of those is empty on both sides.
+		if len(n.children) == 0 && strings.TrimSpace(n.text) == "" && !claimed[n] {
+			seen.reached(id)
+			warn(id, fmt.Sprintf("the element %q is empty; a document should not contain empty elements", n.name))
+		}
+		for _, c := range n.children {
+			walk(c)
+		}
+	}
+	walk(p.root)
+	return out
+}
+
+// nlciusClaimedNodes is the set of elements an earlier rule of the same pattern
+// holds, and so the set the empty-element rule never sees.
+//
+// It returns nil outside $si, which is not an optimisation but the artefact: every
+// other context in both patterns carries [$s] or [$si], so outside $si none of them
+// selects anything and every empty element falls through to the last rule.
+func nlciusClaimedNodes(p *parsed, contexts []nlciusPatternContext) map[*ciiNode]bool {
+	si := nlciusApplies(p.inv)
+	if !si {
+		return nil
+	}
+	s := p.inv.sellerCountry == "NL"
+	claimed := map[*ciiNode]bool{}
+	for _, c := range contexts {
+		if !c.si && !s {
+			continue
+		}
+		for _, n := range c.nodes(p.root) {
+			claimed[n] = true
+		}
+	}
+	return claimed
 }

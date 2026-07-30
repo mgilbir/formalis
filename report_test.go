@@ -341,6 +341,78 @@ func TestCIUSPTReportsConformantAndCompleteForACleanInvoice(t *testing.T) {
 	t.Logf("CIUS-PT: %d documents report Complete, and a clean Portuguese invoice reports Conformant", len(docs))
 }
 
+// TestNLCIUSReportsCompleteForEveryDocument is the same kind of assertion for the
+// Dutch path, and it is the one that has been true, then false, then true again.
+//
+// It became true when the "not recommended" tier was implemented: NLCIUS was the
+// first rule set here whose last gap was advisory. It became false when the guard
+// that enumerates published identifiers — rather than matching them against
+// ^BR-NL- — found the one rule each binding names differently, SI-UBL-2 and
+// empty-element-check, which nothing had counted. It is true again now that both
+// are evaluated, and this time over an inventory that was enumerated: what is left
+// in Coverage(SourceNLCIUS) is four assertions SimplerInvoicing publishes that no
+// validator, its own included, ever reaches.
+//
+// Complete is the whole claim here, and Conformant is not asserted on any one
+// document, because the fixture this rule set's mutation suite is built on is
+// deliberately clean under the *NLCIUS* rules alone — it carries a tax
+// representative without a VAT identifier, which BR-56 of the core reports. What is
+// asserted instead is the property that decides Conformant for NLCIUS: that this
+// rule set contributes no gap a validator could close, so its share of the verdict
+// is the findings and nothing else. TestValidatorsWithAFatalGapAreTheOnesWeThinkThey-
+// Are is the counterpart for the fatal half.
+//
+// Asserted over SimplerInvoicing's own instances as well as this package's
+// baseline, for the reason the two tests above give: a fixture written to be clean
+// under the rules this package implements is not evidence about them.
+func TestNLCIUSReportsCompleteForEveryDocument(t *testing.T) {
+	ctx := context.Background()
+	docs := map[string][]byte{"baseline": []byte(minimalNLCIUSUBL)}
+	for _, pat := range []string{"testdata/nlcius/testsuite/*.xml", "testdata/nlcius/gaccount/*.xml"} {
+		files, _ := filepath.Glob(pat)
+		for _, f := range files {
+			data, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatal(err)
+			}
+			docs[filepath.Base(f)] = data
+		}
+	}
+	conformant := 0
+	for name, data := range docs {
+		r := mustReport(t, ctx, ValidateNLCIUS, data)
+		if !r.Complete() {
+			var evaluable []string
+			for _, g := range r.NotEvaluated {
+				if !g.Unevaluable {
+					evaluable = append(evaluable, g.Rules)
+				}
+			}
+			t.Errorf("%s: ValidateNLCIUS is not Complete; the gaps it names that a validator could evaluate: %v",
+				name, evaluable)
+		}
+		if r.Conformant() {
+			conformant++
+		}
+	}
+	for _, g := range Coverage(SourceNLCIUS) {
+		if !g.Unevaluable {
+			t.Errorf("Coverage(SourceNLCIUS) names %q, which a validator could evaluate. NLCIUS's rule set is "+
+				"claimed finished; an entry that is not Unevaluable un-does that claim", g.Rules)
+		}
+	}
+	var got []string
+	for _, v := range mustReport(t, ctx, ValidateNLCIUS, []byte(minimalNLCIUSUBL)).Violations {
+		if v.Source == SourceNLCIUS {
+			got = append(got, v.Rule)
+		}
+	}
+	if len(got) != 0 {
+		t.Errorf("the clean Dutch baseline reports %v", got)
+	}
+	t.Logf("NLCIUS: %d documents report Complete and %d of them Conformant", len(docs), conformant)
+}
+
 // TestNoAuthoritysRuleSetIsImplementedInFull records the state of the package, so
 // that emptying an authority's coverage entry is a deliberate act rather than a
 // side effect.
@@ -879,6 +951,11 @@ func nlciusAdvisoryRuleIDs() map[string]bool {
 	// in either forbidden-path table. BR-NL-31 is UBL-only: the CII binding's copy
 	// is unevaluable.
 	for _, id := range []string{"BR-NL-25", "BR-NL-29", "BR-NL-31", "BR-NL-33"} {
+		out[id] = true
+	}
+	// The empty-element rule, which is neither a forbidden path nor a test but a
+	// context: one identifier per binding, flag="warning" in both artefacts.
+	for _, id := range []string{"SI-UBL-2", "empty-element-check"} {
 		out[id] = true
 	}
 	return out
@@ -1691,8 +1768,9 @@ func coverageText(src Source) string {
 // here reaches that state through the core:
 //
 //   - Validate with ProfileEN16931 runs the core and nothing else;
-//   - ValidateNLCIUS runs the core and NLCIUS, and NLCIUS is the one CIUS whose
-//     own gap (BR-NL-19..35, "not recommended") is advisory;
+//   - ValidateNLCIUS runs the core and NLCIUS, whose own rule set has no gap left
+//     at all: what Coverage(SourceNLCIUS) still names is four assertions no
+//     processor reaches;
 //   - ValidateCIUS on a document that declares no recognised CIUS routes to the
 //     core alone, which is the fixture below.
 //

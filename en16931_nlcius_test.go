@@ -2,6 +2,7 @@ package formalis
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -56,7 +57,14 @@ func TestNLCIUSConformanceSuite(t *testing.T) {
 	caught, warned, instances := 0, 0, 0
 	for _, f := range files {
 		base := filepath.Base(f)
-		if !strings.Contains(base, "BR-NL-") {
+		// The instances that exercise a rule of *this* rule set. That is the BR-NL
+		// family plus one more: SI-UBL-2.0_warning_empty_elements.xml, which names no
+		// rule in its file name because SimplerInvoicing's empty-element rule is not
+		// in the BR-NL numbering. It is the authority's own firing verdict for
+		// SI-UBL-2 and it went unread here for the same reason the rule itself did.
+		// The rest of the suite — UBL-SR-*, UBL-CR-*, BR-S-08, no_customizationid —
+		// exercises CEN's rules or the wrapper's, not SimplerInvoicing's.
+		if !strings.Contains(base, "BR-NL-") && !strings.Contains(base, "_empty_elements") {
 			continue
 		}
 		instances++
@@ -366,6 +374,29 @@ const nlciusCIIDiscouragedDoc = `<CrossIndustryInvoice>
 </SupplyChainTradeTransaction>
 </CrossIndustryInvoice>`
 
+// nlciusUBLEmptyElementDoc and nlciusCIIEmptyElementDoc are the firing verdict for
+// the empty-element rule, and each carries *two* empty elements rather than one,
+// because the rule has two halves to demonstrate.
+//
+// The first empty element is one no earlier rule of the nlcius pattern claims, so
+// the rule reports it: cbc:Note in UBL, ram:PaymentReference in CII.
+//
+// The second is cbc:TaxCurrencyCode / ram:TaxCurrencyCode, which BR-NL-19's rule
+// claims — earlier in the same pattern — and which the empty-element rule therefore
+// never sees. Both documents are inside $s, so the claim is live: a conforming
+// processor reports BR-NL-19 for that element and *not* SI-UBL-2. That is the
+// rule-order arithmetic nlciusEmptyElements does, and
+// TestNLCIUSEmptyElementYieldsTheClaimedNode is what checks it, because no document
+// in the corpus exercises it — SimplerInvoicing's own empty-element instance leaves
+// both its empty elements unclaimed.
+var nlciusUBLEmptyElementDoc = strings.Replace(minimalNLCIUSUBL,
+	"<cbc:ID>INV-1</cbc:ID>",
+	"<cbc:ID>INV-1</cbc:ID><cbc:Note></cbc:Note><cbc:TaxCurrencyCode></cbc:TaxCurrencyCode>", 1)
+
+var nlciusCIIEmptyElementDoc = strings.Replace(nlciusCIIDiscouragedDoc,
+	"<TaxCurrencyCode>SEK</TaxCurrencyCode>",
+	"<TaxCurrencyCode></TaxCurrencyCode><PaymentReference></PaymentReference>", 1)
+
 // nlciusExtras is one entry per advisory identifier, pointing at whichever of the
 // two documents above belongs to the binding that publishes it. It is the
 // corpus-free firing verdict C41 asks for: a rule that no fixture makes report is a
@@ -396,6 +427,8 @@ var nlciusExtras = []ciusDoc{
 	{"allowance or charge reason code, CII (32-and-34)", nlciusCIIDiscouragedDoc, "BR-NL-32-and-34"},
 	{"VAT total in the accounting currency (33)", nlciusUBLDiscouragedDoc, "BR-NL-33"},
 	{"VAT exemption reason code (35)", nlciusUBLDiscouragedDoc, "BR-NL-35"},
+	{"empty element, UBL binding (SI-UBL-2)", nlciusUBLEmptyElementDoc, "SI-UBL-2"},
+	{"empty element, CII binding (empty-element-check)", nlciusCIIEmptyElementDoc, "empty-element-check"},
 }
 
 // nlciusUnevaluable is what Coverage(SourceNLCIUS) records, per binding, in one
@@ -509,4 +542,333 @@ func TestNLCIUSRuleContextsAreReachable(t *testing.T) {
 		t.Errorf("the corpus now holds %d NLCIUS CII documents, so the CII-only identifiers are reachable and "+
 			"their exception in this test is stale", ciiNLCIUS)
 	}
+}
+
+// nlciusBindings is the two artefact files this rule set is read out of, with the
+// identifier each gives the empty-element rule.
+var nlciusBindings = []struct{ dir, file, id string }{
+	{"ubl", "si-ubl-2.0-nlcius.sch", "SI-UBL-2"},
+	{"cii", "NLCIUS-CII-validation.sch", "empty-element-check"},
+}
+
+// nlciusBindingPattern reads one binding's single pattern, or skips.
+func nlciusBindingPattern(t *testing.T, dir, file string) schPattern {
+	t.Helper()
+	path := filepath.Join("testdata", "nlcius", "schematron", dir, file)
+	if _, err := os.Stat(path); err != nil {
+		t.Skip("NLCIUS Schematron not present; run `make cius-schematron`")
+	}
+	return readSchPattern(t, path)
+}
+
+// TestNLCIUSEmptyElementRuleIsPublishedUngatedAndLast reads out of both artefacts
+// the two facts the implementation rests on, rather than believing either.
+//
+// The first is that the rule carries no gate. Every other rule in both patterns has
+// a context ending in [$s] or [$si] — "the supplier is Dutch and this document
+// declares the NLCIUS specification identifier", or just the second — and this one
+// has neither, so SimplerInvoicing's own validator reports empty elements in a
+// document that is not an NLCIUS invoice. ValidateNLCIUS does the same, and this is
+// what says it is entitled to: reporting less than the authority reports, under a
+// gate this package invented, would be a departure from the artefact in the same
+// way that reporting more is.
+//
+// The second is that it is *last* in its pattern. ISO Schematron gives a node to the
+// first matching rule and no other, so a rule with the broadest context in the file
+// would suppress everything after it if it came first. Coming last it suppresses
+// nothing, and is itself suppressed for any node an earlier rule claims — which is
+// the arithmetic nlciusUBLPatternContexts and nlciusCIIPatternContexts encode.
+func TestNLCIUSEmptyElementRuleIsPublishedUngatedAndLast(t *testing.T) {
+	const wantContext = "//*[not(*) and not(normalize-space())]"
+	for _, b := range nlciusBindings {
+		p := nlciusBindingPattern(t, b.dir, b.file)
+		last := p.Rules[len(p.Rules)-1]
+		if got := advisoryNorm(last.Context); got != wantContext {
+			t.Errorf("%s: the last rule of the pattern has context %q, want %q. The empty-element rule has "+
+				"moved or gone, and everything nlciusEmptyElements does about rule order depends on where it is",
+				b.file, got, wantContext)
+			continue
+		}
+		if len(last.Asserts) != 1 {
+			t.Fatalf("%s: the empty-element rule carries %d assertions, want 1", b.file, len(last.Asserts))
+		}
+		a := last.Asserts[0]
+		if a.ID != b.id {
+			t.Errorf("%s: the empty-element assertion is published as %q and this package emits %q. Each binding's "+
+				"own identifier is what a caller compares against a reference validator", b.file, a.ID, b.id)
+		}
+		if a.Flag != "warning" {
+			t.Errorf("%s/%s carries flag=%q; this package emits it as SeverityWarning, and a severity is a "+
+				"quotation", b.file, a.ID, a.Flag)
+		}
+		if a.Test != "false()" {
+			t.Errorf("%s/%s has test=%q; the implementation treats the context as the rule, which is only right "+
+				"while the assertion cannot pass", b.file, a.ID, a.Test)
+		}
+		if got := advisoryNorm(a.Text); got != "Document should not contain empty elements." {
+			t.Errorf("%s/%s says %q", b.file, a.ID, got)
+		}
+		// Ungated, and every other rule in the pattern gated: the two halves of the
+		// claim, so neither "it lost its gate" nor "they all lost theirs" reads as a
+		// pass.
+		if _, gate := schSplitPredicate(advisoryNorm(last.Context)); gate != "" {
+			t.Errorf("%s: the empty-element rule now carries the gate %q, so evaluating it ungated reports on "+
+				"documents its authority does not", b.file, gate)
+		}
+		for i, r := range p.Rules[:len(p.Rules)-1] {
+			for _, alt := range schAlternatives(advisoryNorm(r.Context)) {
+				if _, gate := schSplitPredicate(alt); gate == "" {
+					t.Errorf("%s: rule %d, context %q, carries no $s or $si gate. A second ungated rule would "+
+						"mean the file's shape has changed and the reasoning in nlciusEmptyElements needs "+
+						"re-reading", b.file, i+1, alt)
+				}
+			}
+		}
+	}
+}
+
+// TestNLCIUSEmptyElementShadowsAreDerivedFromTheArtefacts re-derives
+// nlciusUBLPatternContexts and nlciusCIIPatternContexts from the two files, in both
+// directions.
+//
+// Those two tables are a claim about somebody else's Schematron: "these are the
+// contexts that come before the empty-element rule in its pattern, and so these are
+// the nodes it never sees". A stale entry makes this package suppress a finding the
+// authority reports; a missing one makes it report a finding the authority does not.
+// Neither shows up as a failure anywhere else, because no document in the corpus
+// exercises the interaction at all — which is exactly the state C42's eight Serbian
+// false positives lived in.
+func TestNLCIUSEmptyElementShadowsAreDerivedFromTheArtefacts(t *testing.T) {
+	for _, b := range nlciusBindings {
+		p := nlciusBindingPattern(t, b.dir, b.file)
+		want := map[string]bool{}
+		for _, r := range p.Rules[:len(p.Rules)-1] {
+			for _, alt := range schAlternatives(advisoryNorm(r.Context)) {
+				want[nlciusContextKey(nlciusParseContext(t, b.file, alt))] = true
+			}
+		}
+		got := map[string]bool{}
+		table := nlciusUBLPatternContexts
+		if b.dir == "cii" {
+			table = nlciusCIIPatternContexts
+		}
+		for _, c := range table {
+			got[nlciusContextKey(c)] = true
+		}
+		// The comparison is on the *set*, because several rules repeat a context and
+		// the tables hold each once: a context claims the same nodes however many
+		// rules are bound to it.
+		for k := range want {
+			if !got[k] {
+				t.Errorf("%s: the pattern holds the context %q before the empty-element rule and neither "+
+					"nlciusUBLPatternContexts nor nlciusCIIPatternContexts does. This package will report an "+
+					"empty element for a node its authority gives to that rule", b.file, k)
+			}
+		}
+		for k := range got {
+			if !want[k] {
+				t.Errorf("%s: this package suppresses empty-element findings for the context %q and no rule of "+
+					"the pattern claims it. That is a finding the authority reports and this package does not", b.file, k)
+			}
+		}
+		t.Logf("NLCIUS/%s: %d distinct contexts precede the empty-element rule, over %d rules",
+			strings.ToUpper(b.dir), len(want), len(p.Rules)-1)
+	}
+}
+
+// nlciusParseContext reads one rule context out of an artefact into the shape
+// nlciusUBLPatternContexts is written in: local element names, an absolute flag for
+// the two contexts anchored at "/*", and the gate.
+//
+// It fails rather than guesses. A context this package has never seen a shape of —
+// a predicate other than [$s] or [$si], an axis, a wildcard step — must not be
+// silently read as something narrower, because a context read too narrowly makes
+// this package report an empty element the authority gives to another rule.
+func nlciusParseContext(t *testing.T, file, alt string) nlciusPatternContext {
+	t.Helper()
+	path, gate := schSplitPredicate(alt)
+	switch gate {
+	case "[$s]":
+	case "[$si]":
+	default:
+		t.Errorf("%s: the context %q carries the gate %q, and nlciusEmptyElements knows only [$s] and [$si]",
+			file, alt, gate)
+	}
+	c := nlciusPatternContext{si: gate == "[$si]"}
+	if strings.HasPrefix(path, "/*") {
+		c.absolute = true
+		path = strings.TrimPrefix(strings.TrimPrefix(path, "/*"), "/")
+	}
+	if path != "" {
+		for _, step := range strings.Split(path, "/") {
+			if strings.ContainsAny(step, "[@()* ") {
+				t.Errorf("%s: the context step %q in %q is not a plain element name", file, step, alt)
+			}
+			if i := strings.Index(step, ":"); i >= 0 {
+				step = step[i+1:]
+			}
+			c.path = append(c.path, step)
+		}
+	}
+	return c
+}
+
+// nlciusContextKey is the canonical form both sides of the comparison are reduced
+// to.
+func nlciusContextKey(c nlciusPatternContext) string {
+	k := strings.Join(c.path, "/")
+	if c.absolute {
+		k = "/" + k
+	}
+	if c.si {
+		return k + "[$si]"
+	}
+	return k + "[$s]"
+}
+
+// TestNLCIUSEmptyElementYieldsTheClaimedNode is the behavioural half of the rule
+// order: a document with two empty elements, one of which BR-NL-19's rule claims,
+// must produce one empty-element finding and one BR-NL-19.
+//
+// It is a test rather than a note because the corpus cannot see it. Every empty
+// element in all 1,690 documents falls outside every earlier context — the only
+// NLCIUS instances with empty elements are SimplerInvoicing's three, and theirs are
+// cbc:Note, cbc:BuyerReference and cbc:CompanyID — so an implementation that ignored
+// rule order entirely would sweep the corpus with an identical answer.
+func TestNLCIUSEmptyElementYieldsTheClaimedNode(t *testing.T) {
+	for _, tc := range []struct{ name, doc, id, reported, claimed string }{
+		{"UBL", nlciusUBLEmptyElementDoc, "SI-UBL-2", "Note", "TaxCurrencyCode"},
+		{"CII", nlciusCIIEmptyElementDoc, "empty-element-check", "PaymentReference", "TaxCurrencyCode"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var empties, br19 []string
+			for _, v := range findings(t, context.Background(), ValidateNLCIUS, []byte(tc.doc)) {
+				switch {
+				case v.Rule == tc.id:
+					if v.Severity != SeverityWarning {
+						t.Errorf("%s arrived as %s; both artefacts flag it warning", v.Rule, v.Severity)
+					}
+					empties = append(empties, v.Message)
+				case v.Rule == "BR-NL-19":
+					br19 = append(br19, v.Message)
+				}
+			}
+			if len(empties) != 1 || !strings.Contains(empties[0], `"`+tc.reported+`"`) {
+				t.Errorf("%s reported %v; want exactly one finding, naming %q. The other empty element in this "+
+					"document is claimed by the rule carrying BR-NL-19, which is earlier in the same pattern",
+					tc.id, empties, tc.reported)
+			}
+			for _, m := range empties {
+				if strings.Contains(m, `"`+tc.claimed+`"`) {
+					t.Errorf("%s was reported for %q, which BR-NL-19's rule claims. No NLCIUS validator reports "+
+						"both identifiers for one node", tc.id, tc.claimed)
+				}
+			}
+			if len(br19) != 1 {
+				t.Errorf("BR-NL-19 fired %d times for a document with one (empty) %s; the claim that suppresses "+
+					"the empty-element finding is that this rule takes the node instead", len(br19), tc.claimed)
+			}
+		})
+	}
+}
+
+// TestNLCIUSEmptyElementIsReportedOutsideTheGate is the other decision, asserted on
+// a document: an invoice that declares no NLCIUS specification identifier at all
+// still collects the empty-element finding, and collects nothing else from this rule
+// set.
+//
+// That is a deliberate widening of what ValidateNLCIUS says. Every BR-NL rule is
+// silent for such a document — nlciusApplies is where that is argued — and this one
+// is not, because the artefact does not gate it. The second half of the assertion is
+// what keeps the widening honest: no *other* NLCIUS identifier may leak out with it.
+func TestNLCIUSEmptyElementIsReportedOutsideTheGate(t *testing.T) {
+	doc := strings.Replace(nlciusUBLEmptyElementDoc,
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0",
+		"urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:3.0", 1)
+	if doc == nlciusUBLEmptyElementDoc {
+		t.Fatal("the customization identifier was not replaced")
+	}
+	var got []string
+	for _, v := range findings(t, context.Background(), ValidateNLCIUS, []byte(doc)) {
+		if v.Source == SourceNLCIUS {
+			got = append(got, v.Rule)
+		}
+	}
+	// Two empty elements now, because BR-NL-19's rule is behind $s and no longer
+	// claims cbc:TaxCurrencyCode.
+	want := []string{"SI-UBL-2", "SI-UBL-2"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("a Peppol invoice validated as NLCIUS reported %v; want %v — the empty-element rule outside "+
+			"the gate and nothing else, because outside $si no other rule of the pattern matches anything", got, want)
+	}
+}
+
+// TestNLCIUSEmptyElementFindingsAreEmptyElements is the FP=0 half, over the whole
+// corpus and in the only sense this rule admits: every finding must name an element
+// that really has no child element and no non-whitespace content.
+//
+// It also ratchets the volume. The rule has a `//*` context, so it is the one rule
+// in this package whose finding count is a property of the corpus rather than of a
+// handful of documents, and a change that stopped emitting it would otherwise leave
+// every other NLCIUS assertion green.
+func TestNLCIUSEmptyElementFindingsAreEmptyElements(t *testing.T) {
+	docs, reported := 0, 0
+	perID := map[string]int{}
+	worst, worstFile := 0, ""
+	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, werr error) error {
+		if werr != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
+			return nil
+		}
+		data, rerr := os.ReadFile(p)
+		if rerr != nil {
+			t.Fatalf("%s: %v", p, rerr)
+		}
+		docs++
+		r := newRun(context.Background())
+		parsed, perr := parseEN16931(r, data)
+		if perr != nil {
+			return nil
+		}
+		// The elements that genuinely qualify, counted independently of the rule.
+		empty := map[string]int{}
+		var walk func(*ciiNode)
+		walk = func(n *ciiNode) {
+			if len(n.children) == 0 && strings.TrimSpace(n.text) == "" {
+				empty[n.name]++
+			}
+			for _, c := range n.children {
+				walk(c)
+			}
+		}
+		walk(parsed.root)
+
+		here := 0
+		for _, v := range nlciusEmptyElements(parsed, nil) {
+			perID[v.Rule]++
+			reported++
+			here++
+			name := strings.SplitN(v.Message, `"`, 3)[1]
+			if empty[name] == 0 {
+				t.Errorf("%s: %s names %q, which is not an element with no children and no non-whitespace "+
+					"content — or names one more of them than the document holds", p, v.Rule, name)
+			}
+			empty[name]--
+		}
+		if here > worst {
+			worst, worstFile = here, p
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if docs == 0 {
+		t.Skip("corpus not present (make cius-oracles)")
+	}
+	atLeast(t, "empty-element sweep corpus", docs, minCorpusDocuments)
+	atLeast(t, "NLCIUS empty-element findings", reported, minNLCIUSEmptyElementFindings)
+	atLeast(t, "NLCIUS SI-UBL-2 findings", perID["SI-UBL-2"], minNLCIUSEmptyElementsUBL)
+	atLeast(t, "NLCIUS empty-element-check findings", perID["empty-element-check"], minNLCIUSEmptyElementsCII)
+	t.Logf("NLCIUS empty elements: %d findings over %d documents (%v); the worst single document is %s with %d",
+		reported, docs, perID, worstFile, worst)
 }
