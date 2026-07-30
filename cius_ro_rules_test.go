@@ -286,7 +286,7 @@ func TestCIUSROUnevaluableAssertsAreDerivedFromTheArtefact(t *testing.T) {
 // for its generated half: for every assertion, either the corpus reaches its context
 // or this package says why not.
 //
-// A rule that reports nothing over 1,680 documents is not evidence of anything on
+// A rule that reports nothing over 1,690 documents is not evidence of anything on
 // its own. This separates the two readings — asked and answered "yes", versus never
 // asked — and it is the check that would catch a context bound to a misspelt element
 // name, which a clean sweep cannot.

@@ -115,7 +115,7 @@ func BenchmarkValidateEN16931(b *testing.B) {
 //
 // It is committed for the reason the advisory one above is. 291 assertions over
 // 173 contexts is the kind of number that invites resolving each context
-// independently, and 1,680 documents go through ValidateCIUSPT on every test run.
+// independently, and 1,690 documents go through ValidateCIUSPT on every test run.
 func BenchmarkCIUSPTDatatypeRules(b *testing.B) {
 	var trees []*ciiNode
 	for _, d := range benchCorpus(b, "UBL") {

@@ -38,7 +38,11 @@ import "testing"
 // absence.
 const (
 	// Whole-corpus sweeps: every .xml under testdata/, from every source.
-	minCorpusDocuments = 1680
+	//
+	// 1,690 rather than 1,680: PR 28 added the ten instances SimplerInvoicing ships
+	// for the G-account extension, which live in an upstream directory of their own
+	// and which no fetch here had ever touched.
+	minCorpusDocuments = 1690
 
 	// The two arbitration sweeps count different populations and are not
 	// comparable with each other: minRoutedDocuments is the documents in a
@@ -219,6 +223,21 @@ const (
 	// ships a _warning_ instance for.
 	minNLCIUSRuleVerdicts = 73
 	minNLCIUSRulesFired   = 30
+
+	// The G-account extension's instances, which are a *separate* upstream directory
+	// from the 95 above and which nothing here fetched until PR 28. That is why none
+	// of those 95 exercises the extension: they are SI-UBL 2.0 documents and these are
+	// SI-UBL 2.0 G-account documents, and phive registers the two as separate
+	// validation executor sets.
+	//
+	// Ten instances, nine of them broken against one of the eight published rules and
+	// one conforming. Seven distinct rules are exercised — BR-GA-1 and BR-GA-2 get two
+	// instances each, and BR-GA-0 gets none, which is what nlciusGAccountExtras is
+	// for. Both are floors for the usual reason: a fetch that returned only the
+	// conforming sample would leave the false-positive assertion looking healthy while
+	// nothing checked that a rule fires at all.
+	minNLCIUSGAccountInstances  = 10
+	minNLCIUSGAccountRulesFired = 7
 
 	// National formats. Most corpora hold one document kind and the oracle runs
 	// on all of them. Three do not: the OIOUBL fetch already content-filters,

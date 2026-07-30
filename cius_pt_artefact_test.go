@@ -507,7 +507,7 @@ var ptPublished211 = map[string]ptAssertion{
 // evaluated against in one document.
 //
 // It is the second half of "does this rule work", and it is a different question
-// from "does it fire". A rule that reports nothing across 1,680 documents is either
+// from "does it fire". A rule that reports nothing across 1,690 documents is either
 // a rule that was asked and kept answering yes — which is the desired outcome — or a
 // rule bound to an element name no document contains, which is not a working rule at
 // all and would look identical from the outside. The two are distinguishable only by
@@ -619,7 +619,7 @@ var ptContextsTheCorpusNeverReaches = map[string]string{
 // TestCIUSPTContextsAreReachable is requirement two of this rule set's oracle: for
 // every rule, either the corpus reaches its context or this package says why not.
 //
-// A rule that reports nothing over 1,680 documents is not evidence of anything on
+// A rule that reports nothing over 1,690 documents is not evidence of anything on
 // its own. This separates the two readings — asked and satisfied, versus never asked
 // — and forces the second into a table with a written reason, so that a rule bound
 // to a misspelt element name cannot hide behind "it never fires because conforming

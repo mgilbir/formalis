@@ -561,7 +561,7 @@ func advisoryAdder(out *[]Violation, src Source) func(rule, msg string) {
 // node.
 //
 // It exists because a clean sweep is not evidence. A rule that reports nothing over
-// 1,680 documents is either a rule that was asked and answered "conforms" or a rule
+// 1,690 documents is either a rule that was asked and answered "conforms" or a rule
 // that was never asked at all — bound to a misspelt element name, or to a path the
 // mapper never builds — and the two are indistinguishable from the outside. The
 // generated CIUS-PT and CIUS-RO tiers get this for free, because their contexts are

@@ -334,7 +334,7 @@ func TestSRBDTPDVCategoriesComeFromTheArtefact(t *testing.T) {
 // TestSRBDTRuleContextsAreReachable is requirement two of this rule set's oracle.
 //
 // It carries an exception list, which UBL.BE's counterpart does not, and the reason
-// is a fact about the corpus rather than about the rules: not one of the 1,680
+// is a fact about the corpus rather than about the rules: not one of the 1,690
 // documents carries an sbt:SrbDtExt, so the four rules bound to the srbdtext
 // extension have no context node anywhere. The test asserts that too, so the excuse
 // cannot outlive its reason — and srbdtExtensionDoc is what gives all four a firing

@@ -774,9 +774,21 @@ func assertFlags(t *testing.T, name string, data []byte) map[string]map[string]b
 // severityOfFlag folds an authority's flag onto this package's two values. CEN
 // and OpenPEPPOL write fatal and warning; KoSIT adds information, which is
 // advisory under another name.
+//
+// "none" is assertFlags's marker for an assertion that carries no flag attribute,
+// and it folds onto fatal. That is a derivation and not a fail-safe guess: phive
+// runs ph-schematron, whose DefaultSVRLErrorLevelDeterminator maps a flag it cannot
+// recognise — and null is one — onto DEFAULT_ERROR_LEVEL, declared as
+// EErrorLevel.ERROR. A reference validation therefore rejects the document.
+//
+// Exactly one assertion in every artefact this repository vendors is written that
+// way: BR-GA-6, in the G-account extension. TestGAccountSeveritiesAreThePublishedFlags
+// pins both halves — that the artefact carries no flag on it, and that this package
+// reports it fatal — so the day SimplerInvoicing adds one, whichever it adds, the
+// build says so.
 func severityOfFlag(flag string) (Severity, bool) {
 	switch flag {
-	case "fatal":
+	case "fatal", "none":
 		return SeverityFatal, true
 	case "warning", "information":
 		return SeverityWarning, true

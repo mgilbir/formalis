@@ -418,7 +418,7 @@ func peppolModelRules(e *peppolEval, inv *en16931Invoice) {
 // walk of the tree.
 //
 // Eleven of these rules have a document-wide context — `//*`, `cbc:CompanyID`,
-// `cbc:Amount` — and this package sweeps 1,680 documents through several
+// `cbc:Amount` — and this package sweeps 1,690 documents through several
 // validators per test run, so one walk that dispatches on the local name costs
 // what the largest population costs rather than what the sum of them does.
 // gatherUBLSyntaxNodes in en16931_ubl_rules.go makes the same argument.

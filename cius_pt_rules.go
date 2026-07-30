@@ -65,7 +65,7 @@ import "strings"
 // `urn:cen.eu:en16931:2017#compliant#urn:feap.gov.pt:CIUS-PT:1.0.0.`, so the
 // specification identifier does not carry the version and there is nothing in the
 // document to dispatch on. The choice is observable only on a document that uses one
-// of the four alias codes, and no document in the 1,680-document corpus does: the
+// of the four alias codes, and no document in the 1,690-document corpus does: the
 // only occurrences of the string "RED" in the whole corpus are two Turkish
 // cbc:ResponseCode elements.
 
@@ -208,7 +208,7 @@ const (
 // ptNodes is every population the 65 rules read, gathered in one walk.
 //
 // The rules are bound to twenty-five distinct contexts and this package validates
-// 1,680 documents on every test run; resolving each context independently would
+// 1,690 documents on every test run; resolving each context independently would
 // walk the document twenty-five times to learn what one walk knows. It follows the
 // shape gatherUBLSyntaxNodes already uses for CEN's UBL binding rules, for the same
 // reason.

@@ -19,10 +19,17 @@ import (
 // this package was reporting CEN's reading of a rule where SimplerInvoicing reports
 // its own (the audit's C40). They are fetched and read now: all three copies are
 // older releases of CEN's files — SI-UBL's still publishes BR-IG-*/BR-IP-* rather
-// than BR-AF-*/BR-AG-* — and every CEN condition in every one of them is a condition
-// CEN published at some commit. None is Dutch. So NLCIUS has no condition overrides,
-// and that is derived rather than assumed; see ciusCENCopyVerdicts. The "modified"
-// in the G-account file's name refers to CEN's own edits, not SimplerInvoicing's.
+// than BR-AF-*/BR-AG-* — and every CEN *condition* in every one of them is a
+// condition CEN published at some commit. None is Dutch. So NLCIUS overrides no CEN
+// condition, and that is derived rather than assumed; see ciusCENCopyVerdicts.
+//
+// What that measurement cannot see, and what PR 28 found by reading the file rather
+// than diffing conditions, is a CEN rule the copy **removes**. EN16931-syntax-modified.sch
+// — the G-account extension's replacement for CEN's abstract syntax file — comments
+// out UBL-CR-411, UBL-CR-453 and UBL-CR-459 and says so in its header, and a
+// commented-out assertion is not an identifier a condition survey compares. So the
+// "modified" in that file's name is SimplerInvoicing's edit after all; an earlier
+// version of this comment said it was CEN's. See nlcius_gaccount.go.
 //
 // The rules below are transcribed from those two files rather than from prose,
 // which is what they used to be. Reading the artefacts changed four things:
@@ -95,6 +102,23 @@ import (
 //     that reports an allowance or charge reason code at *either* level, and its two
 //     siblings report nothing.
 //
+// # The rest of what these two files publish
+//
+// The BR-NL-* family is not the whole of either binding. si-ubl-2.0-nlcius.sch ends
+// with one more rule, SI-UBL-2 ("Document should not contain empty elements"), and
+// NLCIUS-CII-validation.sch ends with the same rule under the identifier
+// empty-element-check. Neither is evaluated here and both are named in
+// Coverage(SourceNLCIUS), which is where the reasoning is. The UBL binding also
+// carries the eight BR-GA-* rules of the G-account extension, in a file of their
+// own — see nlcius_gaccount.go.
+//
+// None of the three families was visible to any guard in this repository until PR
+// 28, because ciusArtefacts decided which published identifiers were NLCIUS's with
+// the pattern ^BR-NL-. That is C39's defect in a second authority's artefact, and the
+// fix is in cius_artefacts_test.go: every identifier a vendored file publishes is
+// now enumerated and then classified, and one that no classifier accounts for fails
+// the build.
+//
 // That also settles the BR-NL-34 curiosity PR 22 recorded. The UBL file carries a
 // second trio of assertions whose message text reads "[BR-NL-34]" — the charge
 // wording, against BR-NL-32's allowance wording — under the same three identifiers
@@ -163,6 +187,13 @@ func ValidateNLCIUS(ctx context.Context, xmlData []byte) (Report, error) {
 
 func validateNLCIUS(r *run, p *parsed) []Violation {
 	out := validateEN16931(r, p, ProfileEN16931)
+	// A document that declares the G-account extension is judged by the extension's
+	// copy of CEN's abstract syntax file, which removes three advisory rules the
+	// extension's own data model requires a document to break. See
+	// nlciusGAccountRemovedCEN.
+	if nlciusGAccountApplies(p) {
+		out = dropRemovedGAccountRules(out)
+	}
 	return append(out, validateNLCIUSRules(p, nil)...)
 }
 
@@ -173,11 +204,18 @@ func validateNLCIUS(r *run, p *parsed) []Violation {
 // ruleContexts.
 func validateNLCIUSRules(p *parsed, seen ruleContexts) []Violation {
 	inv := p.inv
+	// The G-account extension first, and outside $si, because its pattern carries no
+	// gate at all: the rules apply to whatever document the extension's Schematron is
+	// pointed at. What decides that here is nlciusGAccountApplies, and one of its two
+	// arms — an invoice carrying the GACCOUNT payment instruction without declaring
+	// the extension — is precisely a document $si is false for. See
+	// nlcius_gaccount.go.
+	out := validateNLCIUSGAccount(p, seen)
+
 	// $si. Everything below is inside it.
 	if !nlciusApplies(inv) {
-		return nil
+		return out
 	}
-	var out []Violation
 	add := adder(&out, SourceNLCIUS)
 
 	// BR-NL-13 is gated on $si alone, in both bindings: an order line reference

@@ -25,7 +25,7 @@ import (
 //
 // The naive shape — resolve 173 context paths and then evaluate 291 expressions
 // against the tree — walks the document a few hundred times per invoice, and
-// corpusSweep puts 1,680 documents through ValidateCIUSPT on every test run. Two
+// corpusSweep puts 1,690 documents through ValidateCIUSPT on every test run. Two
 // things keep it to one walk.
 //
 // Every context in both patterns is a union of paths anchored at the document

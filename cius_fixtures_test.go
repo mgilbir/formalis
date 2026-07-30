@@ -43,7 +43,12 @@ func ciusSuites() []ciusSuite {
 		{source: SourceCIUSRO, validate: ValidateCIUSRO, baseline: minimalCIUSROUBL, cases: ciusROMutations, extras: ciusROExtras},
 		{source: SourceUBLBE, validate: ValidateUBLBE, baseline: minimalUBLBE, cases: ublBEMutations},
 		{source: SourceSRBDT, validate: ValidateSRBDT, baseline: minimalSRBDT, cases: srbdtMutations, extras: srbdtExtras},
-		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, cases: nlciusMutations, extras: nlciusExtras},
+		// The NLCIUS extras are two sets: the advisory tier's, which are whole
+		// documents because a forbidden-path rule is reached rather than tested, and
+		// the G-account extension's, which are whole documents because the extension
+		// needs a two-instruction invoice the plain baseline is not.
+		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, cases: nlciusMutations,
+			extras: append(append([]ciusDoc{}, nlciusExtras...), nlciusGAccountExtras...)},
 	}
 }
 
