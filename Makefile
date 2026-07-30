@@ -26,7 +26,7 @@ URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
 	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron cius-pt-rules \
-	cius-ro-rules \
+	cius-ro-rules cius-condition-overrides \
 	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles
 
 # Run the tests. Oracle-backed tests skip when their (gitignored) data is absent;
@@ -69,6 +69,19 @@ CIUS_SCH_STAMP := testdata/.cius-schematron.ok
 # directory (C21). One shell line: each recipe line gets its own shell.
 git-sync = if [ -d "$(2)/.git" ]; then git -C "$(2)" fetch --depth 1 origin HEAD && git -C "$(2)" reset --hard --quiet FETCH_HEAD; else rm -rf "$(2)" && git clone --quiet --depth 1 "$(1)" "$(2)"; fi
 
+# git-sync-full is git-sync for a repository whose *history* is the oracle rather
+# than its tip. There is one: CEN/TC 434's, because the only way to tell a CIUS's
+# own edit to a CEN condition apart from a CEN condition the CIUS copied before CEN
+# changed it is to ask which strings CEN has ever published (cius_overrides.go). A
+# shallow clone answers "never" to every condition CEN has since edited, which would
+# turn three stale vendored copies into nine hundred national overrides — so the
+# depth is load-bearing and an already-shallow clone is unshallowed rather than left.
+# It costs about 60 MB and four seconds once.
+git-sync-full = if [ -d "$(2)/.git" ]; then \
+		if [ -f "$(2)/.git/shallow" ]; then git -C "$(2)" fetch --unshallow --quiet; fi; \
+		git -C "$(2)" fetch --quiet origin HEAD && git -C "$(2)" reset --hard --quiet FETCH_HEAD; \
+	else rm -rf "$(2)" && git clone --quiet "$(1)" "$(2)"; fi
+
 # EN 16931 UBL example invoices (CEN TC 434 + OpenPEPPOL) — the UBL FP=0 oracle.
 en16931-ubl: $(UBL_DIR)/.ok
 $(UBL_DIR)/.ok: $(UBL_DIR)/sources.tsv $(UBL_DIR)/download.sh
@@ -78,10 +91,11 @@ clean-en16931-ubl:
 	rm -f $(UBL_DIR)/*.xml $(UBL_DIR)/.ok
 
 # Official CEN/TC 434 EN 16931 artefacts (Schematron + per-rule unit-test suite);
-# differential oracle for the rule engine.
+# differential oracle for the rule engine, and — with its history — the oracle for
+# which conditions in a CIUS's copy of those files that CIUS wrote itself.
 en16931-artefacts: $(EN16931_DIR)/.ok
 $(EN16931_DIR)/.ok:
-	$(call git-sync,https://github.com/ConnectingEurope/eInvoicing-EN16931,$(EN16931_DIR))
+	$(call git-sync-full,https://github.com/ConnectingEurope/eInvoicing-EN16931,$(EN16931_DIR))
 	touch $@
 clean-en16931-artefacts:
 	rm -rf $(EN16931_DIR)
@@ -138,6 +152,18 @@ cius-pt-rules: cius-schematron
 # the reason. gofmt runs because the emitter writes keyed struct literals whose
 # alignment gofmt owns; the drift test compares decoded fields and not bytes, so the
 # formatting is cosmetic, but a committed file `gofmt -l` complains about is not.
+# The CEN conditions each CIUS re-wrote, generated from every authority's copy of
+# CEN's Schematron and from CEN's own git history into cius_overrides_table.go. Same
+# arrangement as the three targets above, and it needs both fetches: the copies come
+# from cius-schematron and the history from en16931-artefacts, which clones full
+# depth for this reason. A shallow clone stops the generator rather than being read
+# as "CEN never published any of this".
+CIUS_OVERRIDES_DIR := testdata/cius-condition-overrides
+cius-condition-overrides: cius-schematron en16931-artefacts
+	python3 $(CIUS_OVERRIDES_DIR)/gen.py
+	gofmt -w cius_overrides_table.go
+	go test -count=1 -run 'TestCIUSCopiesOfCEN|TestConditionOverride|TestEveryConditionOverride|TestOverriddenIdentifiers|TestUnappliedConditionOverrides' .
+
 CIUS_RO_RULES_DIR := testdata/cius-ro-rules
 cius-ro-rules: cius-schematron
 	python3 $(CIUS_RO_RULES_DIR)/gen.py
@@ -341,12 +367,20 @@ $(CIUS_SCH_STAMP): | check-deps
 	done
 	@# CIUS-RO (Romanian ANAF RO e-Factura). cius-ro/RO16931-rules.sch is the whole
 	@# national rule set; the validation file beside it is the wrapper that says
-	@# which patterns are active. The UBL/, abstract/ and codelist/ siblings are
-	@# CEN's, and are not fetched.
+	@# which patterns are active. The abstract/ and UBL/ siblings are ANAF's own copy
+	@# of CEN's rules, and they are fetched for the version this package evaluates:
+	@# a CIUS that ships a copy of CEN's files can have edited them, and the only way
+	@# to know whether it did is to read the copy. codelist/ is not fetched — the code
+	@# lists are checked against CEN's genericode by en16931_codelists_test.go.
 	for ver in 1.0.3 1.0.4 1.0.8 1.0.9; do \
 		mkdir -p "testdata/cius-ro/schematron/$$ver/cius-ro"; \
 		$(CURL) "$(PHIVE)/$$($(URLENC) "$(RO_RULESRC)/$$ver/cius-ro/RO16931-rules.sch")" -o "testdata/cius-ro/schematron/$$ver/cius-ro/RO16931-rules.sch"; \
 		$(CURL) "$(PHIVE)/$$($(URLENC) "$(RO_RULESRC)/$$ver/EN16931-CIUS_RO-UBL-validation.sch")" -o "testdata/cius-ro/schematron/$$ver/EN16931-CIUS_RO-UBL-validation.sch"; \
+	done
+	mkdir -p testdata/cius-ro/schematron/1.0.9/abstract testdata/cius-ro/schematron/1.0.9/UBL
+	for f in abstract/EN16931-model.sch abstract/EN16931-syntax.sch \
+		UBL/EN16931-UBL-model.sch UBL/EN16931-UBL-syntax.sch; do \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(RO_RULESRC)/1.0.9/$$f")" -o "testdata/cius-ro/schematron/1.0.9/$$f"; \
 	done
 	@# UBL.BE (Belgian). One file, and it is a merged artefact: alongside the 15
 	@# ubl-BE-* rules it carries CEN's, OpenPEPPOL's and five of OpenPEPPOL's
@@ -375,13 +409,36 @@ $(CIUS_SCH_STAMP): | check-deps
 	for f in nlcius-cii-1.0.3.sch nlcius-cii/NLCIUS-CII-validation.sch; do \
 		$(CURL) "$(PHIVE)/$$($(URLENC) "$(NL_RULESRC)/nlcius/1.0.3/$$f")" -o "testdata/nlcius/schematron/cii/$$(basename "$$f")"; \
 	done
+	@# NLCIUS's copy of CEN's files. si-ubl-2.0.3.2.sch <include>s them from a
+	@# CenPC434/ directory beside it and nlcius-cii-1.0.3.sch from one of its own, and
+	@# neither was fetched — so whether SimplerInvoicing ships CEN's rules verbatim,
+	@# an older release of them, or an edited copy was unmeasured. It is measurable
+	@# only by reading the copy. EN16931-syntax-modified.sch is the G-account
+	@# extension's own replacement for CEN's abstract syntax file, and the name says
+	@# what it is.
+	mkdir -p testdata/nlcius/schematron/ubl/cen testdata/nlcius/schematron/cii/cen
+	for f in si-ubl-2.0/CenPC434/abstract/EN16931-model.sch \
+		si-ubl-2.0/CenPC434/abstract/EN16931-syntax.sch \
+		si-ubl-2.0/CenPC434/UBL/EN16931-UBL-model.sch \
+		si-ubl-2.0/CenPC434/UBL/EN16931-UBL-syntax.sch \
+		si-ubl-2.0-ext-gaccount/EN16931-syntax-modified.sch; do \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(NL_RULESRC)/simplerinvoicing/2.0.3.2/$$f")" -o "testdata/nlcius/schematron/ubl/cen/$$(basename "$$f")"; \
+	done
+	@# The CII half keeps its two directories: abstract/EN16931-CII-model.sch and
+	@# CII/EN16931-CII-model.sch differ only in path, and flattening them to a
+	@# basename would silently leave one copy of each pair on disk.
+	mkdir -p testdata/nlcius/schematron/cii/cen/abstract testdata/nlcius/schematron/cii/cen/CII
+	for f in abstract/EN16931-CII-model.sch abstract/EN16931-CII-syntax.sch \
+		CII/EN16931-CII-model.sch CII/EN16931-CII-syntax.sch; do \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(NL_RULESRC)/nlcius/1.0.3/nlcius-cii/CenPC434/$$f")" -o "testdata/nlcius/schematron/cii/cen/$$f"; \
+	done
 	@# The fetch-side ratchet. Every file above is fetched with curl -f under
 	@# pipefail, so a missing one has already failed the recipe; this catches the
 	@# case a per-file check cannot see — a list that was edited down.
 	@n=$$(find testdata/cius-pt/schematron testdata/cius-ro/schematron testdata/cius-be/schematron \
 		testdata/cius-rs/schematron testdata/nlcius/schematron -name '*.sch' | wc -l); \
-	if [ "$$n" -lt 37 ]; then \
-		echo "make: fetched only $$n CIUS Schematron files, expected at least 37" >&2; \
+	if [ "$$n" -lt 50 ]; then \
+		echo "make: fetched only $$n CIUS Schematron files, expected at least 50" >&2; \
 		exit 1; \
 	fi; \
 	echo "make: vendored $$n CIUS Schematron files"
