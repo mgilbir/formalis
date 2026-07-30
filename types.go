@@ -306,7 +306,11 @@ const (
 	SourcePeppol Source = "Peppol"
 	// SourceNLCIUS is the Dutch SimplerInvoicing NLCIUS (BR-NL-*).
 	SourceNLCIUS Source = "NLCIUS"
-	// SourceCIUSPT is the Portuguese AT/eSPap CIUS-PT (BR-CIUS-PT-*).
+	// SourceCIUSPT is the Portuguese AT/eSPap CIUS-PT: BR-CIUS-PT-*, and AT's own
+	// BR-AA-* — eight rules for the "Lower rate" (AA) VAT category, written by
+	// cloning CEN's BR-S-* template for a category code EN 16931 leaves out of
+	// BT-118's restricted list. CEN publishes no BR-AA-* family, so the identifier
+	// looks like CEN's and is not, and this Source is where it belongs.
 	SourceCIUSPT Source = "CIUS-PT"
 	// SourceCIUSRO is the Romanian ANAF RO e-Factura CIUS (BR-RO-*).
 	SourceCIUSRO Source = "CIUS-RO"

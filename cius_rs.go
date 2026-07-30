@@ -83,6 +83,26 @@ func validateSRBDT(r *run, p *parsed) []Violation {
 	return append(out, validateSRBDTRules(p.inv, p.root)...)
 }
 
+// anyChildWith reports whether any direct child of n named group has a descendant
+// path leaf — the shape "exists(cac:X/cbc:Y)" takes when X may repeat.
+//
+// ciiNode.child follows the *first* match at every step, so
+// child("PartyTaxScheme", "CompanyID") answers nil for a party whose first tax
+// scheme carries no CompanyID and whose second does. An XPath existence test does
+// not: exists(cac:PartyTaxScheme/cbc:CompanyID) is true if any of them has one.
+//
+// It lived in cius_pt.go until the Portuguese rules grew a general location-path
+// helper (ptPath) that subsumes it; SRBDT is its only remaining caller, so it moved
+// here rather than being generalised for one user.
+func anyChildWith(n *ciiNode, group string, leaf ...string) bool {
+	for _, g := range n.all(group) {
+		if g.child(leaf...) != nil {
+			return true
+		}
+	}
+	return false
+}
+
 // vatSchemeCompanyIDs returns the PartyTaxScheme/cbc:CompanyID nodes of a UBL party
 // whose tax scheme is VAT (vat true) or is not (vat false), which is how RSR-09,
 // RSR-10 and RSR-11 partition the same element.

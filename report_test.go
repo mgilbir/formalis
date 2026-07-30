@@ -174,25 +174,32 @@ func TestReportFromAnIgnoredErrorIsNotConformant(t *testing.T) {
 // TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet is the fifth, and
 // the one this whole file was written for. It is C12's failure scenario as a
 // test: a document that produces no findings at all from ValidateCIUSPT is not
-// a document that passed CIUS-PT, because BR-CIUS-PT-13/15/17/18 and 24..63
-// were never run. Before Report there was nothing a caller could read that said
-// so.
+// a document that passed CIUS-PT. Before Report there was nothing a caller could
+// read that said so.
+//
+// The family it names has changed once. It used to be BR-CIUS-PT-13/15/17/18 and
+// 24..63, which are now evaluated; the gap that keeps this Report non-conformant is
+// DT-CIUS-PT-*, the 290 fatal datatype and arithmetic rules AT publishes in the same
+// tree. That the specific family moved is the point of the test rather than a
+// weakening of it: the property is that a *named fatal gap* keeps Conformant false,
+// and the day CIUS-PT has no fatal gap left this test should be deleted rather than
+// re-pointed at something else.
 func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
 	r := mustReport(t, context.Background(), ValidateCIUSPT, []byte(minimalCIUSPTUBL))
 	if len(ptRuleViolations(r.Violations)) != 0 {
 		t.Fatalf("the fixture is no longer clean under the CIUS-PT rules, so this test proves nothing: %v", r.Violations)
 	}
 	if r.Complete() {
-		t.Error("ValidateCIUSPT reported Complete; it implements twelve of the CIUS-PT rules")
+		t.Error("ValidateCIUSPT reported Complete; it does not evaluate the DT-CIUS-PT-* rules")
 	}
 	if r.Conformant() {
-		t.Error("ValidateCIUSPT reported Conformant on a document whose Portuguese VAT-category rules were never checked")
+		t.Error("ValidateCIUSPT reported Conformant on a document whose Portuguese datatype rules were never checked")
 	}
 	// The caller has to be able to find out *which* rules, not merely that some
 	// exist, or the report is no more actionable than the file comment was.
 	var found bool
 	for _, g := range r.NotEvaluated {
-		if strings.Contains(g.Rules, "BR-CIUS-PT-13") {
+		if strings.Contains(g.Rules, "DT-CIUS-PT-") {
 			found = true
 			if g.Severity != SeverityFatal {
 				t.Errorf("the family the integrator would be rejected on is reported as %s: %+v", g.Severity, g)

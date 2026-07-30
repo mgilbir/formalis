@@ -68,8 +68,21 @@ var ciusArtefacts = []ciusArtefact{{
 	source:  SourceCIUSPT,
 	binding: "UBL",
 	globs:   []string{"cius-pt/schematron/*/*.sch", "cius-pt/schematron/*/*/*.sch"},
-	own:     regexp.MustCompile(`^(?:BR|DT)-CIUS-PT-`),
-	minIDs:  355,
+	// BR-AA-* is AT's, not CEN's, and the filter has to say so. CEN publishes a
+	// rule family per VAT category code in EN 16931's restricted BT-118 list and
+	// 'AA' ("Lower rate") is not in that list, so there is no CEN BR-AA-* family —
+	// verified by decoding every vendored EN 16931 Schematron and by grep over their
+	// bytes. AT wrote these eight by cloning CEN's BR-S-* template for the reduced
+	// rates Portugal levies.
+	//
+	// Until this filter named them, they were invisible to every guard below: the
+	// severity check skips an identifier the table does not evaluate, and
+	// TestEveryPublishedCIUSRuleIsEvaluatedOrDisclaimed only sees identifiers this
+	// regexp admits. Eight fatal published rules were therefore in neither the code
+	// nor the record of what the code does not do — C38's shape, one prefix further
+	// out than the DT-CIUS-PT-* family that finding was about.
+	own:    regexp.MustCompile(`^(?:BR-AA|(?:BR|DT)-CIUS-PT)-`),
+	minIDs: 363,
 }, {
 	// Only cius-ro/RO16931-rules.sch is fetched, so the UBL/, abstract/ and
 	// codelist/ siblings that are CEN's cannot be read by accident. BR-27 is in
@@ -207,13 +220,49 @@ func ciusFlagsBySource(t *testing.T) map[Source]map[string]map[string]bool {
 // NLCIUS publishes 22 advisory identifiers in each binding, so the rule set this
 // package draws from is demonstrably not uniformly fatal.
 var ciusEvaluated = map[Source]map[string]Severity{
+	// CIUS-PT is the one rule set here whose business-rule tier is complete: all 65
+	// published BR-CIUS-PT-* identifiers and all 8 BR-AA-*. What remains unevaluated
+	// is the 290-rule DT-CIUS-PT-* datatype tier, which Coverage(SourceCIUSPT) names.
+	// The absence of BR-CIUS-PT-31 from this list is not an omission — AT publishes
+	// no such identifier, and TestCIUSPTFamilyHasNoPhantom says so out of the file.
 	SourceCIUSPT: {
-		"BR-CIUS-PT-01": SeverityFatal, "BR-CIUS-PT-03": SeverityFatal,
+		"BR-CIUS-PT-01": SeverityFatal, "BR-CIUS-PT-02": SeverityFatal,
+		"BR-CIUS-PT-03": SeverityFatal, "BR-CIUS-PT-04": SeverityFatal,
 		"BR-CIUS-PT-05": SeverityFatal, "BR-CIUS-PT-06": SeverityFatal,
-		"BR-CIUS-PT-07": SeverityFatal, "BR-CIUS-PT-10": SeverityFatal,
-		"BR-CIUS-PT-11": SeverityFatal, "BR-CIUS-PT-21": SeverityFatal,
-		"BR-CIUS-PT-22": SeverityFatal, "BR-CIUS-PT-23": SeverityFatal,
-		"BR-CIUS-PT-64": SeverityFatal, "BR-CIUS-PT-66": SeverityFatal,
+		"BR-CIUS-PT-07": SeverityFatal, "BR-CIUS-PT-08": SeverityFatal,
+		"BR-CIUS-PT-09": SeverityFatal, "BR-CIUS-PT-10": SeverityFatal,
+		"BR-CIUS-PT-11": SeverityFatal, "BR-CIUS-PT-12": SeverityFatal,
+		"BR-CIUS-PT-13": SeverityFatal, "BR-CIUS-PT-14": SeverityFatal,
+		"BR-CIUS-PT-15": SeverityFatal, "BR-CIUS-PT-16": SeverityFatal,
+		"BR-CIUS-PT-17": SeverityFatal, "BR-CIUS-PT-18": SeverityFatal,
+		"BR-CIUS-PT-19": SeverityFatal, "BR-CIUS-PT-20": SeverityFatal,
+		"BR-CIUS-PT-21": SeverityFatal, "BR-CIUS-PT-22": SeverityFatal,
+		"BR-CIUS-PT-23": SeverityFatal, "BR-CIUS-PT-24": SeverityFatal,
+		"BR-CIUS-PT-25": SeverityFatal, "BR-CIUS-PT-26": SeverityFatal,
+		"BR-CIUS-PT-27": SeverityFatal, "BR-CIUS-PT-28": SeverityFatal,
+		"BR-CIUS-PT-29": SeverityFatal, "BR-CIUS-PT-30": SeverityFatal,
+		"BR-CIUS-PT-32": SeverityFatal, "BR-CIUS-PT-33": SeverityFatal,
+		"BR-CIUS-PT-34": SeverityFatal, "BR-CIUS-PT-35": SeverityFatal,
+		"BR-CIUS-PT-36": SeverityFatal, "BR-CIUS-PT-37": SeverityFatal,
+		"BR-CIUS-PT-38": SeverityFatal, "BR-CIUS-PT-39": SeverityFatal,
+		"BR-CIUS-PT-40": SeverityFatal, "BR-CIUS-PT-41": SeverityFatal,
+		"BR-CIUS-PT-42": SeverityFatal, "BR-CIUS-PT-43": SeverityFatal,
+		"BR-CIUS-PT-44": SeverityFatal, "BR-CIUS-PT-45": SeverityFatal,
+		"BR-CIUS-PT-46": SeverityFatal, "BR-CIUS-PT-47": SeverityFatal,
+		"BR-CIUS-PT-48": SeverityFatal, "BR-CIUS-PT-49": SeverityFatal,
+		"BR-CIUS-PT-50": SeverityFatal, "BR-CIUS-PT-51": SeverityFatal,
+		"BR-CIUS-PT-52": SeverityFatal, "BR-CIUS-PT-53": SeverityFatal,
+		"BR-CIUS-PT-54": SeverityFatal, "BR-CIUS-PT-55": SeverityFatal,
+		"BR-CIUS-PT-56": SeverityFatal, "BR-CIUS-PT-57": SeverityFatal,
+		"BR-CIUS-PT-58": SeverityFatal, "BR-CIUS-PT-59": SeverityFatal,
+		"BR-CIUS-PT-60": SeverityFatal, "BR-CIUS-PT-61": SeverityFatal,
+		"BR-CIUS-PT-62": SeverityFatal, "BR-CIUS-PT-63": SeverityFatal,
+		"BR-CIUS-PT-64": SeverityFatal, "BR-CIUS-PT-65": SeverityFatal,
+		"BR-CIUS-PT-66": SeverityFatal,
+		"BR-AA-01":      SeverityFatal, "BR-AA-02": SeverityFatal,
+		"BR-AA-03": SeverityFatal, "BR-AA-04": SeverityFatal,
+		"BR-AA-05": SeverityFatal, "BR-AA-06": SeverityFatal,
+		"BR-AA-07": SeverityFatal, "BR-AA-10": SeverityFatal,
 	},
 	SourceCIUSRO: {
 		"BR-RO-010": SeverityFatal, "BR-RO-020_1": SeverityFatal, "BR-RO-020_2": SeverityFatal,
@@ -293,7 +342,7 @@ func TestCIUSSeveritiesQuoteTheirAuthority(t *testing.T) {
 			}
 		}
 	}
-	if checked < 69 {
+	if checked < 130 {
 		t.Fatalf("checked only %d evaluated identifiers against their authorities' flags; the harness is not "+
 			"reading the artefacts", checked)
 	}
@@ -322,7 +371,10 @@ func TestCIUSPublishedInventory(t *testing.T) {
 		binding          string
 		ids, fatal, warn int
 	}{
-		{SourceCIUSPT, "UBL", 355, 355, 0},
+		// 363, not the 355 PR 22 recorded: the survey's identifier filter stopped at
+		// the BR-CIUS-PT and DT-CIUS-PT prefixes and did not admit AT's own eight
+		// BR-AA-* rules.
+		{SourceCIUSPT, "UBL", 363, 363, 0},
 		{SourceCIUSRO, "UBL", 125, 125, 0},
 		{SourceUBLBE, "UBL", 15, 15, 0},
 		{SourceSRBDT, "UBL", 46, 46, 0},
