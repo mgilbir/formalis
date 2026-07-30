@@ -124,14 +124,30 @@ var advisoryMsgPrefix = regexp.MustCompile(`^\[[^]]*\]\s*-?\s*`)
 // inside an assertion — and the comparison should not turn on it.
 func advisoryNorm(s string) string { return strings.Join(strings.Fields(s), " ") }
 
-// readSchPattern reads one Schematron pattern file.
-//
-// It goes through a Decoder rather than xml.Unmarshal for one reason: CEN ships
-// cii/schematron/CII/EN16931-CII-syntax.sch declared ISO-8859-1, and the standard
-// decoder refuses a non-UTF-8 declaration outright unless a CharsetReader is
-// supplied. Latin-1 is the one encoding where the byte value is the code point,
-// so the conversion is a byte-to-rune widening and nothing about it can be
-// ambiguous.
+// latin1Reader is the CharsetReader every test that decodes a vendored
+// Schematron needs, because CEN ships
+// cii/schematron/CII/EN16931-CII-syntax.sch declared ISO-8859-1 and the standard
+// decoder refuses a non-UTF-8 declaration outright without one. Latin-1 is the
+// one encoding where the byte value is the code point, so the conversion is a
+// byte-to-rune widening and nothing about it can be ambiguous.
+func latin1Reader(charset string, input io.Reader) (io.Reader, error) {
+	switch strings.ToLower(charset) {
+	case "iso-8859-1", "latin1", "iso88591", "windows-1252":
+		raw, err := io.ReadAll(input)
+		if err != nil {
+			return nil, err
+		}
+		var sb strings.Builder
+		for _, b := range raw {
+			sb.WriteRune(rune(b))
+		}
+		return strings.NewReader(sb.String()), nil
+	}
+	return nil, fmt.Errorf("unhandled charset %q", charset)
+}
+
+// readSchPattern reads one Schematron pattern file. It goes through a Decoder
+// rather than xml.Unmarshal so that latin1Reader can be attached.
 func readSchPattern(t *testing.T, path string) schPattern {
 	t.Helper()
 	f, err := os.Open(path)
@@ -140,21 +156,7 @@ func readSchPattern(t *testing.T, path string) schPattern {
 	}
 	defer f.Close()
 	d := xml.NewDecoder(f)
-	d.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
-		switch strings.ToLower(charset) {
-		case "iso-8859-1", "latin1", "iso88591", "windows-1252":
-			raw, err := io.ReadAll(input)
-			if err != nil {
-				return nil, err
-			}
-			var sb strings.Builder
-			for _, b := range raw {
-				sb.WriteRune(rune(b))
-			}
-			return strings.NewReader(sb.String()), nil
-		}
-		return nil, fmt.Errorf("%s: unhandled charset %q", path, charset)
-	}
+	d.CharsetReader = latin1Reader
 	var p schPattern
 	if err := d.Decode(&p); err != nil {
 		t.Fatalf("%s: %v", path, err)

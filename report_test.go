@@ -1,8 +1,11 @@
 package formalis
 
 import (
+	"bytes"
 	"context"
+	"encoding/xml"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -498,14 +501,6 @@ func schematronFlags(t *testing.T) map[string]map[string]bool {
 		filepath.Join("testdata", "xrechnung", "schematron", "src", "validation", "schematron", "*", "*.sch"),
 		filepath.Join("testdata", "peppol", "repo", "rules", "sch", "*.sch"),
 	}
-	// An <assert> or <report> element with its attribute list. The flag and the
-	// id are attributes of the same element, so they have to be read together:
-	// scanning for id="..." across a whole file, as the test above does, cannot
-	// tell which flag belongs to which rule.
-	elemRE := regexp.MustCompile(`(?s)<(?:sch:)?(?:assert|report)\s([^>]*)>`)
-	idRE := regexp.MustCompile(`\bid="([^"]+)"`)
-	flagRE := regexp.MustCompile(`\bflag="([^"]+)"`)
-
 	flags := map[string]map[string]bool{}
 	for _, pat := range pats {
 		files, _ := filepath.Glob(pat)
@@ -517,26 +512,80 @@ func schematronFlags(t *testing.T) map[string]map[string]bool {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, m := range elemRE.FindAllStringSubmatch(string(data), -1) {
-				id := idRE.FindStringSubmatch(m[1])
-				if id == nil {
-					continue
+			for id, flag := range assertFlags(t, f, data) {
+				if flags[id] == nil {
+					flags[id] = map[string]bool{}
 				}
-				flag := "none"
-				if fl := flagRE.FindStringSubmatch(m[1]); fl != nil {
-					flag = fl[1]
+				for fl := range flag {
+					flags[id][fl] = true
 				}
-				if flags[id[1]] == nil {
-					flags[id[1]] = map[string]bool{}
-				}
-				flags[id[1]][flag] = true
 			}
 		}
 	}
-	if len(flags) < 1500 {
+	if len(flags) < 1780 {
 		t.Fatalf("read flags for only %d rules from the vendored Schematron; the harness is not reading the artefacts", len(flags))
 	}
 	return flags
+}
+
+// assertFlags reads one Schematron file's <assert>/<report> identifiers and flags
+// with an XML decoder rather than a regular expression.
+//
+// It was a regular expression, `<(?:sch:)?(?:assert|report)\s([^>]*)>`, and that
+// is a bug with a measurable size: the character class stops at the first '>',
+// and a Schematron test is an XPath expression that may contain one. Across the
+// four vendored rule sets it lost exactly three assertions, all KoSIT's —
+// BR-DE-19 and BR-DE-20, whose IBAN check-digit arithmetic reads "if($cp > 64)",
+// and BR-DEX-02, which counts "cac:SubInvoiceLine) > 0". Nothing noticed, because
+// a rule the harness cannot see has no flag to disagree with: the coverage table
+// filed BR-DEX-02 as fatal where KoSIT flags it warning and the severity test had
+// no opinion, and the count of KoSIT's published identifiers read 54 instead of
+// 57 everywhere it was quoted, including in a coverage-entry comment.
+//
+// A decoder also drops commented-out assertions, which the regular expression
+// read as live. One exists: PEPPOL-COMMON-R048 is inside an XML comment in both
+// Peppol binding files, so Coverage(SourcePeppol) names as an advisory gap a rule
+// OpenPEPPOL has switched off. That is a Peppol entry and out of this change's
+// scope, but it is the reason the floor above is a floor and not an equality.
+func assertFlags(t *testing.T, name string, data []byte) map[string]map[string]bool {
+	t.Helper()
+	out := map[string]map[string]bool{}
+	dec := xml.NewDecoder(bytes.NewReader(data))
+	// CEN ships one of the two binding files declared ISO-8859-1, and the decoder
+	// refuses a non-UTF-8 declaration outright without this. readSchPattern in
+	// en16931_syntax_advisory_test.go makes the same conversion and argues it: in
+	// Latin-1 the byte value is the code point, so widening cannot be ambiguous.
+	dec.CharsetReader = latin1Reader
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		se, ok := tok.(xml.StartElement)
+		if !ok || (se.Name.Local != "assert" && se.Name.Local != "report") {
+			continue
+		}
+		id, flag := "", "none"
+		for _, a := range se.Attr {
+			switch a.Name.Local {
+			case "id":
+				id = a.Value
+			case "flag":
+				flag = a.Value
+			}
+		}
+		if id == "" {
+			continue
+		}
+		if out[id] == nil {
+			out[id] = map[string]bool{}
+		}
+		out[id][flag] = true
+	}
+	return out
 }
 
 // severityOfFlag folds an authority's flag onto this package's two values. CEN
@@ -691,7 +740,16 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 			}
 		}
 	}
-	if checked < 30 {
+	// The floor is on the helper below, not on a corpus: it is what stops
+	// coverageIdentifiers from silently regressing to reading only the identifiers
+	// written out in full. It was 30 and is 60, because two bugs in that helper —
+	// see numTailRE and fullIDRE — meant that of the 67 identifiers this table
+	// names and the artefacts publish, 44 were skipped without a word, and the 23
+	// that were left cleared a floor of 30 only while the XRechnung entries were
+	// long. A number that has to come down again means either the table shrank
+	// because rules were implemented, which belongs in a commit message, or the
+	// helper broke.
+	if checked < 60 {
 		t.Fatalf("only %d coverage identifiers could be looked up; the harness is reading the wrong artefacts", checked)
 	}
 	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish, with no exceptions", checked)
@@ -709,8 +767,26 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 // ranges, and the caller's own floor on the number looked up is what keeps this
 // helper from silently regressing to that fifth.
 var (
-	numTailRE = regexp.MustCompile(`^(.*?)(\d+)(.*)$`)
+	// numTailRE splits an identifier at its *last* digit run, which the trailing
+	// \D* is what enforces. It was `^(.*?)(\d+)(.*)$`, whose non-greedy head takes
+	// the first digit run instead: "PEPPOL-EN16931-R001" came apart as
+	// "PEPPOL-EN" + "16931" + "-R001", so the prefix carried across the following
+	// tails was "PEPPOL-EN" and every abbreviated Peppol identifier resolved to a
+	// string no authority publishes. Every rule set whose family names hold no
+	// digits was unaffected, which is why it looked right.
+	numTailRE = regexp.MustCompile(`^(.*?)(\d+)(\D*)$`)
 	tokenSep  = regexp.MustCompile(`[\s,;()]+`)
+	// fullIDRE recognises a token that is an identifier written out in full,
+	// rather than the numeric tail of one ("R049", "14", "06-b").
+	//
+	// It replaces ruleIDRE here, which was doing a job it cannot do: ruleIDRE
+	// requires every segment before the numbered one to be letters only, and
+	// "PEPPOL-EN16931-R001" has a segment that is not. So no Peppol identifier
+	// resolved, no Peppol prefix was ever carried, and every identifier in
+	// Coverage(SourcePeppol) — 46 of them across seven entries — was skipped by
+	// the severity check silently. The floor the caller asserts did not catch it
+	// because the XRechnung entries alone cleared it.
+	fullIDRE = regexp.MustCompile(`^[A-Z][A-Z0-9]*(?:-[A-Za-z0-9]+)+$`)
 )
 
 func coverageIdentifiers(rules string) []string {
@@ -723,7 +799,7 @@ func coverageIdentifiers(rules string) []string {
 		if tok == "" {
 			return ""
 		}
-		if ruleIDRE.MatchString(tok) && strings.Contains(tok, "-") {
+		if fullIDRE.MatchString(tok) {
 			if m := numTailRE.FindStringSubmatch(tok); m != nil {
 				prefix = m[1]
 			}
@@ -732,13 +808,16 @@ func coverageIdentifiers(rules string) []string {
 		if prefix == "" {
 			return ""
 		}
-		// A tail may repeat the letter the prefix already ends with ("R049"
-		// under the prefix "PEPPOL-EN16931-R").
-		if len(tok) > 1 && strings.HasSuffix(prefix, tok[:1]) {
-			tok = tok[1:]
-		}
 		if numTailRE.FindStringSubmatch(tok) == nil {
 			return ""
+		}
+		// A tail may name its own letter segment — "R049" under the prefix
+		// "PEPPOL-EN16931-R", "P0100" under "PEPPOL-EN16931-F" — in which case the
+		// prefix's trailing letters are the ones being replaced and not repeated.
+		// This was a HasSuffix test on the first character, which handled the
+		// repeated case and turned the replaced one into "PEPPOL-EN16931-FP0100".
+		if tok[0] >= 'A' && tok[0] <= 'Z' {
+			return strings.TrimRight(prefix, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") + tok
 		}
 		return prefix + tok
 	}
