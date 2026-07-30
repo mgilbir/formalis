@@ -50,14 +50,24 @@ const exampleUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd
 // be read at all — malformed XML, an encoding this package does not implement —
 // and nothing about the invoice, which is why it is not a finding.
 //
-// The three lines it prints are three different facts, and the second is the one
-// worth reading. This document declares no CIUS, so it is validated against the
-// EN 16931 core: nothing was found, the core has no rule left that CEN would
-// reject this invoice over and that this package did not check, so it is
-// conformant — and there are still gaps, because the core's advisory rules are
-// unevaluated. Conformant and Complete are two questions for exactly this reason.
-// A document declaring a CIUS whose fatal rules are only partly implemented
-// prints conformant: false with the missing families in Report.NotEvaluated.
+// The four lines it prints are four different facts, and the last two are the ones
+// worth reading together. This document declares no CIUS, so it is validated
+// against the EN 16931 core: nothing was found; the core has no rule left that CEN
+// would reject this invoice over and that this package did not check, so it is
+// conformant; and it is complete, because everything left unevaluated is a rule CEN
+// published that no validator can evaluate — four bound to the XPath expression
+// true(), three unreachable in CEN's own Schematron rule ordering, one whose test a
+// correctly masked card number trips.
+//
+// So "gaps" and "complete" are both true at once, and that is not a contradiction:
+// Report.NotEvaluated still names those seven rules, because a caller comparing
+// this package against a reference validator deserves to know they exist, while
+// Report.Complete passes over them because no reference validator evaluates them
+// either. RuleFamily.Unevaluable is the field that separates the two.
+//
+// A document declaring a CIUS whose fatal rules are only partly implemented prints
+// conformant: false and complete: false, with the missing families in
+// Report.NotEvaluated.
 func Example() {
 	report, err := formalis.ValidateCIUS(context.Background(), []byte(exampleUBL))
 	if err != nil {
@@ -71,11 +81,13 @@ func Example() {
 
 	fmt.Println("nothing found:", len(report.Violations) == 0)
 	fmt.Println("conformant:   ", report.Conformant())
+	fmt.Println("complete:     ", report.Complete())
 	fmt.Println("gaps:         ", len(report.NotEvaluated) > 0)
 
 	// Output:
 	// nothing found: true
 	// conformant:    true
+	// complete:      true
 	// gaps:          true
 }
 
