@@ -409,6 +409,48 @@ that the format's own documentation uses these names. The `Source`s whose
 identifiers *are* quoted from a published rule set are EN 16931, XRechnung,
 Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and SRBDT.
 
+## A CIUS may re-write a CEN rule's condition
+
+Some national CIUS ship a **copy** of CEN's Schematron rather than referencing it,
+and a copy can be edited. Where it has been, the authority's own validator evaluates
+its edited condition — so a `BR-S-02` reported under that CIUS is CEN's identifier
+judged by that authority's reading. This package honours that, and says so:
+
+```go
+report, _ := formalis.ValidateCIUSPT(ctx, xml)
+for _, v := range report.Violations {
+    if v.Reading != formalis.SourceNone {
+        // v.Rule is CEN's, v.Source is SourceEN16931, and v.Reading names the
+        // authority whose condition decided it. This finding will not reproduce
+        // under a plain EN 16931 validation, and that is correct.
+    }
+}
+```
+
+`Violation.Reading` is `SourceNone` on every other finding, and `Violation.Error`
+renders it, so a caller who only logs findings can still see it.
+
+Which conditions count as the authority's own is derived rather than judged. A
+copy that differs from CEN's *current* file usually differs because CEN changed the
+file afterwards, which is a stale directory and not a national rule; the generator
+in `testdata/cius-condition-overrides/` separates the two by asking CEN's own git
+history whether CEN ever published what the copy carries. The result today:
+
+| Authority | CEN identifiers in its copy | Same as CEN's current file | A CEN condition from an earlier release | The authority's own |
+|---|---|---|---|---|
+| CIUS-PT 2.1.1 (UBL) | 771 | 27 | 735 | **9**, applied |
+| CIUS-RO 1.0.9 (UBL) | 930 | 904 | 26 | 0 |
+| NLCIUS SI-UBL 2.0.3.2 | 929 | 866 | 63 | 0 |
+| NLCIUS G-account 1.0.2 | 745 | 700 | 45 | 0 |
+| NLCIUS 1.0.3 (CII) | 733 | 628 | 105 | 0 |
+| UBL.BE v1.31 | 250 | 205 | 38 | **7**, recorded and not applied |
+| SRBDT 1.0.0 | ships no copy of CEN's files | | | |
+
+The nine Portuguese ones are the VAT category aliases `NOR`≡`S` and `ISE`≡`E`
+across `BR-S-02/03/04/10` and `BR-E-02/03/04/10`, and `BR-23`, which AT/eSPap
+inverts from an assertion into a report. Only `ValidateCIUSPT` applies them, only
+to UBL documents, and only to those nine identifiers.
+
 ## Bounded work
 
 Validation honours `ctx` and is bounded by the package's own limits on document
@@ -463,13 +505,16 @@ make cius-oracles                  # ~600 documents: XRechnung, Peppol, NLCIUS,
                                    # Schematrons the severity and coverage guards
                                    # read
 make cius-schematron               # those Schematrons on their own: CIUS-PT,
-                                   # CIUS-RO, UBL.BE, SRBDT and NLCIUS
-make en16931-artefacts             # the CEN/TC 434 per-rule unit-test suite
+                                   # CIUS-RO, UBL.BE, SRBDT and NLCIUS, plus each
+                                   # authority's own copy of CEN's files
+make en16931-artefacts             # the CEN/TC 434 per-rule unit-test suite, cloned
+                                   # with full history (see condition overrides)
 make en16931-ubl                   # the EN 16931 UBL example invoices
 make en16931-genericode            # the official code lists (needs unzip)
 make en16931-syntax-rules          # regenerate the advisory binding table
 make cius-pt-rules                 # regenerate the CIUS-PT datatype table
 make cius-ro-rules                 # regenerate the CIUS-RO length/decimal table
+make cius-condition-overrides      # regenerate the per-CIUS condition-override table
 make test
 ```
 
@@ -477,12 +522,15 @@ Each target is stamped, so re-running it is a no-op rather than an error; the
 matching `clean-*` target removes the stamp and the data, and is how you force a
 re-fetch.
 
-Four targets go one step further and *regenerate* committed source. `make
+Five targets go one step further and *regenerate* committed source. `make
 en16931-codelists` rewrites the code-list tables from the genericode bundle,
 `make en16931-syntax-rules` rewrites the advisory syntax-binding table from the CEN
 Schematron, `make cius-pt-rules` rewrites the CIUS-PT datatype table from
-AT/eSPap's, and `make cius-ro-rules` rewrites the CIUS-RO length, decimal,
-date-format and occurrence table from ANAF's. All four are deliberate acts and none is part of running the tests,
+AT/eSPap's, `make cius-ro-rules` rewrites the CIUS-RO length, decimal,
+date-format and occurrence table from ANAF's, and `make cius-condition-overrides`
+rewrites the table of CEN conditions each CIUS re-wrote — derived from every
+authority's copy of CEN's Schematron and from CEN's own git history, which is why
+`make en16931-artefacts` clones full depth. All five are deliberate acts and none is part of running the tests,
 which is why fetching each oracle is its own target — and in both cases a test
 re-derives the same data from the same source on every run and fails if the
 committed table has drifted. The generators refuse to write anything they cannot

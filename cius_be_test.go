@@ -239,11 +239,13 @@ func ublBETokenize(expr string) ([]string, string, bool) {
 // identifiers carry a different condition, including BR-51, where CEN's UBL binding
 // tests a length of at most ten characters and this file tests four to six).
 //
-// Deliberately not acted on, for the reason PR 23 gave for AT/eSPap's 196: these are
-// CEN identifiers, this package reports them under SourceEN16931 with CEN's
-// condition, and honouring one authority's modified copy would silently change what
-// BR-02 means for every caller. Recorded here so the decision is visible, and
-// measured here so a future release that stops diverging is visible too.
+// What "modified" means here has since been made precise. Of the shared identifiers
+// whose condition differs from CEN's current release, all but seven carry a
+// condition CEN itself published at an earlier commit — the copy is old, not
+// Belgian. The seven that CEN never published are Belgium's own and are recorded,
+// with the reason they are not evaluated, in ciusCENCopyVerdicts; the derivation is
+// in cius_overrides.go. This test keeps measuring the *shape* of the copy, which is
+// the thing that would change silently if UBL.BE refreshed it.
 func TestUBLBEShipsAModifiedOlderCopyOfCENsRules(t *testing.T) {
 	beFiles, _ := filepath.Glob(filepath.Join("testdata", "cius-be", "schematron", "*", "GLOBALUBL.BE.sch"))
 	cen := filepath.Join("testdata", "en16931-artefacts", "ubl", "schematron", "preprocessed",
@@ -279,8 +281,8 @@ func TestUBLBEShipsAModifiedOlderCopyOfCENsRules(t *testing.T) {
 	}
 	if differing == 0 {
 		t.Errorf("GLOBALUBL.BE.sch now agrees with CEN's condition on all %d shared identifiers. That is a change "+
-			"worth a commit message rather than a silent pass: this package reports CEN's condition on the "+
-			"ground that the Belgian copy is a modified one", shared)
+			"worth a commit message rather than a silent pass: the classification in cius_overrides.go "+
+			"rests on the Belgian copy being an edited one", shared)
 	}
 	if beOnly == 0 || cenOnly == 0 {
 		t.Errorf("GLOBALUBL.BE.sch and CEN's release now publish the same identifiers (%d only in Belgium's copy, "+
@@ -289,7 +291,7 @@ func TestUBLBEShipsAModifiedOlderCopyOfCENsRules(t *testing.T) {
 	}
 	t.Logf("UBL.BE ships %d CEN identifiers beside its own 15: %d shared with CEN's current release, of which %d "+
 		"carry a different condition; %d it publishes that CEN's release does not and %d the other way. "+
-		"Reported under SourceEN16931 with CEN's condition, deliberately (C40)",
+		"All but seven of those conditions are CEN's own at an earlier release; see ciusCENCopyVerdicts",
 		len(beTests), shared, differing, beOnly, cenOnly)
 }
 
