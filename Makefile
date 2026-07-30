@@ -25,7 +25,7 @@ CURL := curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused
 URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(x) for x in sys.argv[1].split('/')))"
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
-	en16931-syntax-rules en16931-ubl cius-oracles \
+	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron \
 	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles
 
 # Run the tests. Oracle-backed tests skip when their (gitignored) data is absent;
@@ -61,6 +61,7 @@ UBL_DIR := testdata/en16931-ubl
 EN16931_DIR := testdata/en16931-artefacts
 CODELISTS_DIR := testdata/en16931-codelists
 CIUS_STAMP := testdata/.cius-oracles.ok
+CIUS_SCH_STAMP := testdata/.cius-schematron.ok
 
 # git-sync clones $(1) into $(2), or refreshes it if it is already there, so the
 # fetch targets can be re-run without `git clone` failing on an existing
@@ -122,7 +123,7 @@ en16931-syntax-rules: en16931-artefacts
 # ~600 repeated downloads; `make clean-cius-oracles` removes it. check-deps is an
 # order-only prerequisite: it runs first every time, and never makes the stamp
 # look stale.
-cius-oracles: $(CIUS_STAMP)
+cius-oracles: $(CIUS_STAMP) $(CIUS_SCH_STAMP)
 $(CIUS_STAMP): | check-deps
 	$(call git-sync,https://github.com/itplr-kosit/xrechnung-schematron,testdata/xrechnung/schematron)
 	$(call git-sync,https://github.com/itplr-kosit/xrechnung-testsuite,testdata/xrechnung/testsuite)
@@ -241,5 +242,120 @@ $(CIUS_STAMP): | check-deps
 		done; \
 	done
 	touch $@
+
+# The five national rule sets whose *Schematron* this repository needs and used
+# not to fetch. `cius-oracles` above pulls each authority's sample instances out
+# of phax/phive-rules under src/test/resources/external/test-files/ and walked
+# straight past src/test/resources/external/rule-source/, which is where the same
+# repository keeps the authorities' published rule sets. The consequence was not
+# cosmetic: with no artefact to quote, every Coverage severity for CIUS-PT,
+# CIUS-RO, UBL.BE, SRBDT and NLCIUS was this package's fail-safe guess, no
+# implemented rule's XPath had ever been checked against the published one, and
+# those five Sources had to be held permanently ineligible for
+# RuleFamily.Unevaluable — a claim about a published file cannot be checked for a
+# file that is not here (C35). They are .sch only, so this adds no documents to
+# the instance corpora.
+#
+# Which version of each, and why: the one that matches the sample instances
+# `cius-oracles` already fetches, so the artefact and the documents validated
+# against it are the same release of the same rule set.
+#
+#   CIUS-PT   2.0.0 and 2.1.1     — test-files/2.0.0 and test-files/2.1.1
+#   CIUS-RO   1.0.3/4/8/9         — test-files/1.0.3, 1.0.4, 1.0.8, 1.0.9
+#   UBL.BE    en16931/v1.31       — test-files/en16931/v1.31
+#   SRBDT     1.0.0               — the only rule-source version published (the
+#                                   instances cover 1.0.0 and 1.1.0)
+#   NLCIUS    SI-UBL 2.0.3.2      — test-files/simplerinvoicing/SI-UBL-2.0.3.2
+#             NLCIUS-CII 1.0.3    — test-files/simplerinvoicing/NLCIUS-CII-1.0.3;
+#                                   the CII binding is a separate version series
+#                                   and this is the one whose instances are named
+#
+# What is deliberately *not* fetched: the copies of CEN's own EN16931-*.sch that
+# the CIUS-RO and NLCIUS-CII trees vendor as dependencies. Those are already here
+# under testdata/en16931-artefacts, and pulling them in beside a national rule set
+# is how a survey comes to count CEN's rules as Portuguese or Romanian ones.
+# CIUS-PT is the exception that proves the point: its abstract files are a
+# *modified* copy of CEN's, in which the UBL-SR-19/20/21 CEN flags fatal are
+# flagged warning, so they are fetched and the readers filter on the identifier
+# prefix rather than on the file.
+#
+# Every fetch is one `$(CURL)` (which is -f, so a 404 is a failure and not an .sch
+# containing "404: Not Found") on an explicit path under `set -euo pipefail`, so a
+# file that moved upstream fails this recipe rather than quietly shrinking the
+# oracle — C8's lesson, and C26's. The Go-side ratchets are the second half: each
+# reader in cius_artefacts_test.go asserts a floor on the number of identifiers it
+# decoded, so a file that arrives truncated or empty is a red build too.
+PHIVE := https://raw.githubusercontent.com/phax/phive-rules/master
+PT_RULESRC := phive-rules-cius-pt/src/test/resources/external/rule-source
+RO_RULESRC := phive-rules-cius-ro/src/test/resources/external/rule-source
+BE_RULESRC := phive-rules-ublbe/src/test/resources/external/rule-source
+RS_RULESRC := phive-rules-serbia/src/test/resources/external/rule-source
+NL_RULESRC := phive-rules-simplerinvoicing/src/test/resources/external/rule-source
+
+cius-schematron: $(CIUS_SCH_STAMP)
+$(CIUS_SCH_STAMP): | check-deps
+	@# CIUS-PT (Portuguese AT/eSPap). The assertions live in the abstract files and
+	@# the UBL files bind them to XPath through <param>, exactly as CEN's do, so
+	@# both halves are needed to read a rule.
+	for ver in 2.0.0 2.1.1; do \
+		for f in "abstract/urn_feap.gov.pt_CIUS-PT_$$ver-model.sch" \
+			"abstract/urn_feap.gov.pt_CIUS-PT_$$ver-syntax.sch" \
+			"abstract/urn_feap.gov.pt_CIUS-PT_$$ver-condition.sch" \
+			"UBL/urn_feap.gov.pt_CIUS-PT_$$ver-UBL-model.sch" \
+			"UBL/urn_feap.gov.pt_CIUS-PT_$$ver-UBL-syntax.sch" \
+			"UBL/urn_feap.gov.pt_CIUS-PT_$$ver-UBL-condition.sch" \
+			"datatype/urn_feap.gov.pt_CIUS-PT_$$ver-UBL-datatype.sch" \
+			"urn_feap.gov.pt_CIUS-PT_$$ver.sch"; do \
+			mkdir -p "$$(dirname "testdata/cius-pt/schematron/$$ver/$$f")"; \
+			$(CURL) "$(PHIVE)/$$($(URLENC) "$(PT_RULESRC)/$$ver/$$f")" -o "testdata/cius-pt/schematron/$$ver/$$f"; \
+		done; \
+	done
+	@# CIUS-RO (Romanian ANAF RO e-Factura). cius-ro/RO16931-rules.sch is the whole
+	@# national rule set; the validation file beside it is the wrapper that says
+	@# which patterns are active. The UBL/, abstract/ and codelist/ siblings are
+	@# CEN's, and are not fetched.
+	for ver in 1.0.3 1.0.4 1.0.8 1.0.9; do \
+		mkdir -p "testdata/cius-ro/schematron/$$ver/cius-ro"; \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(RO_RULESRC)/$$ver/cius-ro/RO16931-rules.sch")" -o "testdata/cius-ro/schematron/$$ver/cius-ro/RO16931-rules.sch"; \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(RO_RULESRC)/$$ver/EN16931-CIUS_RO-UBL-validation.sch")" -o "testdata/cius-ro/schematron/$$ver/EN16931-CIUS_RO-UBL-validation.sch"; \
+	done
+	@# UBL.BE (Belgian). One file, and it is a merged artefact: alongside the 15
+	@# ubl-BE-* rules it carries CEN's, OpenPEPPOL's and five of OpenPEPPOL's
+	@# country sets. The reader filters on the ubl-BE- prefix.
+	mkdir -p testdata/cius-be/schematron/v1.31
+	$(CURL) "$(PHIVE)/$$($(URLENC) "$(BE_RULESRC)/en16931/v1.31/GLOBALUBL.BE.sch")" -o testdata/cius-be/schematron/v1.31/GLOBALUBL.BE.sch
+	@# SRBDT (Serbian Ministry of Finance). The -pdvcat-* files are the per-VAT-
+	@# category halves of one rule set and only -gen carries assertions, but all
+	@# five are fetched: which of them is empty is upstream's business and not a
+	@# fact this fetch should bake in.
+	mkdir -p testdata/cius-rs/schematron/1.0.0
+	for f in EN16931-UBL-srbdt.sch EN16931-UBL-srbdt-validation.sch \
+		EN16931-UBL-srbdt-pdvcat-gen.sch EN16931-UBL-srbdt-pdvcat-n.sch \
+		EN16931-UBL-srbdt-pdvcat-oe.sch EN16931-UBL-srbdt-pdvcat-r.sch \
+		EN16931-UBL-srbdt-pdvcat-ss.sch; do \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(RS_RULESRC)/1.0.0/$$f")" -o "testdata/cius-rs/schematron/1.0.0/$$f"; \
+	done
+	@# NLCIUS (Dutch SimplerInvoicing), both bindings. This is the one CIUS of the
+	@# five that genuinely publishes a CII binding as well as a UBL one, and the two
+	@# do not publish the same identifiers or gate them the same way, which is the
+	@# fact a single-engine implementation is most likely to get wrong.
+	mkdir -p testdata/nlcius/schematron/ubl testdata/nlcius/schematron/cii
+	for f in si-ubl-2.0.3.2.sch si-ubl-2.0/si-ubl-2.0-nlcius.sch si-ubl-2.0-ext-gaccount-1.0.2.sch; do \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(NL_RULESRC)/simplerinvoicing/2.0.3.2/$$f")" -o "testdata/nlcius/schematron/ubl/$$(basename "$$f")"; \
+	done
+	for f in nlcius-cii-1.0.3.sch nlcius-cii/NLCIUS-CII-validation.sch; do \
+		$(CURL) "$(PHIVE)/$$($(URLENC) "$(NL_RULESRC)/nlcius/1.0.3/$$f")" -o "testdata/nlcius/schematron/cii/$$(basename "$$f")"; \
+	done
+	@# The fetch-side ratchet. Every file above is fetched with curl -f under
+	@# pipefail, so a missing one has already failed the recipe; this catches the
+	@# case a per-file check cannot see — a list that was edited down.
+	@n=$$(find testdata/cius-pt/schematron testdata/cius-ro/schematron testdata/cius-be/schematron \
+		testdata/cius-rs/schematron testdata/nlcius/schematron -name '*.sch' | wc -l); \
+	if [ "$$n" -lt 37 ]; then \
+		echo "make: fetched only $$n CIUS Schematron files, expected at least 37" >&2; \
+		exit 1; \
+	fi; \
+	echo "make: vendored $$n CIUS Schematron files"
+	touch $@
 clean-cius-oracles:
-	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl testdata/turkey testdata/osa testdata/pint $(CIUS_STAMP)
+	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl testdata/turkey testdata/osa testdata/pint $(CIUS_STAMP) $(CIUS_SCH_STAMP)

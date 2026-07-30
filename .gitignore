@@ -24,3 +24,7 @@
 /testdata/osa/
 /testdata/pint/
 /testdata/.cius-oracles.ok
+# The five national Schematrons `make cius-schematron` vendors live inside the
+# corpus directories already ignored above (testdata/cius-pt/schematron/, ...), so
+# they need no pattern of their own; only the stamp does.
+/testdata/.cius-schematron.ok
