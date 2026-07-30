@@ -9,16 +9,20 @@ import (
 // This file validates the XRechnung CIUS (Core Invoice Usage Specification) on
 // top of the EN 16931 core. XRechnung is the German public-sector profile: it
 // makes several EN 16931-optional terms mandatory (the BR-DE-* rules) and, in its
-// EXTENSION and CVD sub-profiles, relaxes a few CEN rules (party/item identifier
-// schemes, the amount-due formula). The same syntax-neutral model feeds it, so it
-// validates CII (ZUGFeRD/XRechnung-CII) and UBL (XRechnung-UBL) alike.
+// EXTENSION and CVD sub-profiles, replaces a few CEN rules (party/item identifier
+// schemes, the attachment MIME list, the amount-due formula) with wider ones of
+// its own. The same syntax-neutral model feeds it, so it validates CII
+// (ZUGFeRD/XRechnung-CII) and UBL (XRechnung-UBL) alike.
 //
 // xrechnung_rules.go holds the rules whose subject is a position in the document
 // tree — the payment-means groups, the settlement-discount text and both
 // sub-profiles — and argues why they are per-syntax.
 //
 // Not vendored: the KoSIT Schematron and instance test suite are cloned by
-// `make cius-oracles` and used only as the FP=0 oracle.
+// `make cius-oracles`. They are the oracle in both directions — the 86 business
+// cases for false positives, and the 242 per-rule fixtures for the verdicts KoSIT
+// declares for them, which is the only place in this repository a CIUS rule gets a
+// violating verdict from its own authority.
 
 // xrechnungTypeCodes is the restricted UNTDID 1001 set XRechnung permits (BR-DE-17).
 var xrechnungTypeCodes = map[string]bool{
@@ -131,11 +135,14 @@ func xrAdder(out *[]Violation) func(rule, msg string) {
 // read the value as clean. See ErrMalformedXML.
 //
 // The Report names the rule families neither rule set evaluates — the union of
-// Coverage(SourceEN16931) and Coverage(SourceXRechnung). The XRechnung half is
-// not small: this package implements the BR-DE-* mandatory-term rules and
-// neither sub-profile's rules (BR-DEX-*, BR-DE-CVD-*), and an EXTENSION
-// document has BR-CO-16 suppressed in favour of a BR-DEX-09 that is not
-// evaluated.
+// Coverage(SourceEN16931) and Coverage(SourceXRechnung). Every rule KoSIT
+// publishes in its own Schematron is evaluated, both sub-profiles included, and
+// the severity of each finding is KoSIT's flag: eleven of the fifty-seven are
+// warning or information rather than fatal, so a document can fail one of them
+// and still be Conformant. What the XRechnung half does not evaluate is the
+// twenty-one Peppol BIS Billing rules KoSIT's released Schematron imports;
+// Coverage(SourceXRechnung) names them, and a caller who needs them can also run
+// ValidatePeppol, which implements nine.
 func ValidateXRechnung(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceXRechnung}, validateXRechnung)
 }
@@ -163,19 +170,21 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 		}
 		out = append(out, v)
 	}
-	out = append(out, validateXRechnungRules(inv, ext, cvd)...)
+	out = append(out, validateXRechnungRules(inv)...)
 	out = append(out, validateXRechnungTreeRules(r, p, ext, cvd)...)
 	return out
 }
 
-// validateXRechnungRules applies the mandatory-term and format rules XRechnung
-// adds on top of EN 16931 (the BR-DE-* family).
+// validateXRechnungRules applies the mandatory-term rules XRechnung adds on top
+// of EN 16931 that the syntax-neutral model already answers. The rules whose
+// subject is a position in the document tree — the payment-means groups, the
+// settlement-discount text, both sub-profiles — are in xrechnung_rules.go.
 //
 // The severity of each finding is KoSIT's flag, read from xrechnungFlags rather
 // than assumed fatal. Seven of these rules are not fatal — BR-DE-17, 19, 20, 21,
 // 26, 27 and 28 — and were reported as though they were, which made a document
 // KoSIT accepts with a warning about its telephone number non-conformant here.
-func validateXRechnungRules(inv *en16931Invoice, ext, cvd bool) []Violation {
+func validateXRechnungRules(inv *en16931Invoice) []Violation {
 	var out []Violation
 	add := xrAdder(&out)
 	req := func(rule, msg, val string) {
