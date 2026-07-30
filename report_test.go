@@ -775,12 +775,12 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 	// were skipped without a word, and the 23 left cleared the previous floor of 30
 	// only while the XRechnung entries were long.
 	//
-	// It is 45 rather than the number the log line below reports, because the table
-	// legitimately shrinks as rules are implemented: this test's own population is
-	// the *gaps*. What it has to catch is the helper regressing, which took it to
-	// 23. A number that has to come down again means either the helper broke or a
-	// rule set finished, and the second belongs in a commit message.
-	if checked < 45 {
+	// A number that has to come down means either the helper broke or a rule set
+	// finished, and the second belongs in a commit message: this test's population
+	// is the *gaps*, so it shrinks as rules are implemented. It went from 71 to 52
+	// while KoSIT's rules were being implemented and back to 67 when the twenty-one
+	// Peppol rules XRechnung imports were recorded.
+	if checked < 60 {
 		t.Fatalf("only %d coverage identifiers could be looked up; the harness is reading the wrong artefacts", checked)
 	}
 	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish, with no exceptions", checked)

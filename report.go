@@ -510,28 +510,34 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
-	// XRechnung: the KoSIT Schematron publishes 57 identifiers, not the 54 this
-	// comment used to claim; this package emits BR-DE-1..11, 14..17, 19..22, 26..28
-	// and 30/31, plus BR-DE-18, the payment-means group BR-DE-23/24/25 and all
-	// fifteen BR-DEX-* rules of the EXTENSION sub-profile and all eight of the CVD
-	// one.
+	// XRechnung. Every identifier KoSIT publishes in its own Schematron is now
+	// evaluated: BR-DE-1..11, 14..22, 23-a/b, 24-a/b, 25-a/b, 26..28, 30, 31, the
+	// seven BR-DE-CVD-*, the fifteen BR-DEX-*, BR-DE-TMP-32, BR-TMP-2, BR-TMP-3
+	// and BR-TMP-CVD-01. That is 57 and not the 54 this table used to claim: the
+	// harness that counted them read <assert ...> with a regular expression that
+	// stops at the first '>', and three of KoSIT's assertions carry a '>' inside
+	// an attribute value — BR-DE-19 and BR-DE-20 in their IBAN arithmetic
+	// ("if($cp > 64)") and BR-DEX-02 in "count(cac:SubInvoiceLine) > 0". They were
+	// invisible to every check that read the flags, which is also how BR-DEX-02
+	// came to be filed as fatal when KoSIT flags it warning.
 	//
-	// The three that were missing were missing from the *harness*, not from KoSIT:
-	// the regular expression that read the assertions stopped at the first '>', and
-	// BR-DE-19, BR-DE-20 and BR-DEX-02 each carry one inside an attribute value. A
-	// rule the harness cannot see has no flag to disagree with, which is how the
-	// entry below came to describe BR-DEX-02 as fatal.
+	// What is left is not KoSIT's own rules but the ones it imports.
 	SourceXRechnung: {
 		{
-			Rules:    "BR-TMP-3",
+			Rules: "PEPPOL-EN16931-R001/R005/R008/R010/R020/R040..R044/R046/R053..R055/R061/R101/R110/R111/R120/R121/R130",
+			// The Reason names the whitelist rather than describing it, because this
+			// is the entry a reader is most likely to think is misfiled: these are
+			// Peppol identifiers, and they are an XRechnung gap because XRechnung
+			// ships them.
 			Severity: SeverityFatal,
-			Reason: "a provisional rule KoSIT nonetheless flags fatal. It was filed with the two advisory ones below while this table carried " +
-				"no severity, which described a fatal gap as advisory",
-		},
-		{
-			Rules:    "BR-DE-TMP-32, BR-TMP-2",
-			Severity: SeverityWarning,
-			Reason:   "provisional and advisory: KoSIT flags BR-DE-TMP-32 information and BR-TMP-2 warning",
+			Reason: "the Peppol BIS Billing 3.0 rules KoSIT merges into the released XRechnung Schematron. They are not in the sources this " +
+				"repository vendors under src/validation/schematron/ — the build copies them in from Peppol at release time, driven by the " +
+				"whitelist in src/xsl/rule-list.xml, which is the file that names these twenty-one and comments out the rest — so a survey " +
+				"of the source tree alone reads XRechnung as 57 rules when the artefact a German buyer validates against has 78. " +
+				"ValidateXRechnung evaluates none of them. Nine are implemented elsewhere in this package, under SourcePeppol and reached " +
+				"through ValidatePeppol, so a caller who needs them today can run both; but that is a workaround and not this rule set " +
+				"honouring its own imports. R061 matters most of the three ways it could: KoSIT withdrew its own BR-DE-29 in XRechnung 3.0 " +
+				"and put R061 in its place, so the mandate reference BG-19 requires is checked by nothing here",
 		},
 	},
 

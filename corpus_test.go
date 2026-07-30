@@ -87,7 +87,13 @@ const (
 	// stopped applying, and that belongs in a commit message.
 	minAdvisoryRulesFiring = 158
 	minAdvisoryFindings    = 3157
-	minXRechnungAdvisory   = 10
+	// minXRechnungAdvisory counts every warning ValidateXRechnung reports over the
+	// 86 KoSIT business cases, and it is no longer only CEN's binding rules: KoSIT
+	// flags eleven of its own fifty-seven identifiers warning or information, and
+	// BR-DE-TMP-32 — "an invoice should state its delivery date" — applies to a
+	// conforming invoice that simply does not. It went from 10 to 46 when the
+	// provisional rules arrived, and 36 of the 46 are BR-DE-TMP-32.
+	minXRechnungAdvisory = 46
 
 	// EN 16931 and the CIUS layered on it.
 	minEN16931UBLInvoices = 15
