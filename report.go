@@ -609,30 +609,18 @@ var notEvaluated = map[Source][]RuleFamily{
 		},
 	},
 
+	// CIUS-PT's business-rule tier is complete: all 65 published BR-CIUS-PT-*
+	// identifiers (the family is 65 and not the 66 its numbering suggests — AT/eSPap
+	// publishes no BR-CIUS-PT-31) and all 8 BR-AA-*. One entry remains.
 	SourceCIUSPT: {
-		{
-			Rules:    "BR-CIUS-PT-13/15/17/18",
-			Severity: SeverityFatal,
-			Reason:   "the Portuguese VAT-category rate rules, which encode AT's rates rather than EN 16931's structure",
-		},
-		{
-			// 24..30 and 32..63, not 24..63: AT/eSPap publishes no BR-CIUS-PT-31.
-			Rules:    "BR-CIUS-PT-24..30, BR-CIUS-PT-32..63",
-			Severity: SeverityFatal,
-			Reason:   "conditional structural completeness: \"if this optional UBL group is present, its mandatory child must be too\"",
-		},
 		{
 			Rules:    "DT-CIUS-PT-* (290 rules: the CIUS-PT datatype bindings)",
 			Severity: SeverityFatal,
 			Reason: "the attribute-level constraints urn_feap.gov.pt_CIUS-PT_2.1.1-UBL-datatype.sch and the " +
 				"condition file place on every typed element — mime codes, scheme identifiers, currency " +
-				"attributes. Four fifths of the published rule set by count, and no entry in this table named " +
-				"them until the Schematron was vendored",
-		},
-		{
-			Rules:    "any other BR-CIUS-PT rule: this package emits only 01, 03, 05, 06, 07, 10, 11, 21, 22, 23, 64, 66",
-			Severity: SeverityFatal,
-			Reason:   "the rest of the published set, which is 65 identifiers and not the 66 the numbering suggests",
+				"attributes — together with the arithmetic rules AT files under the same prefix " +
+				"(DT-CIUS-PT-157..176). Four fifths of the published rule set by count, and no entry in this " +
+				"table named them until the Schematron was vendored",
 		},
 	},
 

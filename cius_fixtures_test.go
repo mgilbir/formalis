@@ -27,7 +27,6 @@ type ciusSuite struct {
 	source   Source
 	validate func(context.Context, []byte) (Report, error)
 	baseline string
-	prefix   string // the identifier prefix this suite's FP assertions scope to
 	cases    []ciusMutation
 	// extras are whole documents rather than mutations of the baseline, for a rule
 	// the baseline cannot reach: a rule bound to cbc:CreditNoteTypeCode needs a
@@ -40,23 +39,30 @@ type ciusDoc struct{ name, xml, want string }
 
 func ciusSuites() []ciusSuite {
 	return []ciusSuite{
-		{source: SourceCIUSPT, validate: ValidateCIUSPT, baseline: minimalCIUSPTUBL, prefix: "BR-CIUS-PT-", cases: ciusPTMutations},
-		{source: SourceCIUSRO, validate: ValidateCIUSRO, baseline: minimalCIUSROUBL, prefix: "BR-RO-", cases: ciusROMutations, extras: ciusROExtras},
-		{source: SourceUBLBE, validate: ValidateUBLBE, baseline: minimalUBLBE, prefix: "ubl-BE-", cases: ublBEMutations},
-		{source: SourceSRBDT, validate: ValidateSRBDT, baseline: minimalSRBDT, prefix: "RSR-", cases: srbdtMutations},
-		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, prefix: "BR-NL-", cases: nlciusMutations},
+		{source: SourceCIUSPT, validate: ValidateCIUSPT, baseline: minimalCIUSPTUBL, cases: ciusPTMutations, extras: ciusPTExtras},
+		{source: SourceCIUSRO, validate: ValidateCIUSRO, baseline: minimalCIUSROUBL, cases: ciusROMutations, extras: ciusROExtras},
+		{source: SourceUBLBE, validate: ValidateUBLBE, baseline: minimalUBLBE, cases: ublBEMutations},
+		{source: SourceSRBDT, validate: ValidateSRBDT, baseline: minimalSRBDT, cases: srbdtMutations},
+		{source: SourceNLCIUS, validate: ValidateNLCIUS, baseline: minimalNLCIUSUBL, cases: nlciusMutations},
 	}
 }
 
 // runCIUSSuite is the body the five per-authority mutation tests share: the
 // baseline must be clean of its authority's rules, and each mutation must make the
 // rule it names fire.
+//
+// "Its authority's rules" is decided by Source and not by an identifier prefix. The
+// two agreed for four of the five and stopped agreeing for CIUS-PT, where AT
+// publishes BR-AA-01..07 and BR-AA-10 under an identifier that carries no
+// BR-CIUS-PT prefix; a prefix scope would have let that family fire on the baseline
+// without the baseline being reported as dirty. Source is what the finding actually
+// carries, so it is what the scope should read.
 func runCIUSSuite(t *testing.T, s ciusSuite) {
 	t.Helper()
 	scoped := func(vs []Violation) []string {
 		var r []string
 		for _, v := range vs {
-			if strings.HasPrefix(v.Rule, s.prefix) {
+			if v.Source == s.source {
 				r = append(r, v.Rule)
 			}
 		}

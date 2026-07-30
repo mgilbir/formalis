@@ -343,6 +343,12 @@ for _, v := range report.Violations {
 }
 ```
 
+An identifier that *looks* like CEN's may not be CEN's. `SourceCIUSPT` carries
+`BR-AA-01`…`BR-AA-07` and `BR-AA-10`, eight rules AT/eSPap wrote for the "Lower
+rate" (`AA`) VAT category by cloning CEN's `BR-S-*` template — for a category code
+EN 16931 leaves out of BT-118's restricted list, so CEN publishes no `BR-AA-*`
+family at all. Keying on `Rule` alone would file them under the standard.
+
 Most national formats publish no rule identifier this package could quote, so the
 identifiers under those `Source`s — `FPA-*`, `FE-*`, `ZA-*`, `ORDER-*`, … — were
 minted here. The `Source` is still the format the document was judged against,
