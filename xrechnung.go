@@ -135,14 +135,20 @@ func xrAdder(out *[]Violation) func(rule, msg string) {
 // read the value as clean. See ErrMalformedXML.
 //
 // The Report names the rule families neither rule set evaluates — the union of
-// Coverage(SourceEN16931) and Coverage(SourceXRechnung). Every rule KoSIT
-// publishes in its own Schematron is evaluated, both sub-profiles included, and
-// the severity of each finding is KoSIT's flag: eleven of the fifty-seven are
-// warning or information rather than fatal, so a document can fail one of them
-// and still be Conformant. What the XRechnung half does not evaluate is the
-// twenty-one Peppol BIS Billing rules KoSIT's released Schematron imports;
-// Coverage(SourceXRechnung) names them, and a caller who needs them can also run
-// ValidatePeppol, which implements nine.
+// Coverage(SourceEN16931) and Coverage(SourceXRechnung). The XRechnung rule set
+// is evaluated in full: KoSIT's own 57 identifiers, both sub-profiles included,
+// and the 21 Peppol BIS Billing rules its released Schematron merges in. The
+// severity of each finding is the flag the artefact publishes — eleven of KoSIT's
+// fifty-seven are warning or information rather than fatal, and so is
+// PEPPOL-EN16931-R120 as KoSIT re-flags it — so a document can fail one of them
+// and still be Conformant.
+//
+// The imported findings carry SourcePeppol, because OpenPEPPOL is the authority
+// that wrote those rules and Source names the author. They are still part of the
+// XRechnung rule set, so they are covered by Coverage(SourceXRechnung) rather
+// than by Coverage(SourcePeppol): a caller reading this Report's NotEvaluated is
+// told what the *XRechnung* Schematron leaves unchecked, and the rules Peppol
+// publishes that XRechnung does not import are not that. See the Coverage table.
 func ValidateXRechnung(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceXRechnung}, validateXRechnung)
 }
@@ -172,6 +178,10 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	}
 	out = append(out, validateXRechnungRules(inv)...)
 	out = append(out, validateXRechnungTreeRules(r, p, ext, cvd)...)
+	// The 21 Peppol rules KoSIT's build merges into the released Schematron, in
+	// KoSIT's wording of them and gated on its whitelist. peppol_rules.go is where
+	// the merge's five departures from OpenPEPPOL's own files are transcribed.
+	out = append(out, validatePeppolRuleSet(r, p, true)...)
 	return out
 }
 

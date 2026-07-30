@@ -22,10 +22,12 @@ const minimalXRechnungUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:s
 	xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
 	xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
 <cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>
+<cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
 <cbc:ID>INV-1</cbc:ID><cbc:IssueDate>2024-01-15</cbc:IssueDate>
 <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode><cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
 <cbc:BuyerReference>04011000-12345-03</cbc:BuyerReference>
 <cac:AccountingSupplierParty><cac:Party>
+  <cbc:EndpointID schemeID="0088">7300010000001</cbc:EndpointID>
   <cac:PostalAddress><cbc:CityName>Berlin</cbc:CityName><cbc:PostalZone>10115</cbc:PostalZone>
     <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
   <cac:PartyTaxScheme><cbc:CompanyID>DE123456789</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
@@ -33,6 +35,7 @@ const minimalXRechnungUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:s
   <cac:Contact><cbc:Name>Tim Tester</cbc:Name><cbc:Telephone>012 3456789</cbc:Telephone><cbc:ElectronicMail>tim@test.de</cbc:ElectronicMail></cac:Contact>
 </cac:Party></cac:AccountingSupplierParty>
 <cac:AccountingCustomerParty><cac:Party>
+  <cbc:EndpointID schemeID="0088">7300010000018</cbc:EndpointID>
   <cac:PostalAddress><cbc:CityName>Bonn</cbc:CityName><cbc:PostalZone>53113</cbc:PostalZone>
     <cac:Country><cbc:IdentificationCode>DE</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
   <cac:PartyLegalEntity><cbc:RegistrationName>Buyer Ltd</cbc:RegistrationName></cac:PartyLegalEntity>

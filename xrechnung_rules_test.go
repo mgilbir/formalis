@@ -48,7 +48,7 @@ import (
 // more test a different thing in each, so a table with one fixture would leave
 // half the rule set unexercised.
 const minimalXRechnungCII = `<CrossIndustryInvoice>
-  <ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
+  <ExchangedDocumentContext><BusinessProcessSpecifiedDocumentContextParameter><ID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</ID></BusinessProcessSpecifiedDocumentContextParameter><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
   <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime></ExchangedDocument>
   <SupplyChainTradeTransaction>
     <IncludedSupplyChainTradeLineItem>
@@ -61,12 +61,14 @@ const minimalXRechnungCII = `<CrossIndustryInvoice>
     <ApplicableHeaderTradeAgreement>
       <BuyerReference>04011000-12345-03</BuyerReference>
       <SellerTradeParty><Name>Seller Co</Name>
+        <URIUniversalCommunication><URIID schemeID="0088">7300010000001</URIID></URIUniversalCommunication>
         <DefinedTradeContact><PersonName>Tim Tester</PersonName>
           <TelephoneUniversalCommunication><CompleteNumber>012 3456789</CompleteNumber></TelephoneUniversalCommunication>
           <EmailURIUniversalCommunication><URIID>tim@test.de</URIID></EmailURIUniversalCommunication></DefinedTradeContact>
         <PostalTradeAddress><PostcodeCode>10115</PostcodeCode><CityName>Berlin</CityName><CountryID>DE</CountryID></PostalTradeAddress>
         <SpecifiedTaxRegistration><ID schemeID="VA">DE123456789</ID></SpecifiedTaxRegistration></SellerTradeParty>
       <BuyerTradeParty><Name>Buyer Co</Name>
+        <URIUniversalCommunication><URIID schemeID="0088">7300010000018</URIID></URIUniversalCommunication>
         <PostalTradeAddress><PostcodeCode>53113</PostcodeCode><CityName>Bonn</CityName><CountryID>DE</CountryID></PostalTradeAddress></BuyerTradeParty>
     </ApplicableHeaderTradeAgreement>
     <ApplicableHeaderTradeDelivery>
@@ -940,6 +942,18 @@ type xrExpectation struct {
 	invalid, valid map[string]bool
 }
 
+// xrPeppolSuffixRE strips the ordinal KoSIT's build appends when the same Peppol
+// identifier appears twice in one merged pattern.
+//
+// src/xsl/peppol-into-xr.xsl renames an assertion to "<id>-<n>" when its pattern
+// holds more than one with that identifier, which happens once: OpenPEPPOL's CII
+// binding declares PEPPOL-EN16931-R043 for ram:SpecifiedTradeAllowanceCharge and
+// again for ram:AppliedTradeAllowanceCharge, so KoSIT's CII instances declare
+// verdicts for R043-1 and R043-2. This package reports the identifier OpenPEPPOL
+// publishes — the suffix is an artefact of de-duplicating XSLT template names, not
+// a rule of its own — so the two are folded back together here.
+var xrPeppolSuffixRE = regexp.MustCompile(`^(PEPPOL-EN16931-[A-Z0-9]+)-[0-9]+$`)
+
 var (
 	xrMuteRE = regexp.MustCompile(`(?s)<\?xmute([^?]*)\?>`)
 	xrAttrRE = regexp.MustCompile(`([\w-]+)="([^"]*)"`)
@@ -958,10 +972,12 @@ var (
 // and 451 verdicts, in both directions, written by the authority whose rules they
 // are. Nothing in this repository had read them.
 //
-// Only XRechnung identifiers are returned. The same instructions also declare
-// PEPPOL-EN16931-* verdicts, because the released XRechnung Schematron merges
-// those rules in, and ValidateXRechnung evaluates none of them —
-// Coverage(SourceXRechnung) is where that is recorded.
+// The PEPPOL-EN16931-* verdicts are returned too, and they are the largest part of
+// what this file declares — 152 for R040 alone. They were dropped until
+// ValidateXRechnung evaluated the rules KoSIT imports; reading them is the strongest
+// evidence in this repository that the twenty-one are evaluated the way the released
+// artefact evaluates them, because KoSIT wrote these verdicts against the merged
+// Schematron and not against OpenPEPPOL's own.
 func xrInstanceExpectations(t *testing.T) []xrExpectation {
 	t.Helper()
 	root := filepath.Join("testdata", "xrechnung", "schematron", "test", "instances")
@@ -996,8 +1012,11 @@ func xrInstanceExpectations(t *testing.T) []xrExpectation {
 					if i := strings.LastIndex(rule, ":"); i >= 0 {
 						rule = rule[i+1:]
 					}
-					if rule == "" || strings.HasPrefix(rule, "PEPPOL-") {
+					if rule == "" {
 						continue
+					}
+					if m := xrPeppolSuffixRE.FindStringSubmatch(rule); m != nil {
+						rule = m[1]
 					}
 					into[rule] = true
 				}
@@ -1038,7 +1057,10 @@ func TestXRechnungSchematronInstanceExpectations(t *testing.T) {
 		}
 		got := map[string]bool{}
 		for _, v := range mustReport(t, ctx, ValidateXRechnung, data).Violations {
-			if v.Source == SourceXRechnung {
+			// The imported Peppol rules carry SourcePeppol, since Source names the
+			// authority that wrote the rule, so the filter is "not the EN 16931 core
+			// and not this checker" rather than one Source.
+			if v.Source == SourceXRechnung || v.Source == SourcePeppol {
 				got[v.Rule] = true
 			}
 		}
@@ -1062,23 +1084,21 @@ func TestXRechnungSchematronInstanceExpectations(t *testing.T) {
 	t.Logf("XRechnung per-rule instances: %d verdicts across %d KoSIT fixtures, both directions", checked, len(exps))
 }
 
-// TestXRechnungCoverageNamesTheImportedRules is the honesty check on the one entry
-// left in Coverage(SourceXRechnung): the identifiers it names have to be the ones
-// KoSIT's whitelist names, and no others.
+// kositImportedPeppolRules reads KoSIT's whitelist — src/xsl/rule-list.xml — with
+// an XML decoder.
 //
-// The whitelist is a vendored file — src/xsl/rule-list.xml — and reading it here is
-// what stops the entry from being prose that drifts. It is also the answer to
-// "why is a Peppol identifier an XRechnung gap": because that file puts it in
-// XRechnung's released Schematron.
-func TestXRechnungCoverageNamesTheImportedRules(t *testing.T) {
+// The file lists every candidate and comments out the ones not taken, so the
+// decoder's dropping of comments is what makes this read the live set: R002, R003,
+// R004, R006, R007, R051, R080, R100, P0100, P0101 and F001 are all in the file and
+// all switched off.
+func kositImportedPeppolRules(t *testing.T) map[string]bool {
+	t.Helper()
 	path := filepath.Join("testdata", "xrechnung", "schematron", "src", "xsl", "rule-list.xml")
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Skip("KoSIT Schematron not present (make cius-oracles)")
 	}
-	// The file lists every candidate and comments out the ones not taken, so the
-	// decoder's dropping of comments is what makes this read the live set.
-	want := map[string]bool{}
+	out := map[string]bool{}
 	dec := xml.NewDecoder(bytes.NewReader(data))
 	for {
 		tok, err := dec.Token()
@@ -1096,30 +1116,130 @@ func TestXRechnungCoverageNamesTheImportedRules(t *testing.T) {
 		if err := dec.DecodeElement(&id, &se); err != nil {
 			t.Fatalf("%s: %v", path, err)
 		}
-		want[strings.TrimSpace(id)] = true
+		out[strings.TrimSpace(id)] = true
 	}
-	if len(want) < 21 {
-		t.Fatalf("read %d whitelisted Peppol rules from %s, want at least 21", len(want), path)
+	if len(out) != 21 {
+		t.Fatalf("read %d whitelisted Peppol rules from %s, want 21", len(out), path)
 	}
-	got := map[string]bool{}
-	for _, e := range Coverage(SourceXRechnung) {
-		for _, id := range coverageIdentifiers(e.Rules) {
-			if strings.HasPrefix(id, "PEPPOL-") {
-				got[id] = true
+	return out
+}
+
+// TestXRechnungImportsExactlyKoSITsWhitelist is the gate on C30's fix, and it is
+// the test that keeps closing that finding from over-shooting it.
+//
+// ValidateXRechnung now evaluates Peppol rules, and the risk of that is no longer
+// "none of them" but "more of them than KoSIT ships". peppolXRImports is the gate,
+// and it has to be exactly the live set of src/xsl/rule-list.xml in both
+// directions: an identifier missing from the map is a rule a German buyer's
+// validator reports and this package does not, and one too many is this package
+// refusing an invoice over a rule KoSIT deliberately left out.
+//
+// It replaces TestXRechnungCoverageNamesTheImportedRules, which held the same file
+// to a coverage *entry*. That entry existed because the rules were unevaluated; the
+// claim it was checking is now a claim about the evaluation itself.
+func TestXRechnungImportsExactlyKoSITsWhitelist(t *testing.T) {
+	want := kositImportedPeppolRules(t)
+	for id := range want {
+		if !peppolXRImports[id] {
+			t.Errorf("KoSIT's whitelist merges %s into the XRechnung Schematron and peppolXRImports does not name it", id)
+		}
+		if _, ok := peppolRules[id]; !ok {
+			t.Errorf("KoSIT's whitelist merges %s, which the vendored OpenPEPPOL Schematron does not publish", id)
+		}
+	}
+	for id := range peppolXRImports {
+		if !want[id] {
+			t.Errorf("peppolXRImports names %s, and KoSIT's whitelist does not merge it in", id)
+		}
+	}
+	// And the gate has to actually bite: a Peppol rule KoSIT does not import must
+	// not reach a document validated as XRechnung, whatever the document says.
+	e := &peppolEval{xr: true}
+	for _, id := range []string{"PEPPOL-EN16931-R002", "PEPPOL-EN16931-R051", "PEPPOL-EN16931-R080",
+		"PEPPOL-EN16931-P0100", "PEPPOL-EN16931-F001", "PEPPOL-EN16931-CL007", "PEPPOL-COMMON-R040"} {
+		for _, cii := range []bool{false, true} {
+			e.cii = cii
+			if e.has(id) {
+				t.Errorf("%s is evaluated on the XRechnung path (cii=%v) and KoSIT does not import it", id, cii)
 			}
 		}
 	}
-	for id := range want {
-		if !got[id] {
-			t.Errorf("KoSIT's whitelist merges %s into the XRechnung Schematron and Coverage(SourceXRechnung) does not name it", id)
+	// The three KoSIT writes into the CII binding itself are the mirror image: they
+	// must reach a CII document on the XRechnung path and not on the Peppol one,
+	// because OpenPEPPOL's CII file does not publish them.
+	for id := range peppolXRCIIAdditions {
+		if !(&peppolEval{xr: true, cii: true}).has(id) {
+			t.Errorf("%s is one of the three rules peppol-into-xr.xsl adds to the CII binding and it is not evaluated there", id)
+		}
+		if (&peppolEval{cii: true}).has(id) {
+			t.Errorf("%s is evaluated for a CII document on the Peppol path, and OpenPEPPOL's CII Schematron does not publish it", id)
 		}
 	}
-	for id := range got {
-		if !want[id] {
-			t.Errorf("Coverage(SourceXRechnung) names %s as an imported rule, and KoSIT's whitelist does not merge it in", id)
-		}
+	t.Logf("XRechnung imports %d Peppol rules and evaluates exactly those", len(want))
+}
+
+// TestR120IsAdvisoryOnlyWhereKoSITSaysSo is the per-path half of the severity
+// claim for the one rule two artefacts flag differently.
+//
+// severityTables() has to allow PEPPOL-EN16931-R120 both severities, because both
+// are published: OpenPEPPOL flags it fatal and peppol-into-xr.xsl re-flags it
+// warning for XRechnung. That widening would also let a bug through — R120
+// advisory everywhere, or fatal everywhere — so the two readings are pinned here,
+// each against the artefact that publishes it, on a document that trips the rule.
+//
+// This is C29's failure mode in a rule set nobody had compared. Reported fatal on
+// the XRechnung path, a line whose net amount is a cent out would make an invoice
+// KoSIT accepts non-conformant here.
+func TestR120IsAdvisoryOnlyWhereKoSITSaysSo(t *testing.T) {
+	// The flag KoSIT writes, read back out of the stylesheet that writes it.
+	xsl, err := os.ReadFile(filepath.Join("testdata", "xrechnung", "schematron", "src", "xsl", "peppol-into-xr.xsl"))
+	if err != nil {
+		t.Skip("KoSIT Schematron not present (make cius-oracles)")
 	}
-	t.Logf("XRechnung imports %d Peppol rules; the coverage entry names all of them", len(want))
+	if !strings.Contains(string(xsl), `<xsl:when test="@id='PEPPOL-EN16931-R120'">`) ||
+		!strings.Contains(string(xsl), `<xsl:attribute name="flag">warning</xsl:attribute>`) {
+		t.Error("peppol-into-xr.xsl no longer re-flags PEPPOL-EN16931-R120, so peppolXRFlags is quoting something " +
+			"the artefact does not say")
+	}
+	if got := peppolRules["PEPPOL-EN16931-R120"].severity; got != SeverityFatal {
+		t.Errorf("OpenPEPPOL flags R120 fatal and peppolRules records %s", got)
+	}
+
+	// A line whose net amount does not match quantity × price, in both rule sets.
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name string
+		doc  []byte
+		fn   func(context.Context, []byte) (Report, error)
+		want Severity
+	}{
+		{"Peppol", []byte(strings.Replace(minimalPeppolUBL,
+			`<cbc:PriceAmount currencyID="EUR">100.00</cbc:PriceAmount>`,
+			`<cbc:PriceAmount currencyID="EUR">90.00</cbc:PriceAmount>`, 1)), ValidatePeppol, SeverityFatal},
+		{"XRechnung", []byte(strings.Replace(minimalXRechnungUBL,
+			`<cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price>`,
+			`<cac:Price><cbc:PriceAmount>90.00</cbc:PriceAmount></cac:Price>`, 1)), ValidateXRechnung, SeverityWarning},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			found := false
+			for _, v := range mustReport(t, ctx, tc.fn, tc.doc).Violations {
+				if v.Rule != "PEPPOL-EN16931-R120" {
+					continue
+				}
+				found = true
+				if v.Source != SourcePeppol {
+					t.Errorf("R120 carries Source %q; OpenPEPPOL wrote the rule and Source names the author", v.Source)
+				}
+				if v.Severity != tc.want {
+					t.Errorf("R120 on the %s path is %s, and the artefact that path validates against flags it %s",
+						tc.name, v.Severity, tc.want)
+				}
+			}
+			if !found {
+				t.Error("R120 did not fire on a line whose net amount is wrong, so this test proves nothing")
+			}
+		})
+	}
 }
 
 // TestXRechnungSubProfilesAreIdentifiedAsKoSITIdentifiesThem pins the one place

@@ -109,7 +109,7 @@ const (
 	// adds fixtures — and a number that falls means either a short fetch or a rule
 	// that stopped being exercised.
 	minXRechnungRuleInstances = 242
-	minXRechnungRuleVerdicts  = 269
+	minXRechnungRuleVerdicts  = 362
 	minPeppolExamples         = 9
 
 	// OpenPEPPOL's own per-rule test sets, under rules/unit-UBL-PEPPOL and

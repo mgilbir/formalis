@@ -57,7 +57,7 @@ var allSources = []Source{
 // If a Source is ever moved here it means someone finished implementing an
 // authority's rule set, which is exactly the change that should be hard to make
 // by accident.
-var completeSources = map[Source]bool{SourceChecker: true}
+var completeSources = map[Source]bool{SourceChecker: true, SourceXRechnung: true}
 
 // TestConformantIsFalseForACancelledRun is the first of the five. It is the
 // case limits.go already solved with RuleLimit; Complete has to keep solving
@@ -301,9 +301,18 @@ func TestComposedValidatorReportsTheUnionOfItsRuleSets(t *testing.T) {
 
 // TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan is the dispatcher's half.
 // ValidateCIUS chooses a rule set from the document's BT-24, so its coverage
-// claim has to follow the document: an XRechnung invoice must come back with
-// the XRechnung gaps and not, say, the CIUS-PT ones, and a document declaring
-// no recognised CIUS must come back with the core's gaps alone.
+// claim has to follow the document: a Peppol invoice must come back with the
+// Peppol gaps and not, say, the CIUS-PT ones, and a document declaring no
+// recognised CIUS must come back with the core's gaps alone.
+//
+// It used to make that point with an XRechnung document and a second assertion
+// that the result differed from the core's gaps alone. Both had to change, and the
+// second is the interesting one: with KoSIT's 57 rules and the 21 it imports all
+// evaluated, an XRechnung document routed here *does* come back with the core's
+// gaps alone, because that is now the truth. The assertion encoded the state of
+// the rule set rather than the property being tested, so the case moved to Peppol,
+// whose rule set still names a gap, and the XRechnung case stayed as the union it
+// is — which for XRechnung is the core's list.
 func TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan(t *testing.T) {
 	ctx := context.Background()
 
@@ -312,8 +321,14 @@ func TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan(t *testing.T) {
 	if !reflect.DeepEqual(xr.NotEvaluated, wantXR) {
 		t.Errorf("an XRechnung document routed through ValidateCIUS reported\n  %v\nwant the XRechnung union\n  %v", xr.NotEvaluated, wantXR)
 	}
-	if reflect.DeepEqual(xr.NotEvaluated, Coverage(SourceEN16931)) {
-		t.Error("ValidateCIUS reported only the core's gaps for a document it validated against XRechnung too")
+
+	pp := mustReport(t, ctx, ValidateCIUS, []byte(minimalPeppolUBL))
+	wantPP := append(Coverage(SourceEN16931), Coverage(SourcePeppol)...)
+	if !reflect.DeepEqual(pp.NotEvaluated, wantPP) {
+		t.Errorf("a Peppol document routed through ValidateCIUS reported\n  %v\nwant the Peppol union\n  %v", pp.NotEvaluated, wantPP)
+	}
+	if reflect.DeepEqual(pp.NotEvaluated, Coverage(SourceEN16931)) {
+		t.Error("ValidateCIUS reported only the core's gaps for a document it validated against Peppol too")
 	}
 
 	// A document that declares no recognised CIUS is validated against the core
@@ -1396,9 +1411,10 @@ func coverageText(src Source) string {
 // invoice now reports Conformant() == true, where before it reported false with
 // twenty-one PEPPOL-EN16931-* identifiers as the reason.
 var validatorsWithNoFatalGap = map[string]bool{
-	"Validate":       true,
-	"ValidateNLCIUS": true,
-	"ValidateCIUS":   true,
+	"Validate":          true,
+	"ValidateNLCIUS":    true,
+	"ValidateCIUS":      true,
+	"ValidateXRechnung": true,
 }
 
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of
