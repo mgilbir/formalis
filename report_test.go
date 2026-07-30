@@ -185,25 +185,28 @@ func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
 	}
 }
 
-// TestNoRuleSetIsCompleteToday records the state of the package, so that
-// closing the last gap in an authority's rule set is a deliberate act rather
-// than a side effect.
+// TestNoAuthoritysRuleSetIsImplementedInFull records the state of the package, so
+// that emptying an authority's coverage entry is a deliberate act rather than a
+// side effect.
 //
-// It is a strange test to write and it is the honest one. Complete returns false
-// for every document this package can be handed, because every rule set it
-// implements is a subset — including the EN 16931 core, which looked complete
-// only because the CEN unit-test oracle has error fragments for 198 rules and
-// says nothing about the rest. When someone finishes a rule set this test fails
-// and asks them to move the Source to completeSources, at which point Complete
-// starts returning true for documents validated by it, which is a claim that
-// deserves to be made on purpose.
+// It is about the *table*, and that is a stricter question than Report.Complete
+// and no longer the same one. Every authority here publishes at least one rule
+// this package does not evaluate, so every coverage entry is non-empty — and for
+// the EN 16931 core the rules left are seven CEN itself cannot honour, so
+// Report.Complete is true for a clean document while the entry is still, correctly,
+// not empty. Those two facts only look contradictory until you read
+// RuleFamily.Unevaluable: the table records what was not evaluated, Complete asks
+// what could have been.
 //
-// It is about Complete and not Conformant, and the two have parted company: the
-// EN 16931 core's *fatal* half is finished, so its clean documents are already
-// Conformant, while its 1,168 advisory binding rules keep it out of
-// completeSources. TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is the
-// same kind of record for the fatal half.
-func TestNoRuleSetIsCompleteToday(t *testing.T) {
+// So this test is not "Complete is false everywhere" (it was, and it is not any
+// more). It is "nobody has quietly deleted a coverage entry". When someone really
+// does finish an authority's rule set, this fails and asks them to move the Source
+// to completeSources, which is a claim that deserves to be made on purpose.
+// TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is the same kind of record
+// for the fatal half, and
+// TestTheCoreReportsConformantAndCompleteForACleanInvoice is the one that pins
+// what a caller actually gets.
+func TestNoAuthoritysRuleSetIsImplementedInFull(t *testing.T) {
 	for _, src := range allSources {
 		if completeSources[src] {
 			continue
@@ -311,7 +314,7 @@ func TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan(t *testing.T) {
 // TestEveryValidatorReportsItsCoverage sweeps the exported surface. Every
 // validator here runs a partial rule set, so every one of them must say so on a
 // document it can read; a validator that returns an empty NotEvaluated has
-// either become complete (see TestNoRuleSetIsCompleteToday) or forgotten to
+// either become complete (see TestNoAuthoritysRuleSetIsImplementedInFull) or forgotten to
 // pass its Sources to newReport, and the second is silent.
 func TestEveryValidatorReportsItsCoverage(t *testing.T) {
 	ctx := context.Background()
@@ -324,11 +327,30 @@ func TestEveryValidatorReportsItsCoverage(t *testing.T) {
 			if len(r.NotEvaluated) == 0 {
 				t.Fatalf("%s reported no coverage gaps at all", name)
 			}
-			if r.Complete() {
-				t.Errorf("%s reported Complete while naming %d unevaluated rule families", name, len(r.NotEvaluated))
+			// Complete is an equality here rather than a one-sided assertion, which
+			// is what it became when Unevaluable arrived. It used to read "a
+			// validator naming any gap is not Complete", which was true only because
+			// no rule set could reach Complete at all; the EN 16931 core reaches it
+			// now, and pinning both directions is stronger than relaxing the old
+			// claim to fit. A gap this package could close and did not must make
+			// Complete false, and a table holding nothing but rules CEN cannot
+			// honour must not.
+			evaluable := 0
+			for _, f := range r.NotEvaluated {
+				if !f.Unevaluable {
+					evaluable++
+				}
 			}
+			if got := r.Complete(); got != (evaluable == 0) {
+				t.Errorf("%s reported Complete() == %v while naming %d unevaluated rule families, %d of them evaluable",
+					name, got, len(r.NotEvaluated), evaluable)
+			}
+			// unknownRoot is not an invoice in any format, so every validator reports
+			// its own wrong-root finding, which is fatal. Conformant is therefore
+			// false for every validator here whatever its coverage, including the one
+			// whose coverage no longer costs a verdict.
 			if r.Conformant() {
-				t.Errorf("%s reported Conformant on a rule set with gaps", name)
+				t.Errorf("%s reported Conformant on a document that is not an invoice", name)
 			}
 		})
 	}
@@ -623,28 +645,25 @@ func TestEveryEmittedEN16931RuleCarriesCENsFlag(t *testing.T) {
 // TestCoverageSeveritiesMatchThePublishedFlag holds the coverage table's
 // severity column to the same standard as the findings: for every family whose
 // identifiers this repository can look up, the severity must be the one the
-// authority published.
+// authority published. Unconditionally — there is no excused set.
 //
-// Two families deliberately do not match, and they are named here rather than
-// skipped by a pattern, because they are the whole reason RuleFamily.Severity is
-// documented as what the gap costs rather than as a copy of the flag. CEN flags
-// BR-CO-05..08 and CII-DT-010/011/012 fatal and binds them to expressions no
-// conforming validator can ever report, so not evaluating them cannot change a
-// verdict. Anything else diverging is a mistake in the table.
+// There was one, and deleting it is the evidence D10 was the right change. Seven
+// identifiers were listed here as allowed to diverge from their published flag,
+// because six of them are rules CEN flags fatal and cannot itself honour, and
+// recording them at SeverityWarning was the only way to keep Report.Conformant
+// from being false for every document forever. That made this test a
+// hand-maintained list that had to be edited every time such a rule was found —
+// the same failure mode as a coverage claim written in a file comment — and it
+// made RuleFamily.Severity two things at once: a quotation for most entries and
+// an estimate of cost for those seven.
+//
+// RuleFamily.Unevaluable carries the second fact now, so the column is a
+// quotation everywhere and this test needs no exceptions. If an exception ever
+// looks necessary again, the model is wrong rather than the entry: either the
+// severity is misquoted, or the family is unevaluable and should say so in the
+// field built for it.
 func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 	flags := schematronFlags(t)
-
-	// The families whose recorded severity is deliberately not the published
-	// flag, with the identifier that makes each recognisable.
-	unenforceable := map[string]string{
-		"BR-CO-05":   "CEN binds all four to true() in both syntaxes",
-		"BR-CO-06":   "CEN binds all four to true() in both syntaxes",
-		"BR-CO-07":   "CEN binds all four to true() in both syntaxes",
-		"BR-CO-08":   "CEN binds all four to true() in both syntaxes",
-		"CII-DT-010": "an earlier Schematron rule matches the node first, so no processor reaches it",
-		"CII-DT-011": "an earlier Schematron rule matches the node first, so no processor reaches it",
-		"CII-DT-012": "an earlier Schematron rule matches the node first, so no processor reaches it",
-	}
 
 	checked := 0
 	for _, src := range []Source{SourceEN16931, SourceXRechnung, SourcePeppol} {
@@ -663,24 +682,19 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 					continue
 				}
 				checked++
-				if entry.Severity == want {
-					continue
+				if entry.Severity != want {
+					t.Errorf("Coverage(%q) records the family %q as %s, but %s is flagged %v. Severity is the "+
+						"authority's flag quoted and nothing else; if this family cannot be evaluated by anyone, "+
+						"that is RuleFamily.Unevaluable's job: %q",
+						src, entry.Rules, entry.Severity, id, keysOf(got), entry.Reason)
 				}
-				if why, excused := unenforceable[id]; excused && entry.Severity == SeverityWarning {
-					if !strings.Contains(entry.Reason, "true()") && !strings.Contains(entry.Reason, "first matching rule") {
-						t.Errorf("%s is recorded advisory against a %s flag (%s) without the Reason saying why", id, want, why)
-					}
-					continue
-				}
-				t.Errorf("Coverage(%q) records the family %q as %s, but %s is flagged %v: %q",
-					src, entry.Rules, entry.Severity, id, keysOf(got), entry.Reason)
 			}
 		}
 	}
 	if checked < 30 {
 		t.Fatalf("only %d coverage identifiers could be looked up; the harness is reading the wrong artefacts", checked)
 	}
-	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish", checked)
+	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish, with no exceptions", checked)
 }
 
 // coverageIdentifiers expands one entry's Rules field into every identifier it
@@ -826,13 +840,21 @@ func TestZeroReportIsNotConformant(t *testing.T) {
 // implementing an authority's advisory tier would be a way of making the verdict
 // permanently unavailable rather than of making the report better.
 //
-// It is stated over hand-built Reports because no rule set in this package is in
-// that state yet — every one still has fatal gaps, which is what
-// TestNoRuleSetIsCompleteToday records. The predicate is what is under test here,
-// not the table.
+// It is stated over hand-built Reports because it is the predicate that is under
+// test and not the table: these rows cover combinations no rule set in this
+// package produces, including the ones RuleFamily.Unevaluable introduced, and a
+// truth table is the only way to pin a predicate's behaviour on inputs the corpus
+// does not generate. TestTheCoreReportsConformantAndCompleteForACleanInvoice is
+// the same properties asserted on a real document.
 func TestConformantIgnoresAdvisoryGapsButNotFatalOnes(t *testing.T) {
 	advisoryGap := RuleFamily{Rules: "UBL-CR-*", Severity: SeverityWarning, Reason: "advisory"}
 	fatalGap := RuleFamily{Rules: "UBL-CR-666", Severity: SeverityFatal, Reason: "fatal"}
+	// The two shapes D10 added: a family the authority flags fatal that nobody can
+	// evaluate, and an advisory one likewise. Neither may cost a verdict and
+	// neither may make a run incomplete, because there is no work either could
+	// represent.
+	fatalUnevaluable := RuleFamily{Rules: "BR-CO-05", Severity: SeverityFatal, Unevaluable: true, Reason: "bound to true()"}
+	advisoryUnevaluable := RuleFamily{Rules: "BR-51", Severity: SeverityWarning, Unevaluable: true, Reason: "a length test a masked PAN trips"}
 	warning := Violation{Source: SourceEN16931, Rule: "UBL-CR-001", Severity: SeverityWarning, Message: "advisory"}
 	fatal := Violation{Source: SourceEN16931, Rule: "BR-01", Severity: SeverityFatal, Message: "fatal"}
 	limit := Violation{Source: SourceChecker, Rule: RuleLimit, Severity: SeverityFatal, Message: "stopped"}
@@ -850,11 +872,33 @@ func TestConformantIgnoresAdvisoryGapsButNotFatalOnes(t *testing.T) {
 		{"a warning", []Violation{warning}, nil, true, true},
 		{"a fatal finding", []Violation{fatal}, nil, false, true},
 		{"a warning and an advisory gap", []Violation{warning}, []RuleFamily{advisoryGap}, true, false},
+
+		// The D10 rows. A fatal-but-unevaluable family costs nothing: it is a rule
+		// the authority published and cannot itself honour, so there is no work it
+		// stands for and no verdict it can put in doubt. This is the row that would
+		// have needed the old excuse list to express, and it is the reason Complete
+		// is reachable at all.
+		{"a fatal unevaluable gap", nil, []RuleFamily{fatalUnevaluable}, true, true},
+		{"an advisory unevaluable gap", nil, []RuleFamily{advisoryUnevaluable}, true, true},
+		{"both unevaluable gaps", nil, []RuleFamily{fatalUnevaluable, advisoryUnevaluable}, true, true},
+		// Unevaluable is per family and not per table: one evaluable gap alongside
+		// them still makes the run incomplete, and a fatal one still costs the
+		// verdict. A predicate that short-circuited on "any unevaluable entry"
+		// would pass this row wrongly, which is why it is here.
+		{"an unevaluable gap and an advisory one", nil, []RuleFamily{fatalUnevaluable, advisoryGap}, true, false},
+		{"an unevaluable gap and a fatal one", nil, []RuleFamily{fatalUnevaluable, fatalGap}, false, false},
+		{"a fatal finding beside an unevaluable gap", []Violation{fatal}, []RuleFamily{fatalUnevaluable}, false, true},
+
 		// A stopped run is not conformant however light its findings are, and
 		// Conformant tests IsCheckerViolation rather than the severity so that
 		// this stays true if the severity is ever reclassified.
 		{"a stopped run", []Violation{limit}, nil, false, false},
 		{"a stopped run with an advisory severity", []Violation{{Source: SourceChecker, Rule: RuleLimit, Severity: SeverityWarning, Message: "stopped"}}, nil, false, false},
+		// A stopped run is incomplete whatever the table says. Unevaluable answers
+		// "was there work left undone"; a stopped run means the work that was
+		// attempted did not finish, which is the other half of Complete and is not
+		// reachable through NotEvaluated at all.
+		{"a stopped run with only unevaluable gaps", []Violation{limit}, []RuleFamily{fatalUnevaluable}, false, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			r := newReport(tc.vs)
@@ -866,6 +910,262 @@ func TestConformantIgnoresAdvisoryGapsButNotFatalOnes(t *testing.T) {
 				t.Errorf("Complete() = %v, want %v", got, tc.complete)
 			}
 		})
+	}
+}
+
+// TestZeroReportIsNotComplete is TestZeroReportIsNotConformant's other half,
+// separated out because Complete stopped being unreachable.
+//
+// While no rule set could report Complete, the zero Report's Complete() == false
+// was true for two independent reasons and nobody had to know which: the ran
+// guard, and the fact that no combination of inputs made it true anyway. Now that
+// the EN 16931 core reaches Complete, the ran guard is the only thing left, and
+// Complete is the *stronger* of the two claims a Report makes — so a Report nobody
+// filled in reading as Complete would be worse than one reading as Conformant.
+// This asserts it over every route into a zero Report, and it asserts the positive
+// direction too, because a guard that also blocks the real thing is not a guard.
+func TestZeroReportIsNotComplete(t *testing.T) {
+	var zero Report
+	if zero.Complete() {
+		t.Error("the zero Report is Complete")
+	}
+	if (Report{}).Complete() {
+		t.Error("a freshly composed empty Report is Complete")
+	}
+	// The shape a caller who decoded a Report from JSON gets: fields populated,
+	// ran absent because it is unexported.
+	decoded := Report{Violations: []Violation{}, NotEvaluated: []RuleFamily{}}
+	if decoded.Complete() {
+		t.Error("a Report assembled outside this package is Complete; only a validation can make that claim")
+	}
+	// And the real thing, which must be Complete, or the guard above is
+	// indistinguishable from Complete being unreachable — which is exactly the
+	// state this test was written to stop being confused with.
+	real := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII))
+	if !real.Complete() {
+		t.Fatalf("a clean EN 16931 document is not Complete, so this test proves nothing about the ran guard: %v",
+			real.NotEvaluated)
+	}
+	if copied := real; !copied.Complete() {
+		t.Error("copying a Complete Report lost the claim")
+	}
+}
+
+// sourcesWithUnevaluableFamilies is where a Source has to be named before its
+// coverage table may carry an Unevaluable family.
+//
+// It is a list rather than a rule because the claim "no validator can evaluate
+// this" is a strong one about somebody else's artefact, and the field it sets
+// makes Report.Complete true — so it is the one field in RuleFamily that pays for
+// itself by being wrong. A Source arriving here should be a sentence in a commit
+// message, not a side effect of adding a coverage entry.
+//
+// Only CEN is on it, and PRs adding XRechnung, Peppol and CIUS coverage should
+// expect to leave it alone: a rule those authorities publish and this package has
+// not implemented is unimplemented, whatever the reason.
+var sourcesWithUnevaluableFamilies = map[Source]bool{SourceEN16931: true}
+
+// sourcesWithVendoredRuleArtefacts are the authorities whose published rule set
+// this repository actually holds, so that a claim about the artefact can be
+// checked against it. It is the same list TestCoverageSeveritiesMatchThePublishedFlag
+// reads the flags from.
+var sourcesWithVendoredRuleArtefacts = map[Source]bool{
+	SourceEN16931: true, SourceXRechnung: true, SourcePeppol: true,
+}
+
+// TestOnlyEN16931HasUnevaluableFamilies is the guard against RuleFamily.Unevaluable
+// becoming a dumping ground, which is the one way this change could make the
+// package less honest than it was.
+//
+// Unevaluable makes Report.Complete true and makes a fatal gap free. If it widens
+// to mean "hard", "low value" or "not yet", Complete becomes exactly the lie the
+// old Complete *field* was — a package claiming it saw everything when it did not.
+// Two properties keep the boundary where D10 put it:
+//
+//   - a Source must be named in sourcesWithUnevaluableFamilies, so the first
+//     entry under a new authority is a deliberate act; and
+//   - that Source's authority must publish a rule artefact this repository
+//     vendors. This is the hard half. "No validator can evaluate this rule" is a
+//     claim about a published artefact, and it cannot be checked — by a reviewer or
+//     by this suite — for an authority whose artefact is not here. It is why the
+//     four CIUS with no vendored Schematron (CIUS-PT, CIUS-RO, UBL.BE, SRBDT) can
+//     never carry the field however awkward their rules turn out to be: those are
+//     unimplemented, and the table already has a way to say so.
+func TestOnlyEN16931HasUnevaluableFamilies(t *testing.T) {
+	for _, src := range allSources {
+		var unevaluable []string
+		for _, f := range Coverage(src) {
+			if f.Unevaluable {
+				unevaluable = append(unevaluable, f.Rules)
+			}
+		}
+		if len(unevaluable) == 0 {
+			continue
+		}
+		if !sourcesWithUnevaluableFamilies[src] {
+			t.Errorf("Coverage(%q) marks %v unevaluable, but %q is not in sourcesWithUnevaluableFamilies. "+
+				"Unevaluable means the authority published a rule no validator can evaluate — not that this "+
+				"package has not implemented it. If it is really the former, add the Source and say why in the "+
+				"commit; if it is the latter, drop the field and leave the gap where it belongs", src, unevaluable, src)
+		}
+		if !sourcesWithVendoredRuleArtefacts[src] {
+			t.Errorf("Coverage(%q) marks %v unevaluable, but this repository vendors no rule artefact for %q, so "+
+				"neither a reviewer nor this suite can check the claim. An unevaluable family has to point at a "+
+				"file that is here", src, unevaluable, src)
+		}
+	}
+	// The four CIUS whose authority publishes no Schematron this repository holds
+	// are named, not merely implied by the list above, because they are the case
+	// most likely to be argued for: their rules are the hardest in the package to
+	// implement, and "hard" is the thing Unevaluable does not mean.
+	for _, src := range []Source{SourceCIUSPT, SourceCIUSRO, SourceUBLBE, SourceSRBDT} {
+		for _, f := range Coverage(src) {
+			if f.Unevaluable {
+				t.Errorf("Coverage(%q) marks %q unevaluable. These four CIUS are unimplemented, not unevaluable: "+
+					"their authorities publish rules that a validator can check and this package does not", src, f.Rules)
+			}
+		}
+	}
+}
+
+// TestUnevaluableFamiliesNameTheirEvidence checks the Reason of every unevaluable
+// family against the artefact it claims, rather than against a house style.
+//
+// An unevaluable family is a claim about somebody else's published file, and a
+// claim a reviewer cannot check is not much better than no claim. So each Reason
+// has to name a vendored file that exists, and where the Reason says a rule is
+// bound to the XPath expression true(), this test reads that binding out of the
+// Schematron and asserts it really is. That last part is what makes this a test
+// rather than a lint: it is the difference between "the prose mentions true()" and
+// "CEN binds BR-CO-05 to true()".
+//
+// The other two claims are checked elsewhere by construction, and the Reason names
+// where: CII-DT-010/011/012's unreachability is
+// TestAdvisoryRulesCENCannotReportAreNotReported, and BR-51's UBL binding is
+// quoted with the length bound it uses so the arithmetic can be followed.
+func TestUnevaluableFamiliesNameTheirEvidence(t *testing.T) {
+	dir := en16931SuiteDir()
+	if dir == "" {
+		t.Skip("EN 16931 artefact suite not present; run `make en16931-artefacts`")
+	}
+	// Every .sch or .xslt filename mentioned in a Reason.
+	fileRE := regexp.MustCompile(`[A-Za-z0-9_./-]+\.(?:sch|xslt)`)
+	// A param binding a rule to a literal true(), as the two binding files write it.
+	paramRE := func(id string) *regexp.Regexp {
+		return regexp.MustCompile(`<param\s+name="` + regexp.QuoteMeta(id) + `"\s+value="true\(\)"\s*/>`)
+	}
+
+	vendored := map[string]bool{}
+	for _, pat := range []string{
+		filepath.Join(dir, "ubl", "schematron", "*", "*.sch"),
+		filepath.Join(dir, "cii", "schematron", "*", "*.sch"),
+		filepath.Join(dir, "ubl", "xslt", "*.xslt"),
+		filepath.Join(dir, "cii", "xslt", "*.xslt"),
+	} {
+		files, _ := filepath.Glob(pat)
+		for _, f := range files {
+			vendored[filepath.Base(f)] = true
+		}
+	}
+	if len(vendored) < 8 {
+		t.Fatalf("found only %d vendored rule artefacts; the harness is reading the wrong directory", len(vendored))
+	}
+
+	checkedTrue, checkedFiles := 0, 0
+	for _, src := range allSources {
+		for _, f := range Coverage(src) {
+			if !f.Unevaluable {
+				continue
+			}
+			named := fileRE.FindAllString(f.Reason, -1)
+			if len(named) == 0 {
+				t.Errorf("Coverage(%q) marks %q unevaluable without naming the artefact that makes it so; a "+
+					"reviewer has to be able to check the claim: %q", src, f.Rules, f.Reason)
+			}
+			for _, n := range named {
+				checkedFiles++
+				if !vendored[filepath.Base(n)] {
+					t.Errorf("Coverage(%q) entry %q names the artefact %q, which this repository does not vendor",
+						src, f.Rules, n)
+				}
+			}
+			if !strings.Contains(f.Reason, "true()") {
+				continue
+			}
+			// The claim is mechanical, so check it mechanically: read the binding
+			// out of both syntaxes and assert every identifier the entry names is
+			// bound to a literal true().
+			for _, id := range coverageIdentifiers(f.Rules) {
+				if !strings.HasPrefix(id, "BR-") {
+					continue
+				}
+				for _, bind := range []string{
+					filepath.Join(dir, "ubl", "schematron", "UBL", "EN16931-UBL-model.sch"),
+					filepath.Join(dir, "cii", "schematron", "CII", "EN16931-CII-model.sch"),
+				} {
+					data, err := os.ReadFile(bind)
+					if err != nil {
+						t.Fatalf("%s: %v", bind, err)
+					}
+					if !paramRE(id).Match(data) {
+						t.Errorf("Coverage(%q) entry %q says CEN binds these to true(), but %s does not bind %s to "+
+							"true(). Either the Reason is wrong or CEN changed the binding, and in the second case "+
+							"the family may no longer be unevaluable", src, f.Rules, filepath.Base(bind), id)
+						continue
+					}
+					checkedTrue++
+				}
+			}
+		}
+	}
+	if checkedFiles == 0 {
+		t.Error("no unevaluable family named an artefact; this test verified nothing")
+	}
+	if checkedTrue != 8 {
+		t.Errorf("verified %d true() bindings against the Schematron, want 8 (BR-CO-05..08 in each of the two "+
+			"syntax bindings); a change in that number means the set of unenforceable model rules moved", checkedTrue)
+	}
+	t.Logf("checked %d artefact references and %d true() bindings behind the unevaluable families", checkedFiles, checkedTrue)
+}
+
+// TestCoverageDoesNotHandBackTheTable pins the defensive copy Coverage documents.
+//
+// The table is package state read by every validator, so a caller that sorted,
+// truncated or edited the returned slice in place would change what every later
+// Report says — and would do it silently, since Coverage cannot fail. The property
+// held before this test existed; it is written down now because RuleFamily grew a
+// field, and a struct gaining fields is when "the copy is deep enough" stops being
+// obvious. It is deep as long as every field is a value type, which the assertion
+// on the mutated field is what checks.
+func TestCoverageDoesNotHandBackTheTable(t *testing.T) {
+	got := Coverage(SourceEN16931)
+	if len(got) == 0 {
+		t.Fatal("Coverage(SourceEN16931) is empty, so this test checks nothing")
+	}
+	if !got[0].Unevaluable {
+		t.Fatalf("the first EN 16931 entry is not unevaluable, so the mutation below would not be visible: %+v", got[0])
+	}
+	got[0].Rules = "MUTATED"
+	got[0].Severity = SeverityWarning
+	got[0].Unevaluable = false
+	got[0].Reason = "MUTATED"
+	got = append(got, RuleFamily{Rules: "APPENDED"})
+
+	again := Coverage(SourceEN16931)
+	if again[0].Rules == "MUTATED" || again[0].Reason == "MUTATED" || !again[0].Unevaluable {
+		t.Errorf("Coverage handed back an alias of the table; a caller has rewritten this package's coverage claim: %+v", again[0])
+	}
+	if len(again) == len(got) {
+		t.Error("appending to the slice Coverage returned changed the table")
+	}
+	// And through a Report, which builds NotEvaluated from the same table.
+	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII))
+	r.NotEvaluated[0].Unevaluable = false
+	if !Coverage(SourceEN16931)[0].Unevaluable {
+		t.Error("editing Report.NotEvaluated changed the coverage table")
+	}
+	if !mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII)).Complete() {
+		t.Error("editing one Report's NotEvaluated changed what a later validation claims")
 	}
 }
 
@@ -938,10 +1238,15 @@ var validatorsWithNoFatalGap = map[string]bool{
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of
 // each rule set is recorded, because it is what decides Conformant.
 //
-// Complete being false everywhere follows from the table being non-empty, which
-// TestNoRuleSetIsCompleteToday records. Conformant needs more than that, because
-// it passes over advisory gaps: it is false for a clean document only when the
-// rule set that ran names a gap its authority flags fatal.
+// Conformant is false for a clean document only when the rule set that ran names
+// a gap its authority flags fatal *and a validator could have evaluated*. The
+// second half of that is the D10 clause, and it is why the loop below counts
+// fatal-and-evaluable rather than fatal: the EN 16931 core names three families
+// CEN flags fatal — BR-CO-05..08 and CII-DT-010/011/012 — and CEN's own reference
+// implementation cannot report any of them. Before D10 that was expressed by
+// recording them at SeverityWarning, contradicting the published flag; the flag is
+// quoted honestly now and the exception lives in the predicate, where it can be
+// read.
 //
 // Both directions fail here, and both are moments that deserve to be deliberate:
 // a rule set finishing its fatal half is the moment Conformant starts returning
@@ -953,13 +1258,13 @@ func TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			var fatal []string
 			for _, g := range mustReport(t, ctx, fn, []byte(unknownRoot)).NotEvaluated {
-				if g.Severity == SeverityFatal {
+				if g.Severity == SeverityFatal && !g.Unevaluable {
 					fatal = append(fatal, g.Rules)
 				}
 			}
 			switch {
 			case len(fatal) == 0 && !validatorsWithNoFatalGap[name]:
-				t.Errorf("%s names no fatal coverage gap, so Conformant now depends only on the findings. "+
+				t.Errorf("%s names no fatal coverage gap it could close, so Conformant now depends only on the findings. "+
 					"If a rule set's fatal half is finished, add it to validatorsWithNoFatalGap and say so in the commit", name)
 			case len(fatal) > 0 && validatorsWithNoFatalGap[name]:
 				t.Errorf("%s is listed as having no fatal coverage gap, but names %v. A rule set whose fatal half was "+
@@ -969,15 +1274,27 @@ func TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre(t *testing.T) {
 	}
 }
 
-// TestTheCoreReportsConformantForACleanInvoice is the other side of that list,
-// asserted on a document rather than on the table: what a caller actually gets.
+// TestTheCoreReportsConformantAndCompleteForACleanInvoice is the other side of
+// that list, asserted on a document rather than on the table: what a caller
+// actually gets.
 //
 // It is the claim the coverage machinery was built to make and could not make
 // until C27 was closed, and it is asserted in both syntaxes because the fatal
 // gap that used to block it was in the UBL binding — a CII invoice was held
 // non-conformant by two rules that could never have applied to it, which is
 // itself a reason the gap was worth closing rather than describing.
-func TestTheCoreReportsConformantForACleanInvoice(t *testing.T) {
+//
+// The Complete assertion is inverted from what it was, and that inversion is the
+// point of D10 rather than a concession to it. It read "the core must not be
+// Complete, because the advisory binding rules are unevaluated"; the advisory
+// binding rules are evaluated now, and what is left in Coverage(SourceEN16931) is
+// three families CEN made unevaluable. Leaving the old assertion in place would
+// mean asserting that the strongest claim this package can make must stay
+// unreachable. This is the first and so far only rule set for which Complete is
+// true, so the assertion is also the guard on that fact: it fails if a family a
+// validator *could* evaluate is ever added to the core's coverage without being
+// implemented.
+func TestTheCoreReportsConformantAndCompleteForACleanInvoice(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct{ name, doc string }{
 		{"UBL", minimalUBL},
@@ -991,16 +1308,28 @@ func TestTheCoreReportsConformantForACleanInvoice(t *testing.T) {
 			if !r.Conformant() {
 				var fatal []string
 				for _, g := range r.NotEvaluated {
-					if g.Severity == SeverityFatal {
+					if g.Severity == SeverityFatal && !g.Unevaluable {
 						fatal = append(fatal, g.Rules)
 					}
 				}
-				t.Errorf("a clean %s invoice is not Conformant against the EN 16931 core; fatal gaps: %v", tc.name, fatal)
+				t.Errorf("a clean %s invoice is not Conformant against the EN 16931 core; fatal gaps it could close: %v", tc.name, fatal)
 			}
-			// Still not Complete: the advisory binding rules are unevaluated, and
-			// that is the distinction D7 put severity on the family for.
-			if r.Complete() {
-				t.Errorf("%s reported Complete while %d advisory rule families are unevaluated", tc.name, len(r.NotEvaluated))
+			if !r.Complete() {
+				var evaluable []string
+				for _, g := range r.NotEvaluated {
+					if !g.Unevaluable {
+						evaluable = append(evaluable, g.Rules)
+					}
+				}
+				t.Errorf("a clean %s invoice is not Complete against the EN 16931 core; the gaps it names that a "+
+					"validator could evaluate: %v", tc.name, evaluable)
+			}
+			// The coverage it does still name has to be there, or this test would
+			// pass just as well against an empty table — which would make Complete
+			// true for the wrong reason.
+			if len(r.NotEvaluated) == 0 {
+				t.Error("the core named no coverage gaps at all; Complete is then true because the table is empty " +
+					"rather than because everything unevaluated is unevaluable")
 			}
 		})
 	}

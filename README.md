@@ -50,8 +50,8 @@ type Report struct {
     NotEvaluated []RuleFamily // the rule families that were not evaluated
 }
 
-func (r Report) Conformant() bool  // no fatal finding, no fatal gap, run not cut short
-func (r Report) Complete() bool    // nothing unevaluated at all, advisory included
+func (r Report) Conformant() bool  // no fatal finding, no closeable fatal gap, run not cut short
+func (r Report) Complete() bool    // every rule anyone *can* evaluate was evaluated
 func (r Report) Fatal() []Violation
 func (r Report) Warnings() []Violation
 ```
@@ -103,22 +103,32 @@ of those rules checks a mandatory element of the format's own schema or a value
 outside its own code list, so a document that breaks one is a document the
 authority's gateway rejects. `go doc formalis.Severity` says so.
 
-`Coverage`'s families carry a severity too, and that is what makes
+`Coverage`'s families carry the authority's flag too, and that is what makes
 `Conformant()` answerable at all: an advisory gap leaves the verdict intact and
 only makes the report less informative than a reference validator's, while a
 fatal gap means a rule that could have rejected this document was never run.
 
+They also carry `Unevaluable`, which is a different fact and not a softer
+severity. It means the authority published a rule **nobody** can evaluate — CEN
+binds `BR-CO-05..08` to the XPath expression `true()`, so the assertion cannot
+fail, and `CII-DT-010/011/012` sit behind an earlier matching rule in CEN's own
+ISO Schematron pattern, so no processor reaches them. A rule nothing can check is
+not a rule this package skipped, so those do not cost a verdict and do not make a
+run incomplete. The field is deliberately narrow: it does not mean hard, low
+value, or not yet, and `go doc formalis.RuleFamily` spells out the boundary and
+the two tests that hold the table to it.
+
 ## What a clean report does and does not mean
 
-**`Complete()` returns false for every document, and `Conformant()` for every
-document except one validated against the EN 16931 core alone.** That is not a bug
-and it is the first thing to understand about this package.
+**`Conformant()` returns false for every document except one validated against the
+EN 16931 core alone.** That is not a bug and it is the first thing to understand
+about this package.
 
 `len(report.Violations) == 0` means only *the checks that ran found nothing*. It
 is equally true of a run that checked everything, a run that was cancelled or hit
 a resource budget, and a run whose rule set does not implement every rule its
-authority publishes. No rule set here is in that last sense complete — each
-evaluates a documented subset — so `Complete()` is false everywhere.
+authority publishes. Every rule set here is a documented subset, and
+`Coverage(src)` is where each one says so.
 
 `Conformant()` is the weaker and more useful question, because it passes over the
 gaps an authority would not reject a document for. The EN 16931 core is the one
@@ -126,32 +136,39 @@ rule set with no **fatal** gap left: every fatal rule of the semantic model, of
 the UBL binding and of the CII binding is evaluated, bar the few CEN's own
 reference implementation cannot report, so `Validate` with `ProfileEN16931` — and
 `ValidateCIUS` on a document that declares no CIUS — returns `Conformant() == true`
-for a clean invoice.
+for a clean invoice. Every CIUS and national validator still names a gap its
+authority flags fatal and a validator could close, so those return false whatever
+the document.
 
-`Complete()` is still false there, and now permanently. The advisory bindings used
-to be the reason, and they are evaluated now; what is left in
-`Coverage(SourceEN16931)` is seven rules **CEN made unevaluable** — four it binds to
-the XPath expression `true()`, three that sit behind an earlier matching Schematron
-rule, so no conforming validator anywhere reports any of them — plus one assertion
-CEN flags warning in the UBL binding whose own test a correctly PCI-masked card
-number trips. No amount of work in this package can close those, so for the EN
-16931 core `Complete()` now answers a question with a permanent answer. Every CIUS
-and national validator still names a gap its authority flags fatal, so those return
-false whatever the document.
+`Complete()` is the stricter question — "did this package see everything a
+reference validator could see" — and the EN 16931 core is the first rule set to
+answer yes. Its 1,168 advisory binding rules used to be the reason it could not;
+they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
+rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
+three unreachable in CEN's own Schematron rule ordering, and one whose UBL test a
+correctly PCI-masked card number trips. Those are marked `Unevaluable`, so they no
+longer hold the answer down — a rule nobody can check is not a rule this package
+skipped. Every other rule set still names a gap it could close, so `Complete()` is
+false there.
+
+Note what `Complete()` is *not*: it says nothing about what was found. A document
+with twenty fatal findings can be `Complete` — every rule ran, and twenty of them
+failed. `Conformant()` is the verdict; `Complete()` is the statement about the
+checker.
 
 Rather than hide that behind a number in this file that would drift as rules
 land, the package makes it machine-readable:
 
 - **`Coverage(src Source) []RuleFamily`** names the rule families `src` publishes
-  and this package does not evaluate, with the severity of each. It takes no
-  document, parses nothing and cannot fail, so you can ask *before* deciding to
-  trust a validator.
+  and this package does not evaluate, with the authority's flag on each and
+  whether anyone could evaluate it at all. It takes no document, parses nothing
+  and cannot fail, so you can ask *before* deciding to trust a validator.
 - **`Report.NotEvaluated`** is the same information for the run that just
   happened — the union across every authority that call applied. A validator that
   layers a CIUS on the core reports both sets.
-- **`Report.Complete()`** is false when either kind of gap is present: a rule set
-  with holes of any severity, or a run that stopped early. **`Conformant()`**
-  passes over the advisory holes.
+- **`Report.Complete()`** is false when a rule a validator *could* have evaluated
+  went unevaluated, whatever its severity, or when the run stopped early.
+  **`Conformant()`** passes over the advisory holes as well.
 
 ```go
 for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {

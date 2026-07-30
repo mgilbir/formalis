@@ -38,6 +38,14 @@ package formalis
 // the price of a verdict, and a fatal gap can never be filed inside an entry
 // whose prose reads as advisory — which had already happened once (C27).
 //
+// The evaluability of each family is what keeps it *answerable*. An authority can
+// publish a rule its own reference implementation cannot honour, and CEN publishes
+// seven; a table that could only say "not evaluated" about those made the strict
+// question permanently unanswerable, for a reason no work could change. Saying so
+// in a field of its own is what lets one rule set here finally report that it saw
+// everything a reference validator could. See RuleFamily.Unevaluable, and read its
+// boundary carefully: it is the field that would do the most damage if it widened.
+//
 // # Why the table is static
 //
 // Coverage takes a Source and reads a table. It parses nothing, allocates one
@@ -63,23 +71,48 @@ package formalis
 // not evaluate, in a form a caller can look up in that authority's own
 // documentation.
 //
-// Severity is what the gap costs a conformance claim: fatal means an authority
-// could reject a document over a rule that was not checked here, so
-// Report.Conformant must be false; a warning gap leaves the conformance question
-// answerable and only makes the report less informative than a reference
-// validator's. For every family in the table but two that is the authority's own
-// flag, quoted. The two exceptions are families an authority flags fatal and its
-// own reference implementation cannot report — CEN binds BR-CO-05..08 to the
-// XPath expression true(), and three CII datatype rules sit behind an earlier
-// matching Schematron rule — and there the flag and the cost part company: no
-// conforming validator anywhere reports them, so not evaluating them cannot
-// change any verdict. Both entries say so in Reason, with the published flag
-// named, so a reader who disagrees can see exactly what was decided.
+// # Three facts, three fields
 //
-// This is why Severity is on the family rather than on the table as a whole. A
-// residue of advisory gaps that kept Conformant false forever would make the one
-// predicate a caller can safely key on useless, and the fix is not to hide the
-// advisory gaps but to say which kind each one is.
+// A gap has three independent properties, and the type carries one field for
+// each because collapsing any two of them has already gone wrong here.
+//
+// Severity is the authority's published flag, quoted, unconditionally. It is not
+// this package's estimate of what the gap costs. Every entry in the table can be
+// checked against the artefact its authority publishes wherever this repository
+// vendors one, and TestCoverageSeveritiesMatchThePublishedFlag does exactly that
+// with no exceptions at all.
+//
+// Unevaluable is whether the authority published a rule *nobody* can evaluate —
+// see the field's own comment, which is where the boundary is drawn, because it
+// is the field most likely to be abused.
+//
+// Reason is the prose, and for an unevaluable family it is where the evidence
+// goes.
+//
+// # Why they cannot be collapsed
+//
+// Severity and Unevaluable were one column until D10. To keep Report.Conformant
+// from being false forever over rules CEN itself cannot honour, six entries CEN
+// flags fatal were recorded at SeverityWarning, and the contradiction was kept
+// legal by a hand-maintained list of those six identifiers inside the test that
+// checks the column against the published flag. A column that needs an excuse
+// list is answering two questions, and the excuse list is the load-bearing part:
+// it had to be edited by hand every time such a rule was found, which is the
+// same failure mode as a coverage claim in a file comment.
+//
+// The cost of that collapse was not only tidiness. Report.Complete could never
+// be true for any document, because CEN publishes seven rules nobody can
+// evaluate and the table could not say so in a form a predicate could read — so
+// the question "did this package see everything a reference validator would"
+// had a permanent answer of no, for a reason a caller could not tell apart from
+// "not implemented yet". That is the trap Conformant was in before severity
+// arrived, one level down.
+//
+// A third Severity value was rejected rather than overlooked. Unevaluability is
+// orthogonal to severity, not a further point on the same scale, and Severity's
+// own comment argues against a third value for a reason that applies here too:
+// it would stop Report.Fatal and Report.Warnings being a partition of
+// Violations.
 type RuleFamily struct {
 	// Rules is the identifier or range the authority uses — "BR-DE-23-a/b,
 	// BR-DE-24-a/b", "BR-CIUS-PT-24..63", "BR-NL-19..35". It is the machine-ish
@@ -88,16 +121,48 @@ type RuleFamily struct {
 	// out of it and a caller can search for one.
 	Rules string
 
-	// Severity is what not evaluating this family costs a conformance claim:
-	// fatal when an authority could reject a document over one of these rules,
-	// advisory when it could not. See the type's own comment for the two entries
-	// where that is not simply the authority's published flag, and why.
+	// Severity is the flag the authority put on these rules: fatal when it
+	// rejects a document for breaking one, warning when it does not. It is a
+	// quotation and never an estimate — not of how much the gap matters, and not
+	// of what it costs a verdict. Where the authority publishes no flag because it
+	// publishes no rule identifier (a format checked against its own schema), the
+	// severity is this package's classification for the reason Severity documents.
 	Severity Severity
+
+	// Unevaluable reports that the authority published these rules and no
+	// validator can evaluate them — the authority's own reference implementation
+	// included. It is a fact about the published artefact, not about this package,
+	// and it is what lets Report.Complete be reachable: a rule nobody can check is
+	// not a rule this package skipped.
+	//
+	// It is deliberately narrow, and the narrowness is the point. It means the
+	// artefact makes the rule unreachable or vacuous, demonstrably, from the
+	// artefact itself: CEN binds BR-CO-05..08 to the XPath expression true(), so
+	// the assertion cannot fail; CEN's ISO Schematron gives a node to the first
+	// matching rule in a pattern and //ram:TypeCode precedes the rule
+	// CII-DT-010/011/012 are bound to, so no processor reaches them; CEN's UBL
+	// test for BR-51 is a string-length bound that a correctly masked card number
+	// trips, so honouring it would mean accusing conforming invoices. Each of
+	// those is checkable against a file in this repository by a reviewer who
+	// disagrees, and Reason has to say which file and which construct.
+	//
+	// It does not mean hard, expensive, low-value, out of scope, or not yet. A
+	// rule this package could implement and has not is a gap with Unevaluable
+	// false, whatever the excuse — including the four CIUS whose authority
+	// publishes no Schematron this repository vendors, which are unimplemented and
+	// not unevaluable. TestUnevaluableFamiliesNameTheirEvidence and
+	// TestOnlyEN16931HasUnevaluableFamilies keep that boundary from eroding as
+	// later work adds entries, because a field that quietly widens to "we did not
+	// do this one" would make Complete a lie in exactly the way the old Complete
+	// field was.
+	Unevaluable bool
 
 	// Reason is why it is not evaluated, in prose. It is where a judgement gets
 	// written down — that a rule is unenforceable by construction, that a
 	// sub-profile is out of scope, that an authority publishes a schema rather
-	// than a rule set.
+	// than a rule set — and for an Unevaluable family it is where the evidence
+	// goes, specific enough to check against the vendored artefact without
+	// re-deriving it.
 	Reason string
 }
 
@@ -165,12 +230,21 @@ type Report struct {
 //   - a fatal finding — the document breaks a rule its authority rejects for;
 //   - a finding IsCheckerViolation recognises — the run was cut short, or never
 //     chose a rule set, so the answer is "unknown" rather than "conformant";
-//   - a fatal family in NotEvaluated — a rule that could have rejected this
-//     document was never evaluated.
+//   - a fatal family in NotEvaluated that is evaluable — a rule that could have
+//     rejected this document, that a validator could have checked, and that this
+//     package did not check.
 //
 // Warnings do not: an advisory finding, and an advisory gap in the rule set, are
 // both things a reference validator would report and no authority would reject
 // an invoice for. Read them with Warnings and Complete respectively.
+//
+// Nor does a fatal family its authority made unevaluable, and that exception is
+// narrower than it sounds. It is not "we decided this one does not count": it
+// means the published artefact cannot fail — CEN binds four of these to the XPath
+// expression true() — or cannot be reached, so no validator anywhere reports it
+// and no gateway rejects a document over it. Not checking a rule nothing can
+// check cannot put a verdict in doubt. RuleFamily.Unevaluable is where the
+// boundary is documented and two tests hold the table to it.
 //
 // The checker's own findings are tested for by IsCheckerViolation and not merely
 // by their severity, deliberately. They are fatal — see Severity — but a
@@ -185,12 +259,11 @@ type Report struct {
 // of the UBL binding and of the CII binding is evaluated, bar the handful CEN's
 // own reference implementation cannot report — so a clean invoice validated
 // against the core alone, by Validate with ProfileEN16931 or by ValidateCIUS on a
-// document declaring no CIUS, is conformant. It is still not Complete, and now
-// permanently: the seven rules left in Coverage(SourceEN16931) are ones CEN made
-// unevaluable, so no amount of work here can close them. Severity on the family
-// is what keeps that from costing a verdict. Every other Source still names a
-// fatal gap, so Conformant is still false for every document a CIUS or national
-// validator is handed.
+// document declaring no CIUS, is conformant — and Complete as well, which no rule
+// set in this package had ever been: everything left in Coverage(SourceEN16931) is
+// a rule CEN itself cannot honour. Every other Source still names a fatal gap it
+// could close and has not, so Conformant is still false for every document a CIUS
+// or national validator is handed.
 // Coverage says why for any Source, and Report.NotEvaluated says why for any
 // particular run. A caller who wants the older, weaker claim writes
 // len(r.Fatal()) == 0 and now has r.NotEvaluated sitting beside it, naming
@@ -205,20 +278,20 @@ func (r Report) Conformant() bool {
 		}
 	}
 	for _, f := range r.NotEvaluated {
-		if f.Severity == SeverityFatal {
+		if f.Severity == SeverityFatal && !f.Unevaluable {
 			return false
 		}
 	}
 	return true
 }
 
-// Complete reports whether every rule that applies to this document was
-// evaluated, advisory rules included. It is the stricter of the two questions,
-// and it is false when either kind of gap is present:
+// Complete reports whether every rule that *can* be evaluated was evaluated,
+// advisory rules included. It is the stricter of the two questions, and it is
+// false when either kind of gap is present:
 //
 //   - the rule set that ran does not implement some family its authority
-//     publishes, which is a static fact about this package and is named in
-//     NotEvaluated, whatever that family's severity; or
+//     publishes and a validator could check, which is a static fact about this
+//     package and is named in NotEvaluated, whatever that family's severity; or
 //   - this run stopped before it had seen everything — a cancelled context or a
 //     tripped resource budget — or never chose a rule set at all, which
 //     Violations reports as a finding IsCheckerViolation recognises.
@@ -230,14 +303,38 @@ func (r Report) Conformant() bool {
 // boolean could answer only one of them, and it answered the stricter one, which
 // is why a residue of advisory families would have kept Conformant false forever.
 //
+// A family its authority made unevaluable does not make a run incomplete, and
+// that clause is what makes this predicate answerable at all. Without it the
+// question is "did this package evaluate every rule its authorities published",
+// and for CEN the answer is permanently no — not because of anything this package
+// could fix, but because CEN publishes seven rules it cannot honour itself, four
+// of them bound to the XPath expression true(). A predicate whose answer no work
+// can change tells a caller nothing, which is the state Conformant was in before
+// severity moved onto the family. With the clause the question becomes "did this
+// package see everything a reference validator could see", which is answerable,
+// and as of the advisory bindings the EN 16931 core answers yes. See
+// RuleFamily.Unevaluable for why that clause cannot be stretched.
+//
 // A document that is not an invoice at all (RuleRoot) does not make a run
 // incomplete on its own account: that is a definite finding about the file, and
 // Conformant is false because of the finding rather than because of any doubt.
+//
+// The zero Report is not Complete, for the same reason it is not Conformant and
+// through the same unexported field. That mattered less while no rule set could
+// reach Complete at all; now that one can, it is the only thing standing between
+// a Report nobody filled in and the strongest claim this package makes.
+// TestZeroReportIsNotComplete pins it directly rather than leaving it to follow
+// from Conformant.
 func (r Report) Complete() bool {
 	if !r.ran {
 		return false
 	}
-	return len(r.NotEvaluated) == 0 && !anyCheckerViolation(r.Violations)
+	for _, f := range r.NotEvaluated {
+		if !f.Unevaluable {
+			return false
+		}
+	}
+	return !anyCheckerViolation(r.Violations)
 }
 
 // Fatal returns the findings whose rules their authority rejects a document for,
@@ -307,7 +404,9 @@ func Coverage(src Source) []RuleFamily {
 // a rule family; and TestCoverageSeveritiesMatchThePublishedFlag checks the
 // severity of every entry whose authority ships a Schematron this repository
 // vendors — EN 16931, XRechnung and Peppol — against the flag on the assertion
-// itself.
+// itself, with no exceptions. Two more hold RuleFamily.Unevaluable to its
+// definition: TestUnevaluableFamiliesNameTheirEvidence and
+// TestOnlyEN16931HasUnevaluableFamilies.
 //
 // Two writing conventions, which those tests read:
 //
@@ -343,24 +442,14 @@ var notEvaluated = map[Source][]RuleFamily{
 	// rules. Reading the published Schematron instead of the oracle gives the
 	// list below.
 	//
-	// BR-CO-05..08 are unenforceable by construction rather than unimplemented.
-	// CEN binds all four to the XPath expression true() in both syntaxes, so no
-	// reference validator reports them and the unit-test suite ships no fragment
-	// for them. "The reason code and the free-text reason indicate the same type
-	// of allowance" is a judgement about prose in an arbitrary language; any
-	// mechanical stand-in would accuse conforming invoices, which is the one
-	// thing this table exists to keep the package from doing.
+	// All three entries below are Unevaluable, and the reason each gives is meant
+	// to be checked rather than believed. BR-CO-05..08 are bound to true();
+	// CII-DT-010/011/012 sit behind an earlier matching rule in the same ISO
+	// Schematron pattern; BR-51's UBL binding is a string-length bound a correctly
+	// masked card number exceeds. Each names the vendored file.
 	//
-	// BR-51 is one assertion in the abstract model with two severities in the two
-	// bindings: EN16931-CII-model.sch flags it fatal and EN16931-UBL-model.sch
-	// flags it warning. This package reports what an authority makes fatal and
-	// names its advisory rules here instead — NLCIUS's BR-NL-19..35 are the
-	// precedent — so the entry carves out the half that is evaluated rather than
-	// claiming the whole rule, which would send a caller to re-implement a check
-	// that already runs on every Factur-X document.
-	//
-	// No fatal gap is left here at all, and this is the only Source of which that
-	// is true. All 54 fatal UBL-SR-* rules are evaluated, and so are the two
+	// No fatal gap is left here that a validator could close, and this is the only
+	// Source of which that is true. All 54 fatal UBL-SR-* rules are evaluated, and so are the two
 	// fatal UBL-CR-* rules and the three fatal UBL-DT-* ones
 	// (en16931_ubl_rules.go, en16931_model.go); so are all 42 fatal CII-SR-* and
 	// 67 of the 70 fatal CII-DT-* rules (en16931_cii_rules.go).
@@ -371,48 +460,53 @@ var notEvaluated = map[Source][]RuleFamily{
 	// four entries in this table. They are gone from it because they are checked,
 	// not because they were reclassified.
 	//
-	// What is left is three entries, and none of them is a rule this package chose
-	// not to implement. Two are rules CEN flags fatal and CEN's own reference
-	// implementation cannot report — four bound to the expression true(), three
-	// behind an earlier matching Schematron rule — and one is an assertion CEN
-	// flags warning in the UBL binding and fatal in the CII binding, evaluated in
-	// the binding that makes it fatal and deliberately not in the other, because
-	// CEN's UBL test is a string-length test that a correctly PCI-masked card
-	// number trips.
+	// What is left is three entries covering seven rules, and every one of them is
+	// a rule CEN published that no validator can evaluate. Each carries
+	// Unevaluable, each names the file and the construct that makes it so, and
+	// each carries the flag CEN actually published rather than the flag that would
+	// keep a predicate quiet — which is the whole of D10. Six of the seven were
+	// recorded here at SeverityWarning against a published flag of fatal, and the
+	// contradiction was held open by a list of those six identifiers inside the
+	// test that checks this column. That list is gone.
 	//
-	// So Report.Conformant is true for a clean document validated against this
-	// rule set, and Report.Complete is still false — and now permanently, for
-	// every document, because what is left cannot be closed by anyone. That is
-	// worth reading twice: it is the shape Conformant was in before severity
-	// arrived, one level down. Complete answers "did this package see everything a
-	// reference validator would", and the honest answer for the core is now "yes,
-	// bar seven rules no reference validator sees either". The table cannot say
-	// that, because it has one axis and the question has two: whether a rule was
-	// evaluated, and whether it *could* be. Each of the three entries says which
-	// it is in Reason. Whether that deserves a third RuleFamily severity, or a
-	// field of its own, is a decision for the owner of this package and not for
-	// this table.
+	// So this is the first Source for which Report.Complete is true. Both
+	// predicates now say something a caller can act on: a clean document validated
+	// against this rule set is Conformant, and it is Complete, because everything
+	// left is a rule a reference validator does not evaluate either. Every other
+	// Source still names a fatal gap it could close and has not.
 	SourceEN16931: {
 		{
-			Rules:    "BR-51 other than in the CII binding",
-			Severity: SeverityWarning,
-			Reason: "one assertion in the abstract model with two flags in the two bindings. EN16931-CII-model.sch flags it fatal and this package " +
-				"evaluates it there; EN16931-UBL-model.sch flags it warning, so a UBL invoice carrying a full card PAN (BT-87) is not reported",
+			Rules:       "BR-51 other than in the CII binding",
+			Severity:    SeverityWarning,
+			Unevaluable: true,
+			Reason: "one assertion in the abstract model with two flags in the two bindings. ubl/schematron/abstract/EN16931-model.sch flags it " +
+				"warning and cii/schematron/abstract/EN16931-CII-model.sch flags it fatal, and this package evaluates it in the binding that " +
+				"makes it fatal (facturx_en16931.go). Unevaluable applies to the UBL half only, and the evidence is the test CEN binds it to: " +
+				"EN16931-UBL-model.sch gives BR-51 the value string-length(normalize-space(.))<=10 over cbc:PrimaryAccountNumberID, and PCI DSS " +
+				"permits showing the first six and last four digits of a PAN — which for a 16-digit card is a 10-character masked value plus at " +
+				"least one mask character, so a correctly masked number exceeds the bound. Honouring the assertion means reporting conforming " +
+				"invoices, which is the one thing this table exists to keep the package from doing",
 		},
 		{
-			Rules:    "BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145)",
-			Severity: SeverityWarning,
-			Reason: "CEN flags all four fatal and binds all four to the XPath expression true() in both syntaxes, so no conforming validator can " +
-				"report them and the CEN unit-test suite ships no fragment for them. The gap is therefore recorded as advisory: what an authority " +
-				"cannot reject a document for cannot put a verdict in doubt. \"The reason code and the free-text reason indicate the same type of " +
-				"allowance\" is a judgement about prose in an arbitrary language, and any mechanical stand-in would accuse conforming invoices",
+			Rules:       "BR-CO-05..08 (allowance/charge reason code agrees with reason text: BT-97/98, BT-104/105, BT-139/140, BT-144/145)",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "CEN flags all four fatal in ubl/schematron/abstract/EN16931-model.sch and binds all four to the XPath expression true() — " +
+				"EN16931-UBL-model.sch and EN16931-CII-model.sch both carry <param name=\"BR-CO-05\" value=\"true()\"/> and its three siblings — " +
+				"so the assertion cannot fail, no conforming validator reports them, and the CEN unit-test suite ships no fragment for them. " +
+				"\"The reason code and the free-text reason indicate the same type of allowance\" is a judgement about prose in an arbitrary " +
+				"language, and any mechanical stand-in would accuse conforming invoices, which is presumably why CEN bound them to true()",
 		},
 		{
-			Rules:    "CII-DT-010, CII-DT-011, CII-DT-012",
-			Severity: SeverityWarning,
-			Reason: "CEN flags these three fatal, and no reference validator reports them: the EN16931-CII-Syntax pattern matches the invoice type " +
-				"code with //ram:TypeCode before the rule bound to it specifically, and ISO Schematron gives a node to the first matching rule only. " +
-				"Recorded as advisory for the same reason as BR-CO-05..08 — a rule nothing can report is a rule no authority rejects for",
+			Rules:       "CII-DT-010, CII-DT-011, CII-DT-012",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "CEN flags these three fatal and binds them to the context /rsm:CrossIndustryInvoice/rsm:ExchangedDocument/ram:TypeCode, which " +
+				"in cii/schematron/abstract/EN16931-CII-syntax.sch is preceded in the same pattern by the rule whose context is //ram:TypeCode " +
+				"(CII-DT-008/009). ISO Schematron gives a node to the first matching rule in a pattern only, so no processor reaches these three; " +
+				"the generated EN16931-CII-validation.xslt makes the same reading mechanical, giving the wildcard template priority 1009 and the " +
+				"specific one 1008. en16931_syntax_advisory.go models that ordering, so this package does not report them either, and " +
+				"TestAdvisoryRulesCENCannotReportAreNotReported pins it",
 		},
 	},
 

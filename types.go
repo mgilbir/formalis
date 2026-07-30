@@ -53,16 +53,25 @@
 //     evaluated is the other half of the answer, and Report.NotEvaluated is where
 //     it is written down.
 //
-// No rule set in this package is complete: each evaluates a documented subset of
-// what its authority publishes. Coverage names the gaps for any Source, with the
-// severity of each, and it takes no document, so a caller can ask what a validator
-// will not look at before deciding to call it. Report.NotEvaluated repeats those
-// gaps for the run that just happened; Report.Conformant is false whenever a rule
-// that could have rejected this document went unevaluated, and Report.Complete
-// whenever anything did. Today the EN 16931 core is the one rule set with no
-// unevaluated *fatal* rule, so it is the one whose clean documents report
-// Conformant; every CIUS and national validator still names a fatal gap and so
-// reports false whatever the document. See Report, Coverage and RuleLimit.
+// No rule set in this package evaluates everything its authority publishes: each
+// is a documented subset. Coverage names the gaps for any Source, with the
+// severity of each and whether anyone could evaluate it at all, and it takes no
+// document, so a caller can ask what a validator will not look at before deciding
+// to call it. Report.NotEvaluated repeats those gaps for the run that just
+// happened; Report.Conformant is false whenever a rule that could have rejected
+// this document was one a validator could have evaluated and this package did not,
+// and Report.Complete whenever any evaluable rule went unevaluated. Today the EN
+// 16931 core is the one rule set with no unevaluated fatal rule and the one whose
+// clean documents report both Conformant and Complete; every CIUS and national
+// validator still names a fatal gap it could close and so reports false whatever
+// the document.
+//
+// The distinction the third field carries is worth one sentence here, because it
+// is what makes Complete answerable rather than permanently false: CEN publishes
+// seven rules that no validator can evaluate — four bound to the XPath expression
+// true(), three unreachable in CEN's own Schematron rule ordering — and a rule
+// nobody can check is not a rule this package skipped. See RuleFamily.Unevaluable,
+// which documents how narrow that is, Report and Coverage.
 //
 // The EN 16931 core is also the one rule set that reports warnings. CEN flags
 // 1,168 of its two syntax bindings' assertions warning rather than fatal — the
