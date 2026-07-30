@@ -78,6 +78,38 @@ import (
 // entry and one that does not.
 var peppolCountryRules = map[string]peppolRule{
 
+	// Germany — the german-rules pattern, UBL only. 24 fatal, 6 advisory.
+	"DE-R-001":   {peppolUBL, SeverityFatal},
+	"DE-R-002":   {peppolUBL, SeverityFatal},
+	"DE-R-003":   {peppolUBL, SeverityFatal},
+	"DE-R-004":   {peppolUBL, SeverityFatal},
+	"DE-R-005":   {peppolUBL, SeverityFatal},
+	"DE-R-006":   {peppolUBL, SeverityFatal},
+	"DE-R-007":   {peppolUBL, SeverityFatal},
+	"DE-R-008":   {peppolUBL, SeverityFatal},
+	"DE-R-009":   {peppolUBL, SeverityFatal},
+	"DE-R-010":   {peppolUBL, SeverityFatal},
+	"DE-R-011":   {peppolUBL, SeverityFatal},
+	"DE-R-014":   {peppolUBL, SeverityFatal},
+	"DE-R-015":   {peppolUBL, SeverityFatal},
+	"DE-R-016":   {peppolUBL, SeverityFatal},
+	"DE-R-017":   {peppolUBL, SeverityWarning},
+	"DE-R-018":   {peppolUBL, SeverityFatal},
+	"DE-R-019":   {peppolUBL, SeverityWarning},
+	"DE-R-020":   {peppolUBL, SeverityWarning},
+	"DE-R-022":   {peppolUBL, SeverityFatal},
+	"DE-R-023-1": {peppolUBL, SeverityFatal},
+	"DE-R-023-2": {peppolUBL, SeverityFatal},
+	"DE-R-024-1": {peppolUBL, SeverityFatal},
+	"DE-R-024-2": {peppolUBL, SeverityFatal},
+	"DE-R-025-1": {peppolUBL, SeverityFatal},
+	"DE-R-025-2": {peppolUBL, SeverityFatal},
+	"DE-R-026":   {peppolUBL, SeverityWarning},
+	"DE-R-027":   {peppolUBL, SeverityWarning},
+	"DE-R-028":   {peppolUBL, SeverityWarning},
+	"DE-R-030":   {peppolUBL, SeverityFatal},
+	"DE-R-031":   {peppolUBL, SeverityFatal},
+
 	// Denmark — 12 fatal, 2 advisory. DK-R-017 is the one the CII file omits.
 	"DK-R-002": {peppolUBL | peppolCII, SeverityFatal},
 	"DK-R-003": {peppolUBL | peppolCII, SeverityWarning},
@@ -332,6 +364,10 @@ func peppolCountryUBLRules(e *peppolEval, r *run, root *ciiNode) {
 		return
 	}
 	peppolIcelandicUBLRules(e, root)
+	if r.stopped() {
+		return
+	}
+	peppolGermanUBLRules(e, root)
 }
 
 // peppolCountryCIIRules evaluates the country-specific rules of
@@ -2012,4 +2048,389 @@ func peppolIcelandicLegalID(party *ciiNode) bool {
 // code are present, whatever their content.
 func peppolIcelandicAddress(addr *ciiNode) bool {
 	return addr.child("StreetName") != nil && addr.child("PostalZone") != nil
+}
+
+// ---------------------------------------------------------------------------
+// Germany
+// ---------------------------------------------------------------------------
+
+// The German rules are the `<pattern id="german-rules">` of the UBL binding, and
+// they are OpenPEPPOL's re-publication of KoSIT's XRechnung rules: DE-R-NNN carries
+// the wording and, all but exactly, the test of BR-DE-NNN. xrechnung_rules.go
+// evaluates the KoSIT originals on the XRechnung path, and peppolXRImports keeps
+// these off it, so a German invoice validated as XRechnung is not reported twice
+// under two authorities' identifiers for the same defect.
+//
+// Where the two artefacts have drifted, this file quotes the OpenPEPPOL copy:
+//
+//   - $XR-SKONTO-REGEX has no leading anchor here (KoSIT's is `(^|\r?\n)#(SKONTO)…`),
+//     and matches() is a substring search, so OpenPEPPOL's DE-R-018 accepts a
+//     settlement-discount line with text before the first '#'.
+//   - $XR-EMAIL-REGEX is the long RFC-shaped pattern rather than KoSIT's
+//     `^[^@\s]+@([^@.\s]+\.)+[^@.\s]+$`.
+//   - KoSIT publishes BR-DE-23/24/25 as -a/-b and OpenPEPPOL as -1/-2.
+//
+// $XR-TELEPHONE-REGEX and the IBAN arithmetic of DE-R-019/020 are character for
+// character KoSIT's, so validIBAN is shared rather than re-derived: one XPath, one
+// implementation.
+
+var (
+	// peppolDESkontoRE is $XR-SKONTO-REGEX as OpenPEPPOL publishes it — with no
+	// leading anchor, unlike KoSIT's xrSkontoRE.
+	peppolDESkontoRE = regexp.MustCompile(`#(SKONTO)#TAGE=([0-9]+#PROZENT=[0-9]+\.[0-9]{2})(#BASISBETRAG=-?[0-9]+\.[0-9]{2})?#$`)
+	// peppolDEEmailRE is $XR-EMAIL-REGEX. The character class holds a backtick, so
+	// the pattern is assembled rather than written as one raw literal.
+	peppolDEEmailRE = regexp.MustCompile(`^[a-zA-Z0-9!#\$%&"*+/=?^_` + "`" + `{|}~-]+(\.[a-zA-Z0-9!#\$%&"*+/=?^_` +
+		"`" + `{|}~-]+)*@([a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?\.)+[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$`)
+	// peppolDETelephoneRE is $XR-TELEPHONE-REGEX: at least three digits anywhere.
+	peppolDETelephoneRE = regexp.MustCompile(`.*([0-9].*){3,}.*`)
+)
+
+// peppolDEVATCodes is $supportedVATCodes, the VAT category codes whose use makes
+// DE-R-016's seller-tax-identifier requirement apply.
+var peppolDEVATCodes = map[string]bool{
+	"S": true, "Z": true, "E": true, "AE": true, "K": true, "G": true, "L": true, "M": true,
+}
+
+// peppolDETypeCodes is $supportedInvAndCNTypeCodes, DE-R-017's restricted UNTDID
+// 1001 set.
+var peppolDETypeCodes = map[string]bool{
+	"326": true, "380": true, "384": true, "389": true, "381": true,
+	"875": true, "876": true, "877": true,
+}
+
+// peppolGermanUBLRules is the german-rules pattern: 30 identifiers over ten
+// contexts, every one of them gated `[$supplierCountryIsDE and $customerCountryIsDE]`.
+//
+//	$supplierCountryIsDE = upper-case(normalize-space(/*/cac:AccountingSupplierParty/cac:Party/cac:PostalAddress/cac:Country/cbc:IdentificationCode)) = 'DE'
+//	$customerCountryIsDE = the same over cac:AccountingCustomerParty
+//
+// Both parties, both from the postal address, both normalized and upper-cased —
+// which is a third spelling of "is this document domestic", distinct from the
+// Danish family's untrimmed comparison and from $supplierCountry's VAT prefix. The
+// pattern's id is documentation: no <phase> selects it, so a reference validation
+// runs it on every UBL document and the country test is what confines it to German
+// domestic invoices.
+func peppolGermanUBLRules(e *peppolEval, root *ciiNode) {
+	if !peppolUBLCountryIsDE(root, "AccountingSupplierParty") ||
+		!peppolUBLCountryIsDE(root, "AccountingCustomerParty") {
+		return
+	}
+	// present is `<element>[boolean(normalize-space(.))]` — an existence test on a
+	// predicated node, which is satisfied only by an element with non-blank content.
+	present := func(parent *ciiNode, name string) bool {
+		for _, c := range parent.orNil().all(name) {
+			if normalizeSpace(c.rawText()) != "" {
+				return true
+			}
+		}
+		return false
+	}
+
+	// DE-R-001: cac:PaymentMeans — a bare existence test, so an empty group satisfies it.
+	if root.child("PaymentMeans") == nil {
+		e.add("DE-R-001", "A German domestic invoice shall contain Payment instructions (BG-16)")
+	}
+	// DE-R-015: cbc:BuyerReference[boolean(normalize-space(.))]
+	if !present(root, "BuyerReference") {
+		e.add("DE-R-015", "A German domestic invoice shall contain the Buyer reference (BT-10)")
+	}
+	peppolGermanVATIdentifier(e, root, present)
+	// DE-R-017: the document type code is one of eight UNTDID 1001 values, tested over
+	// whichever of the two type-code elements the root carries.
+	if !peppolAnyChildIn(root, "InvoiceTypeCode", peppolDETypeCodes) &&
+		!peppolAnyChildIn(root, "CreditNoteTypeCode", peppolDETypeCodes) {
+		e.add("DE-R-017", "The Invoice type code (BT-3) of a German domestic invoice should be one of 326, 380, 384, "+
+			"389, 381, 875, 876 or 877")
+	}
+	// DE-R-018: the settlement-discount ("Skonto") format in BT-20.
+	peppolGermanSkonto(e, xrFirstNotes(root, "PaymentTerms", "Note"))
+	// DE-R-022: attachment filenames are unique among the supporting documents.
+	//
+	//	count(cac:AdditionalDocumentReference) = count(cac:AdditionalDocumentReference[
+	//	  not(./cac:Attachment/cbc:EmbeddedDocumentBinaryObject/@filename =
+	//	      preceding-sibling::cac:AdditionalDocumentReference/…/@filename)])
+	//
+	// The comparison is case-sensitive even though the message says otherwise, and a
+	// reference with no attachment at all compares an empty sequence with an empty
+	// sequence, which is false, so it is counted rather than reported.
+	var seen []string
+	for _, ref := range root.all("AdditionalDocumentReference") {
+		names := nodesAt(ref, "Attachment", "EmbeddedDocumentBinaryObject")
+		clash := false
+		for _, n := range names {
+			if !n.hasAttr("filename") {
+				continue
+			}
+			for _, previous := range seen {
+				if previous == n.attr("filename") {
+					clash = true
+				}
+			}
+		}
+		if clash {
+			e.add("DE-R-022", "Each attached document (BT-125) of a German domestic invoice shall have a unique "+
+				"file name")
+		}
+		for _, n := range names {
+			if n.hasAttr("filename") {
+				seen = append(seen, n.attr("filename"))
+			}
+		}
+	}
+	// DE-R-026: a corrected invoice (type code 384) should reference its predecessor.
+	// The comparison is `= 384`, a number, so the element's value is compared
+	// numerically and not as a string.
+	if (peppolAnyChildNumber(root, "InvoiceTypeCode", 384) || peppolAnyChildNumber(root, "CreditNoteTypeCode", 384)) &&
+		root.child("BillingReference", "InvoiceDocumentReference") == nil {
+		e.add("DE-R-026", "A corrected invoice (BT-3 = 384) should carry a Preceding invoice reference (BG-3)")
+	}
+	// DE-R-030 / DE-R-031: a direct debit (BG-19) requires the creditor identifier
+	// (BT-90) and the debited account (BT-91).
+	if len(nodesAt(root, "PaymentMeans", "PaymentMandate")) > 0 {
+		if !peppolGermanSEPACreditor(root) {
+			e.add("DE-R-030", "A German domestic direct debit (BG-19) shall carry the Bank assigned creditor "+
+				"identifier (BT-90)")
+		}
+		if len(nodesAt(root, "PaymentMeans", "PaymentMandate", "PayerFinancialAccount", "ID")) == 0 {
+			e.add("DE-R-031", "A German domestic direct debit (BG-19) shall carry the Debited account identifier "+
+				"(BT-91)")
+		}
+	}
+	// DE-R-002, context cac:AccountingSupplierParty.
+	for _, party := range root.all("AccountingSupplierParty") {
+		if party.child("Party", "Contact") == nil {
+			e.add("DE-R-002", "A German domestic invoice shall contain the Seller contact group (BG-6)")
+		}
+	}
+	// DE-R-003/004, context the seller's cac:PostalAddress; DE-R-008/009, the buyer's.
+	for _, tc := range []struct {
+		party, city, zone, who string
+	}{
+		{"AccountingSupplierParty", "DE-R-003", "DE-R-004", "Seller"},
+		{"AccountingCustomerParty", "DE-R-008", "DE-R-009", "Buyer"},
+	} {
+		for _, addr := range nodesAt(root, tc.party, "Party", "PostalAddress") {
+			if !present(addr, "CityName") {
+				e.addf(tc.city, "A German domestic invoice shall contain the %s city", tc.who)
+			}
+			if !present(addr, "PostalZone") {
+				e.addf(tc.zone, "A German domestic invoice shall contain the %s post code", tc.who)
+			}
+		}
+	}
+	// DE-R-005/006/007 and DE-R-027/028, context the seller's cac:Contact.
+	for _, contact := range nodesAt(root, "AccountingSupplierParty", "Party", "Contact") {
+		if !present(contact, "Name") {
+			e.add("DE-R-005", "A German domestic invoice shall contain the Seller contact point (BT-41)")
+		}
+		if !present(contact, "Telephone") {
+			e.add("DE-R-006", "A German domestic invoice shall contain the Seller contact telephone number (BT-42)")
+		}
+		if !present(contact, "ElectronicMail") {
+			e.add("DE-R-007", "A German domestic invoice shall contain the Seller contact email address (BT-43)")
+		}
+		if !peppolDETelephoneRE.MatchString(normalizeSpace(contact.child("Telephone").rawText())) {
+			e.add("DE-R-027", "The Seller contact telephone number (BT-42) should contain at least three digits")
+		}
+		if !peppolDEEmailRE.MatchString(normalizeSpace(contact.child("ElectronicMail").rawText())) {
+			e.add("DE-R-028", "The Seller contact email address (BT-43) should contain exactly one @ sign framed by "+
+				"at least two characters on each side")
+		}
+	}
+	// DE-R-010/011, context cac:Delivery/cac:DeliveryLocation/cac:Address.
+	for _, addr := range nodesAt(root, "Delivery", "DeliveryLocation", "Address") {
+		if !present(addr, "CityName") {
+			e.add("DE-R-010", "A German domestic invoice shall contain the Deliver to city (BT-77) when the deliver "+
+				"to address (BG-15) is present")
+		}
+		if !present(addr, "PostalZone") {
+			e.add("DE-R-011", "A German domestic invoice shall contain the Deliver to post code (BT-78) when the "+
+				"deliver to address (BG-15) is present")
+		}
+	}
+	// DE-R-014, context cac:TaxTotal/cac:TaxSubtotal.
+	for _, sub := range nodesAt(root, "TaxTotal", "TaxSubtotal") {
+		if !present(sub.child("TaxCategory"), "Percent") {
+			e.add("DE-R-014", "A German domestic invoice shall contain the VAT category rate (BT-119)")
+		}
+	}
+	peppolGermanPaymentMeans(e, root)
+}
+
+// peppolGermanPaymentMeans is the three payment-means rules, whose contexts select
+// on BT-81 *numerically* — `cbc:PaymentMeansCode = (30,58)` — while the two
+// advisory IBAN rules inside them compare the same element with a string, `= '58'`.
+// Both are transcribed as written, so a code written "058" is in the credit-transfer
+// context and exempt from the IBAN check.
+func peppolGermanPaymentMeans(e *peppolEval, root *ciiNode) {
+	for _, pm := range root.all("PaymentMeans") {
+		switch {
+		case peppolAnyChildNumber(pm, "PaymentMeansCode", 30) || peppolAnyChildNumber(pm, "PaymentMeansCode", 58):
+			// DE-R-019: not(cbc:PaymentMeansCode = '58') or <the IBAN check>
+			if peppolAnyChildValue(pm, "PaymentMeansCode", "58") &&
+				!validIBAN(pm.str("PayeeFinancialAccount", "ID")) {
+				e.add("DE-R-019", "The Payment account identifier (BT-84) should be a valid IBAN when the Payment "+
+					"means type code (BT-81) is 58 (SEPA credit transfer)")
+			}
+			if pm.child("PayeeFinancialAccount") == nil {
+				e.add("DE-R-023-1", "A credit transfer (BT-81 = 30 or 58) shall carry the Credit transfer group (BG-17)")
+			}
+			if pm.child("CardAccount") != nil || pm.child("PaymentMandate") != nil {
+				e.add("DE-R-023-2", "A credit transfer (BT-81 = 30 or 58) shall not carry the Payment card (BG-18) or "+
+					"Direct debit (BG-19) group")
+			}
+		case peppolAnyChildNumber(pm, "PaymentMeansCode", 48) || peppolAnyChildNumber(pm, "PaymentMeansCode", 54) ||
+			peppolAnyChildNumber(pm, "PaymentMeansCode", 55):
+			if pm.child("CardAccount") == nil {
+				e.add("DE-R-024-1", "A payment card (BT-81 = 48, 54 or 55) shall carry the Payment card group (BG-18)")
+			}
+			if pm.child("PayeeFinancialAccount") != nil || pm.child("PaymentMandate") != nil {
+				e.add("DE-R-024-2", "A payment card (BT-81 = 48, 54 or 55) shall not carry the Credit transfer (BG-17) "+
+					"or Direct debit (BG-19) group")
+			}
+		case peppolAnyChildNumber(pm, "PaymentMeansCode", 59):
+			// DE-R-020: not(cbc:PaymentMeansCode = '59') or <the IBAN check>
+			if peppolAnyChildValue(pm, "PaymentMeansCode", "59") &&
+				!validIBAN(pm.str("PaymentMandate", "PayerFinancialAccount", "ID")) {
+				e.add("DE-R-020", "The Debited account identifier (BT-91) should be a valid IBAN when the Payment "+
+					"means type code (BT-81) is 59 (SEPA direct debit)")
+			}
+			if pm.child("PaymentMandate") == nil {
+				e.add("DE-R-025-1", "A direct debit (BT-81 = 59) shall carry the Direct debit group (BG-19)")
+			}
+			if pm.child("PayeeFinancialAccount") != nil || pm.child("CardAccount") != nil {
+				e.add("DE-R-025-2", "A direct debit (BT-81 = 59) shall not carry the Credit transfer (BG-17) or "+
+					"Payment card (BG-18) group")
+			}
+		}
+	}
+}
+
+// peppolGermanVATIdentifier is DE-R-016:
+//
+//	not( ($BT-95-UBL-Inv = $supportedVATCodes or $BT-95-UBL-CN = $supportedVATCodes)
+//	     or ($BT-102 = $supportedVATCodes) or ($BT-151 = $supportedVATCodes) )
+//	or (cac:TaxRepresentativeParty, $BT-31orBT-32Path)
+//
+// If any VAT category code in the document-level allowances and charges or on any
+// line is one of the eight, the seller must be identifiable for VAT: a tax
+// representative party, or a non-blank cac:PartyTaxScheme/cbc:CompanyID (BT-31 or
+// BT-32). The second operand is a *sequence* of the two, so its effective boolean
+// value is "either is present".
+//
+// $BT-95-UBL-Inv and $BT-95-UBL-CN differ only in a
+// `following-sibling::cac:TaxScheme/cbc:ID = 'VAT'` predicate the second omits, and
+// they are OR'd, so the first is subsumed by the second and the VAT-scheme predicate
+// cannot change the outcome. Only the wider set is computed.
+func peppolGermanVATIdentifier(e *peppolEval, root *ciiNode, present func(*ciiNode, string) bool) {
+	used := false
+	for _, ac := range root.all("AllowanceCharge") {
+		indicator := ac.child("ChargeIndicator").rawText()
+		if indicator != "false" && indicator != "true" {
+			continue
+		}
+		for _, id := range nodesAt(ac, "TaxCategory", "ID") {
+			if peppolDEVATCodes[id.rawText()] {
+				used = true
+			}
+		}
+	}
+	for _, name := range []string{"InvoiceLine", "CreditNoteLine"} {
+		for _, li := range root.all(name) {
+			for _, id := range nodesAt(li, "Item", "ClassifiedTaxCategory", "ID") {
+				if peppolDEVATCodes[id.rawText()] {
+					used = true
+				}
+			}
+		}
+	}
+	if !used {
+		return
+	}
+	if root.child("TaxRepresentativeParty") != nil {
+		return
+	}
+	for _, ts := range nodesAt(root, "AccountingSupplierParty", "Party", "PartyTaxScheme") {
+		if present(ts, "CompanyID") {
+			return
+		}
+	}
+	e.add("DE-R-016", "A German domestic invoice using VAT category S, Z, E, AE, K, G, L or M shall carry the Seller "+
+		"VAT identifier (BT-31), the Seller tax registration identifier (BT-32) or a Seller tax representative "+
+		"party (BG-11)")
+}
+
+// peppolGermanSEPACreditor is DE-R-030's second operand:
+//
+//	cac:AccountingSupplierParty/cac:Party/cac:PartyIdentification/cbc:ID[@schemeID='SEPA']
+//	| cac:PayeeParty/cac:PartyIdentification/cbc:ID[@schemeID='SEPA']
+func peppolGermanSEPACreditor(root *ciiNode) bool {
+	for _, path := range [][]string{
+		{"AccountingSupplierParty", "Party", "PartyIdentification", "ID"},
+		{"PayeeParty", "PartyIdentification", "ID"},
+	} {
+		for _, id := range nodesAt(root, path...) {
+			if id.attr("schemeID") == "SEPA" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// peppolGermanSkonto is DE-R-018, OpenPEPPOL's copy of KoSIT's BR-DE-18.
+//
+// It is the same `every $line … satisfies A and B` shape xrSkontoRule implements,
+// with one difference that is the whole reason it is written twice: OpenPEPPOL's
+// $XR-SKONTO-REGEX has no leading anchor. matches() is a substring search, so a
+// line reading "Zahlbar #SKONTO#TAGE=14#PROZENT=2.00#" satisfies OpenPEPPOL's rule
+// and fails KoSIT's. Sharing one implementation would have made one of the two
+// artefacts wrong.
+//
+// Both halves of the conjunction sit inside the quantifier, which is what makes the
+// rule vacuously true for a payment term with no settlement-discount line at all.
+func peppolGermanSkonto(e *peppolEval, notes []string) {
+	var entryTokens []string
+	for _, n := range notes {
+		entryTokens = append(entryTokens, xrSkontoEntryRE.Split(n, -1)...)
+	}
+	tailOK := len(entryTokens) > 0 && xrSkontoTailRE.MatchString(entryTokens[len(entryTokens)-1])
+	for _, n := range notes {
+		for _, line := range xrSkontoLineRE.Split(n, -1) {
+			line = normalizeSpace(line)
+			if !strings.HasPrefix(line, "#") {
+				continue
+			}
+			if !peppolDESkontoRE.MatchString(line) || !tailOK {
+				e.add("DE-R-018", "A settlement-discount line in the Payment terms (BT-20) does not match the "+
+					"required format #SKONTO#TAGE=n#PROZENT=n.nn[#BASISBETRAG=n.nn]# followed by a line break")
+				return
+			}
+		}
+	}
+}
+
+// peppolAnyChildIn is a node-set comparison against a sequence of literals:
+// `<parent>/<name> = ('a', 'b', …)`, true when any such child's untrimmed string
+// value is in the set.
+func peppolAnyChildIn(parent *ciiNode, name string, values map[string]bool) bool {
+	for _, c := range parent.orNil().all(name) {
+		if values[c.rawText()] {
+			return true
+		}
+	}
+	return false
+}
+
+// peppolAnyChildNumber is a node-set comparison against a *number* literal:
+// `<parent>/<name> = 30`. XPath compares numerically when one operand is a number,
+// so " 30 " and "30.0" both match and "030" does too.
+func peppolAnyChildNumber(parent *ciiNode, name string, want float64) bool {
+	for _, c := range parent.orNil().all(name) {
+		if v, ok := parseAmount(c.rawText()); ok && v == want {
+			return true
+		}
+	}
+	return false
 }

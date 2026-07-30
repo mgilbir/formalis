@@ -49,15 +49,20 @@ var allSources = []Source{
 // German buyer validates against is 78 identifiers — KoSIT's own 57 and the 21
 // Peppol BIS Billing rules src/xsl/rule-list.xml whitelists — and all 78 are
 // evaluated. The 21 arrive as findings under SourcePeppol, since Source names the
-// authority that wrote the rule, and that is why this entry is not contradicted by
-// Coverage(SourcePeppol) still holding a fatal family: the rules Peppol publishes
-// and KoSIT does not import are not XRechnung's coverage. See the comment on
-// notEvaluated, and TestXRechnungImportsExactlyKoSITsWhitelist for the gate.
+// authority that wrote the rule. See the comment on notEvaluated, and
+// TestXRechnungImportsExactlyKoSITsWhitelist for the gate.
+//
+// SourcePeppol is here because the two OpenPEPPOL binding files are finished: the
+// 59 PEPPOL-* identifiers and the 101 country-specific ones under "National
+// rules", 244 (identifier, binding) pairs, each evaluated in the binding that
+// publishes it. TestEveryPublishedPeppolRuleHasBothVerdicts requires a document
+// that trips each pair and one that does not, so this entry rests on verdicts
+// rather than on a count.
 //
 // If a Source is ever moved here it means someone finished implementing an
 // authority's rule set, which is exactly the change that should be hard to make
 // by accident.
-var completeSources = map[Source]bool{SourceChecker: true, SourceXRechnung: true}
+var completeSources = map[Source]bool{SourceChecker: true, SourceXRechnung: true, SourcePeppol: true}
 
 // TestConformantIsFalseForACancelledRun is the first of the five. It is the
 // case limits.go already solved with RuleLimit; Complete has to keep solving
@@ -327,8 +332,21 @@ func TestValidateCIUSReportsTheCoverageOfTheRuleSetItRan(t *testing.T) {
 	if !reflect.DeepEqual(pp.NotEvaluated, wantPP) {
 		t.Errorf("a Peppol document routed through ValidateCIUS reported\n  %v\nwant the Peppol union\n  %v", pp.NotEvaluated, wantPP)
 	}
-	if reflect.DeepEqual(pp.NotEvaluated, Coverage(SourceEN16931)) {
-		t.Error("ValidateCIUS reported only the core's gaps for a document it validated against Peppol too")
+
+	// The union has to be shown to be a union rather than a coincidence, and that
+	// takes a CIUS whose own table is non-empty. It used to be XRechnung, then Peppol;
+	// both rule sets have since been finished, so for both of them the union with the
+	// core's gaps *is* the core's gaps, and asserting otherwise would be asserting
+	// that a rule set is unfinished. UBL-BE is the case now — its Schematron is not
+	// vendored, so its gaps are named rather than closed — and if its table is ever
+	// emptied too this assertion has to move again rather than be deleted.
+	be := mustReport(t, ctx, ValidateCIUS, []byte(minimalUBLBE))
+	wantBE := append(Coverage(SourceEN16931), Coverage(SourceUBLBE)...)
+	if !reflect.DeepEqual(be.NotEvaluated, wantBE) {
+		t.Errorf("a UBL-BE document routed through ValidateCIUS reported\n  %v\nwant the UBL-BE union\n  %v", be.NotEvaluated, wantBE)
+	}
+	if reflect.DeepEqual(be.NotEvaluated, Coverage(SourceEN16931)) {
+		t.Error("ValidateCIUS reported only the core's gaps for a document it validated against UBL-BE too")
 	}
 
 	// A document that declares no recognised CIUS is validated against the core
@@ -1457,11 +1475,17 @@ func coverageText(src Source) string {
 // it changed the answer for the whole German public-sector path: a clean XRechnung
 // invoice now reports Conformant() == true, where before it reported false with
 // twenty-one PEPPOL-EN16931-* identifiers as the reason.
+// ValidatePeppol joined it when the 101 country-specific rules in the same two
+// OpenPEPPOL binding files were evaluated (C33). Its only fatal gap had been that
+// family, so a clean Peppol invoice now reports Conformant() == true where before
+// it reported false for every document — the trap D10 describes, one rule set
+// later.
 var validatorsWithNoFatalGap = map[string]bool{
 	"Validate":          true,
 	"ValidateNLCIUS":    true,
 	"ValidateCIUS":      true,
 	"ValidateXRechnung": true,
+	"ValidatePeppol":    true,
 }
 
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of

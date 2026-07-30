@@ -112,18 +112,23 @@ const (
 	minXRechnungRuleVerdicts  = 362
 	minPeppolExamples         = 9
 
-	// OpenPEPPOL's own per-rule test sets, under rules/unit-UBL-PEPPOL and
-	// rules/unit-CII-PEPPOL. They are the same kind of oracle as KoSIT's fixtures
-	// above and the only one that gives a *violating* verdict for a Peppol rule from
-	// the authority that wrote it: 102 test sets, each scoped to one identifier and
-	// holding several documents, every one of which declares whether OpenPEPPOL
-	// considers it valid or invalid against that rule.
+	// OpenPEPPOL's own per-rule test sets, under rules/unit-{UBL,CII}-PEPPOL and the
+	// thirteen country directories beside them. They are the same kind of oracle as
+	// KoSIT's fixtures above and the only one that gives a *violating* verdict for a
+	// Peppol rule from the authority that wrote it: each file is a test set scoped to
+	// one identifier and holding several documents, every one of which declares
+	// whether OpenPEPPOL considers it valid or invalid against that rule.
 	//
 	// The example corpus is nine conforming invoices, so it could only ever say that
 	// no rule over-fires. These say that each rule fires at all, which is what tells
 	// a working rule from one bound to an element name no document contains.
-	minPeppolRuleDocuments = 354
-	minPeppolRuleVerdicts  = 350
+	//
+	// They went from 354/350 to 876/885 when the country directories were read:
+	// unit-{UBL,CII}-{DE,DK,GR,IT,NL,NO,SE} had been on disk since the corpus was
+	// first fetched and nothing had opened them, which is the same shape as C33
+	// itself — 140 test sets for 101 rules nobody had counted.
+	minPeppolRuleDocuments = 876
+	minPeppolRuleVerdicts  = 885
 
 	// rules/national-examples: the invoices OpenPEPPOL publishes as *conforming
 	// examples of its country-specific rule sets*. Three documents, and they are the
