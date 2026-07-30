@@ -152,3 +152,50 @@ func BenchmarkValidateCIUSPT(b *testing.B) {
 	}
 	b.ReportMetric(float64(len(docs)), "docs/op")
 }
+
+// BenchmarkCIUSRORules is the CIUS-RO generated pass over an already-parsed UBL
+// tree: the walk that assigns every element to the first rule of ANAF's pattern
+// whose context matches it, and the evaluation of that element's assertions. No
+// parsing and no semantic model is in the number.
+//
+// It is committed beside CIUS-PT's for one reason that is specific to this rule
+// set: two thirds of ANAF's contexts are XSLT *match patterns* rather than paths
+// from the document element, so the walk consults a second trie at every element
+// rather than only advancing the first. That is the cost this benchmark is here to
+// keep visible.
+func BenchmarkCIUSRORules(b *testing.B) {
+	var trees []*ciiNode
+	for _, d := range benchCorpus(b, "UBL") {
+		root, err := parseCII(newRun(context.Background()), d)
+		if err != nil {
+			b.Fatal(err)
+		}
+		trees = append(trees, root)
+	}
+	r := newRun(context.Background())
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, root := range trees {
+			roValidateRules(r, root, func(string, string) {})
+		}
+	}
+	b.ReportMetric(float64(len(trees)), "docs/op")
+}
+
+// BenchmarkValidateCIUSRO is the whole call a caller makes, so the pass above can
+// be read as a share of it rather than in isolation.
+func BenchmarkValidateCIUSRO(b *testing.B) {
+	docs := benchCorpus(b, "UBL")
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, d := range docs {
+			if _, err := ValidateCIUSRO(ctx, d); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	b.ReportMetric(float64(len(docs)), "docs/op")
+}

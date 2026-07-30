@@ -163,8 +163,33 @@ const (
 	// implementing them faithfully was meant to close.
 	minCIUSROSectorDocs     = 7
 	minCIUSROSectorFindings = 11
-	minUBLBEInstances       = 36
-	minSRBDTInstances       = 10
+
+	// The CIUS-RO samples that declare the superseded RO_CIUS 1.0.0 identifier in
+	// BT-24 — the whole of the 1.0.3 and 1.0.4 sample sets — and therefore report
+	// BR-RO-001 against the 1.0.9 rule set this package evaluates. Ratcheted for
+	// the same reason as the pair above: the oracle permits exactly this finding on
+	// exactly these documents, so a number that fell would mean either that the
+	// corpus lost them or that BR-RO-001 stopped firing.
+	minCIUSROSupersededDocs = 22
+
+	// The 90 generated CIUS-RO length, decimal, date-format and occurrence rules,
+	// over every UBL document in the corpus. Same kind of ratchet as
+	// minCIUSPTDatatypeRulesFiring: every FP=0 oracle asserts the absence of
+	// findings, so a rule set that silently stopped firing would leave all of them
+	// green. Most of the documents counted here are not Romanian invoices.
+	minCIUSRORulesFiring  = 9
+	minCIUSRORuleFindings = 112
+
+	// The context-node ratchet for the same 90 rules, and the stronger of the two:
+	// a rule that stops being *asked* is invisible to a findings count, because a
+	// rule set that never runs reports nothing and a rule set that runs and passes
+	// reports nothing too. This counts the (context node, assertion) pairs the
+	// corpus produces, which is a large number that moves when a context stops
+	// matching. TestCIUSRORuleContextsAreReachable also asserts that every one of
+	// the 90 is reached at least once.
+	minCIUSROContextNodes = 62000
+	minUBLBEInstances     = 36
+	minSRBDTInstances     = 10
 
 	// NLCIUS is the one suite that carries both verdicts: the instances named
 	// for a BR-NL rule, and the subset of those that are deliberately broken and

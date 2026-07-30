@@ -188,38 +188,40 @@ func TestReportFromAnIgnoredErrorIsNotConformant(t *testing.T) {
 // was nothing a caller could read that said so.
 //
 // It used to be asked of ValidateCIUSPT, whose fatal gap was first
-// BR-CIUS-PT-13/15/17/18 and 24..63 and then the 290 DT-CIUS-PT-* datatype and
-// arithmetic rules. Both are evaluated now, so CIUS-PT has no fatal gap left and
-// the question has to be asked of a rule set that still has one. It is asked of
-// ValidateCIUSRO, whose coverage names four Romanian families ANAF publishes and
-// this package does not evaluate — and the *positive* half of what CIUS-PT became
-// is asserted directly below, so nothing that was checked here stopped being
-// checked.
+// BR-CIUS-PT-13/15/17/18 and 24..63 and then the 290 DT-CIUS-PT-* datatype rules.
+// It then moved to ValidateCIUSRO, whose coverage named four Romanian families
+// ANAF publishes. Both rule sets are finished now — CIUS-RO's remaining six
+// entries are Unevaluable and therefore free, which is precisely the state this
+// test must *not* be demonstrated on — so the question is asked of ValidateSRBDT,
+// whose coverage names three Serbian families the Ministry of Finance publishes
+// and this package does not evaluate. The *positive* half of what CIUS-PT and
+// CIUS-RO became is asserted directly below, so nothing that was checked here
+// stopped being checked.
 //
 // The property is that a named fatal gap keeps Conformant false, and the rule set
-// it is demonstrated on is incidental. When ValidateCIUSRO's fatal half is
-// finished too, this moves again rather than being deleted:
+// it is demonstrated on is incidental. When ValidateSRBDT's fatal half is finished
+// too, this moves again rather than being deleted:
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is what keeps the choice of
 // validator honest, because it fails the moment the one named here stops having a
 // fatal gap.
 func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
-	r := mustReport(t, context.Background(), ValidateCIUSRO, []byte(minimalCIUSROUBL))
+	r := mustReport(t, context.Background(), ValidateSRBDT, []byte(minimalSRBDT))
 	for _, v := range r.Violations {
-		if v.Source == SourceCIUSRO {
-			t.Fatalf("the fixture is no longer clean under the CIUS-RO rules, so this test proves nothing: %v", r.Violations)
+		if v.Source == SourceSRBDT {
+			t.Fatalf("the fixture is no longer clean under the SRBDT rules, so this test proves nothing: %v", r.Violations)
 		}
 	}
 	if r.Complete() {
-		t.Error("ValidateCIUSRO reported Complete; it does not evaluate the BR-RO-L*, BR-DEC-RO-*, BR-RO-A* or BR-RO-DT* rules")
+		t.Error("ValidateSRBDT reported Complete; it does not evaluate the RSK-X-*, RSE-* or the rest of the RSR-* rules")
 	}
 	if r.Conformant() {
-		t.Error("ValidateCIUSRO reported Conformant on a document whose Romanian length and decimal rules were never checked")
+		t.Error("ValidateSRBDT reported Conformant on a document whose Serbian VAT-category rules were never checked")
 	}
 	// The caller has to be able to find out *which* rules, not merely that some
 	// exist, or the report is no more actionable than a file comment.
 	var found bool
 	for _, g := range r.NotEvaluated {
-		if strings.Contains(g.Rules, "BR-RO-") || strings.Contains(g.Rules, "BR-DEC-RO-") {
+		if strings.Contains(g.Rules, "RSK-") || strings.Contains(g.Rules, "RSE-") || strings.Contains(g.Rules, "RSR") {
 			found = true
 			if g.Severity != SeverityFatal {
 				t.Errorf("the family the integrator would be rejected on is reported as %s: %+v", g.Severity, g)
@@ -229,6 +231,55 @@ func TestConformantIsFalseForACleanDocumentUnderAPartialRuleSet(t *testing.T) {
 	if !found {
 		t.Errorf("NotEvaluated does not name the rule family the integrator would be rejected on: %v", r.NotEvaluated)
 	}
+}
+
+// TestCIUSROReportsConformantAndCompleteForACleanInvoice is the other half of that
+// move, and the observable consequence of generating ANAF's mechanical tier.
+//
+// A Romanian invoice that breaks none of the 121 assertions CIUS-RO 1.0.9 publishes
+// now reports Conformant() == true and Complete() == true. Before, it reported
+// false for every document, whatever it contained, because four Romanian families
+// were named as unevaluated.
+//
+// It is asserted on ANAF's own sample instances as well as on this package's
+// baseline, because a fixture written to be clean under the rules this package
+// implements is not evidence about the rules it implements. Conformant is asserted
+// for the baseline and for the twenty-two instances that declare the current
+// RO_CIUS identifier; the twenty-two older ones report BR-RO-001 against the
+// release this package evaluates, which TestCIUSROCorpus derives from their BT-24.
+func TestCIUSROReportsConformantAndCompleteForACleanInvoice(t *testing.T) {
+	ctx := context.Background()
+	docs := map[string][]byte{"baseline": []byte(minimalCIUSROUBL)}
+	files, _ := filepath.Glob("testdata/cius-ro/testsuite/*.xml")
+	for _, f := range files {
+		data, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs[filepath.Base(f)] = data
+	}
+	conformant := 0
+	for name, data := range docs {
+		r := mustReport(t, ctx, ValidateCIUSRO, data)
+		if !r.Complete() {
+			var evaluable []string
+			for _, g := range r.NotEvaluated {
+				if !g.Unevaluable {
+					evaluable = append(evaluable, g.Rules)
+				}
+			}
+			t.Errorf("%s: ValidateCIUSRO is not Complete; the gaps it names that a validator could evaluate: %v",
+				name, evaluable)
+		}
+		if r.Conformant() {
+			conformant++
+		}
+	}
+	if !mustReport(t, ctx, ValidateCIUSRO, []byte(minimalCIUSROUBL)).Conformant() {
+		t.Errorf("a clean Romanian invoice is not Conformant: %v",
+			mustReport(t, ctx, ValidateCIUSRO, []byte(minimalCIUSROUBL)).Violations)
+	}
+	t.Logf("CIUS-RO: %d documents report Complete and %d of them Conformant", len(docs), conformant)
 }
 
 // TestCIUSPTReportsConformantAndCompleteForACleanInvoice is what the test above
@@ -1285,7 +1336,19 @@ func TestZeroReportIsNotComplete(t *testing.T) {
 // binding back out of the file. The instruction stands for everything else: a rule
 // an authority publishes and this package has not implemented is unimplemented,
 // whatever the reason.
-var sourcesWithUnevaluableFamilies = map[Source]bool{SourceEN16931: true, SourceUBLBE: true}
+var sourcesWithUnevaluableFamilies = map[Source]bool{
+	SourceEN16931: true, SourceUBLBE: true,
+	// CIUS-RO joined with six identifiers and two distinct reasons, both read out
+	// of cius-ro/RO16931-rules.sch rather than argued: three rules whose context is
+	// claimed by an earlier rule of the same pattern, which under ISO Schematron
+	// means no processor ever reaches them (CEN's CII-DT-010/011/012 are
+	// unevaluable for exactly this reason), and two bound to `count(.) <= 50`,
+	// which counts the context node and cannot be false. Neither is "hard" or "not
+	// yet": TestCIUSROUnevaluableAssertsAreDerivedFromTheArtefact re-derives all
+	// six from the file, in both directions, so a fixed upstream turns the entry
+	// back into a gap on the day it is fetched.
+	SourceCIUSRO: true,
+}
 
 // sourcesWithVendoredRuleArtefacts are the authorities whose published rule set
 // this repository actually holds, so that a claim about the artefact can be
@@ -1341,17 +1404,19 @@ func TestOnlyEN16931HasUnevaluableFamilies(t *testing.T) {
 				"file that is here", src, unevaluable, src)
 		}
 	}
-	// Three of the four CIUS this loop used to name. It named UBL.BE too, on the
-	// ground that this repository vendored no Schematron for any of them and the
-	// claim was therefore uncheckable — which stopped being true when
-	// `make cius-schematron` landed. UBL.BE now has exactly one unevaluable family,
-	// ubl-BE-13, and the artefact is here to be read; the other three still have
-	// none, and their rules being the hardest in the package to implement is not a
-	// reason to acquire one. "Hard" is the thing Unevaluable does not mean.
-	for _, src := range []Source{SourceCIUSPT, SourceCIUSRO, SourceSRBDT} {
+	// Two of the four CIUS this loop used to name. It named UBL.BE and CIUS-RO too,
+	// on the ground that this repository vendored no Schematron for any of them and
+	// the claim was therefore uncheckable — which stopped being true when
+	// `make cius-schematron` landed. UBL.BE has exactly one unevaluable family,
+	// ubl-BE-13, and CIUS-RO six; both authorities' artefacts are here to be read,
+	// and the tests that read them are named beside each Source in
+	// sourcesWithUnevaluableFamilies. The other two still have none, and their
+	// rules being the hardest in the package to implement is not a reason to
+	// acquire one. "Hard" is the thing Unevaluable does not mean.
+	for _, src := range []Source{SourceCIUSPT, SourceSRBDT} {
 		for _, f := range Coverage(src) {
 			if f.Unevaluable {
-				t.Errorf("Coverage(%q) marks %q unevaluable. These three CIUS are unimplemented, not unevaluable: "+
+				t.Errorf("Coverage(%q) marks %q unevaluable. These two CIUS are unimplemented, not unevaluable: "+
 					"their authorities publish rules that a validator can check and this package does not", src, f.Rules)
 			}
 		}
@@ -1584,6 +1649,12 @@ func coverageText(src Source) string {
 // invoice now reports Conformant() == true and Complete() == true where before it
 // reported false for every document. It is the first *CIUS* whose datatype tier is
 // implemented at all.
+// ValidateCIUSRO joined it when the four Romanian families ANAF publishes beside
+// its business rules — 64 BR-RO-L* length limits, 21 BR-DEC-RO-* decimal limits, 7
+// BR-RO-DT* date formats and 4 BR-RO-A* occurrence limits — were generated from
+// RO16931-rules.sch. The six of those ninety-six that no Schematron processor can
+// report are still in Coverage(SourceCIUSRO), carrying Unevaluable, which is what
+// makes them free: they are a defect in ANAF's artefact rather than a gap here.
 var validatorsWithNoFatalGap = map[string]bool{
 	"Validate":          true,
 	"ValidateNLCIUS":    true,
@@ -1591,6 +1662,7 @@ var validatorsWithNoFatalGap = map[string]bool{
 	"ValidateXRechnung": true,
 	"ValidatePeppol":    true,
 	"ValidateCIUSPT":    true,
+	"ValidateCIUSRO":    true,
 }
 
 // TestValidatorsWithAFatalGapAreTheOnesWeThinkTheyAre is where the fatal half of
