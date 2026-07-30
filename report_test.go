@@ -848,13 +848,54 @@ func TestCoverageSeveritiesMatchThePublishedFlag(t *testing.T) {
 	// finished, and the second belongs in a commit message: this test's population
 	// is the *gaps*, so it shrinks as rules are implemented. It went from 71 to 52
 	// while KoSIT's rules were being implemented, back to 67 when the twenty-one
-	// Peppol rules XRechnung imports were recorded, and then to 108 when those were
+	// Peppol rules XRechnung imports were recorded, to 108 when those were
 	// implemented and Coverage(SourcePeppol) came to name the 101 country-specific
-	// rules in the same OpenPEPPOL files instead — which no survey here had counted.
-	if checked < 100 {
+	// rules in the same OpenPEPPOL files instead, and down again as those are
+	// implemented in turn.
+	//
+	// Which is why the floor is no longer the only thing holding the helper up.
+	// The population it measures is on its way to seven — the three unevaluable
+	// EN 16931 families — and a floor of seven guards nothing, so
+	// TestCoverageIdentifiersExpandsFamilies pins the helper directly, on literal
+	// inputs including the two shapes those bugs got wrong. The floor stays as the
+	// cheaper end-to-end signal that the artefacts are being read at all.
+	if checked < 7 {
 		t.Fatalf("only %d coverage identifiers could be looked up; the harness is reading the wrong artefacts", checked)
 	}
 	t.Logf("checked the severity of %d coverage identifiers against the flags their authorities publish, with no exceptions", checked)
+}
+
+// TestCoverageIdentifiersExpandsFamilies pins coverageIdentifiers on literal
+// inputs, so the helper's correctness stops depending on how many gaps happen to
+// be left in the table.
+//
+// The first two cases are the two bugs C31 records, written as inputs: an
+// identifier whose family name contains digits (fullIDRE rejected it, so no
+// Peppol prefix was ever carried) and one whose first digit run is not its number
+// (numTailRE split "PEPPOL-EN16931-R001" into "PEPPOL-EN" + "16931"). Both would
+// pass silently again if the helper regressed, because a helper that resolves
+// nothing makes this test's caller check nothing.
+func TestCoverageIdentifiersExpandsFamilies(t *testing.T) {
+	for _, tc := range []struct {
+		in   string
+		want []string
+	}{
+		{"PEPPOL-EN16931-R040..R044, R046", []string{
+			"PEPPOL-EN16931-R040", "PEPPOL-EN16931-R041", "PEPPOL-EN16931-R042",
+			"PEPPOL-EN16931-R043", "PEPPOL-EN16931-R044", "PEPPOL-EN16931-R046"}},
+		{"BR-CO-05..08", []string{"BR-CO-05", "BR-CO-06", "BR-CO-07", "BR-CO-08"}},
+		{"CII-DT-010, CII-DT-011, CII-DT-012", []string{"CII-DT-010", "CII-DT-011", "CII-DT-012"}},
+		{"DK-R-002, DK-R-004..006", []string{"DK-R-002", "DK-R-004", "DK-R-005", "DK-R-006"}},
+		{"GR-R-001-1, GR-S-008-1", []string{"GR-R-001-1", "GR-S-008-1"}},
+	} {
+		got := coverageIdentifiers(tc.in)
+		sort.Strings(got)
+		want := append([]string(nil), tc.want...)
+		sort.Strings(want)
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("coverageIdentifiers(%q) = %v, want %v", tc.in, got, want)
+		}
+	}
 }
 
 // coverageIdentifiers expands one entry's Rules field into every identifier it
