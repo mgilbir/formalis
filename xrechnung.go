@@ -26,6 +26,70 @@ var xrechnungTypeCodes = map[string]bool{
 // EXTENSION adds to the ISO 6523 ICD list (BR-CL-21 override).
 var xrExtItemSchemes = map[string]bool{"XR01": true, "XR02": true, "XR03": true}
 
+// The XRechnung specification identifiers, from common.sch:
+//
+//	XR-CIUS-ID      urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0
+//	XR-EXTENSION-ID $XR-CIUS-ID#conformant#urn:xeinkauf.de:kosit:extension:xrechnung_3.0
+//	XR-CVD-ID       $XR-CIUS-ID#compliant#urn:xeinkauf.de:kosit:xrechnung:cvd_0.9
+//
+// KoSIT selects a sub-profile by comparing BT-24 with the whole identifier, so
+// its Schematron answers for exactly one version of XRechnung — 3.0, and CVD 0.9
+// — and treats an EXTENSION document of any other version as a plain CIUS one.
+// This package is not pinned to a version (BR-DE-21 checks the shape of BT-24,
+// not one literal), so it matches the part of the identifier that names the
+// sub-profile and leaves the version out. That is deliberately wider than KoSIT
+// by exactly the versions KoSIT does not answer for, and narrower than the bare
+// substring "extension" this used to look for, which would have taken any BT-24
+// with that word anywhere in it — including one belonging to another authority
+// entirely — for a German EXTENSION invoice.
+const (
+	xrExtensionMarker = "kosit:extension:xrechnung"
+	xrCVDMarker       = "kosit:xrechnung:cvd"
+)
+
+// xrSubProfiles reports which XRechnung sub-profile BT-24 claims.
+func xrSubProfiles(specID string) (ext, cvd bool) {
+	return strings.Contains(specID, xrExtensionMarker), strings.Contains(specID, xrCVDMarker)
+}
+
+// xrechnungFlags is KoSIT's flag for every XRechnung identifier this package
+// evaluates, folded onto this package's two severities: fatal is fatal, and both
+// warning and information are advisory.
+//
+// SeverityFatal is the zero value, so an identifier absent from this map is
+// reported fatal. That is the fail-safe direction and it is also checked:
+// TestXRechnungSeveritiesQuoteKoSIT requires this map to name every identifier
+// the package emits and to agree with the Schematron on each, so a rule cannot
+// acquire a severity by being left out.
+var xrechnungFlags = map[string]Severity{
+	// flag="warning"
+	"BR-DE-17":  SeverityWarning,
+	"BR-DE-19":  SeverityWarning,
+	"BR-DE-20":  SeverityWarning,
+	"BR-DE-21":  SeverityWarning,
+	"BR-DE-26":  SeverityWarning,
+	"BR-DE-27":  SeverityWarning,
+	"BR-DE-28":  SeverityWarning,
+	"BR-DEX-02": SeverityWarning,
+	"BR-DEX-15": SeverityWarning,
+	"BR-TMP-2":  SeverityWarning,
+	// flag="information"
+	"BR-DE-TMP-32": SeverityWarning,
+}
+
+// xrAdder is adder for the XRechnung rule set, with the severity read off
+// xrechnungFlags instead of assumed.
+func xrAdder(out *[]Violation) func(rule, msg string) {
+	return func(rule, msg string) {
+		*out = append(*out, Violation{
+			Source:   SourceXRechnung,
+			Rule:     rule,
+			Severity: xrechnungFlags[rule],
+			Message:  msg,
+		})
+	}
+}
+
 // ValidateXRechnung validates an invoice XML against the XRechnung CIUS: the
 // EN 16931 core (with the XRechnung sub-profile overrides applied) plus the
 // BR-DE-* rules. It accepts either syntax.
@@ -53,8 +117,7 @@ func ValidateXRechnung(ctx context.Context, xmlData []byte) (Report, error) {
 
 func validateXRechnung(r *run, p *parsed) []Violation {
 	inv := p.inv
-	ext := strings.Contains(inv.specID, "extension")
-	cvd := strings.Contains(inv.specID, "cvd")
+	ext, cvd := xrSubProfiles(inv.specID)
 
 	var out []Violation
 	// XRechnung documents carry the full EN 16931 data set — BR-DE-* makes more
@@ -90,9 +153,14 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 
 // validateXRechnungRules applies the mandatory-term and format rules XRechnung
 // adds on top of EN 16931 (the BR-DE-* family).
+//
+// The severity of each finding is KoSIT's flag, read from xrechnungFlags rather
+// than assumed fatal. Seven of these rules are not fatal — BR-DE-17, 19, 20, 21,
+// 26, 27 and 28 — and were reported as though they were, which made a document
+// KoSIT accepts with a warning about its telephone number non-conformant here.
 func validateXRechnungRules(inv *en16931Invoice, ext, cvd bool) []Violation {
 	var out []Violation
-	add := adder(&out, SourceXRechnung)
+	add := xrAdder(&out)
 	req := func(rule, msg, val string) {
 		if val == "" {
 			add(rule, msg)

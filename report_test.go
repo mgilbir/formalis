@@ -601,38 +601,66 @@ func severityOfFlag(flag string) (Severity, bool) {
 	return SeverityFatal, false
 }
 
-// TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings verifies the claim that lets
-// Severity have a zero value at all: outside the two advisory syntax bindings,
-// every rule this package implements is one its authority rejects a document for,
-// so the fail-safe default is also the correct answer everywhere and no emission
-// site is relying on the default to mean something it did not decide.
+// advisoryEmittingTables are the tables that decide, per rule identifier, that a
+// finding is advisory. A rule is allowed to arrive as a warning only because one
+// of these says its authority flagged it that way, and the check below is over
+// the tables themselves rather than over a pattern on the identifier, so a rule
+// cannot become excusable by being named like one.
+//
+//   - advisoryRuleIDs() is the generated EN 16931 syntax-binding table: 1,168
+//     rules CEN flags warning.
+//   - xrechnungFlags is KoSIT's flag for every XRechnung identifier this package
+//     evaluates. Eleven are not fatal — seven flagged warning, one information,
+//     and three more (BR-DE-19, BR-DE-20, BR-DEX-02) that a regular-expression
+//     harness could not see at all.
+func advisoryEmittingTables() map[Source]map[string]bool {
+	xr := map[string]bool{}
+	for rule, sev := range xrechnungFlags {
+		if sev == SeverityWarning {
+			xr[rule] = true
+		}
+	}
+	return map[Source]map[string]bool{
+		SourceEN16931:   advisoryRuleIDs(),
+		SourceXRechnung: xr,
+	}
+}
+
+// TestOnlySeveritiesAnAuthorityPublishedAreEmittedAsWarnings verifies the claim
+// that lets Severity have a zero value at all: a finding arrives as a warning
+// only where its authority flagged the rule that way, so the fail-safe default is
+// the correct answer everywhere else and no emission site is relying on the
+// default to mean something it did not decide.
 //
 // It sweeps the whole corpus through every validator — the same sweep the
-// identifier-collision guard uses — and checks each rule's severity against which
-// half of the package it came from, in both directions: an advisory binding rule
+// identifier-collision guard uses — and checks each rule's severity against the
+// table that decided it, in both directions: a rule named in one of those tables
 // must never arrive fatal, and anything else must never arrive as a warning.
 //
-// This was TestEveryEmittedFindingIsFatalToday, which asserted the stronger claim
-// that *nothing* was advisory and said in its own comment that implementing the
-// advisory bindings should make it fail and be rewritten here. This is that
-// rewrite. The set it excuses is not a pattern on the identifier but the generated
-// tables themselves (advisoryRuleIDs), so a rule cannot become excusable by being
-// named like one.
-func TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings(t *testing.T) {
-	advisory := advisoryRuleIDs()
+// This was TestOnlyTheAdvisoryBindingsAreEmittedAsWarnings, and before that
+// TestEveryEmittedFindingIsFatalToday. Each rewrite has been the same correction
+// in a smaller form: the test asserted that the *only* non-fatal rules in the
+// package were the ones implemented most recently, which was true when written
+// and stopped being true as soon as another authority's advisory tier arrived.
+// KoSIT flags eleven of its fifty-seven rules warning or information, and this
+// package reported seven of them fatal — so a document KoSIT accepts with a
+// warning about its telephone number was refused here, and this assertion was
+// what said that had to be so.
+func TestOnlySeveritiesAnAuthorityPublishedAreEmittedAsWarnings(t *testing.T) {
+	tables := advisoryEmittingTables()
 	s := corpusSweep()
 	for src, rules := range s.bySeverity {
 		for rule, sevs := range rules {
-			isAdvisory := src == SourceEN16931 && advisory[rule]
+			isAdvisory := tables[src][rule]
 			for sev := range sevs {
 				switch {
 				case isAdvisory && sev != SeverityWarning:
-					t.Errorf("%s/%s is in the generated advisory binding table, which CEN flags warning, but it was "+
+					t.Errorf("%s/%s is in a table that records its authority flagging it advisory, but it was "+
 						"reported as %s", src, rule, sev)
 				case !isAdvisory && sev != SeverityFatal:
-					t.Errorf("%s/%s was reported as %s; every rule this package implements outside the two advisory "+
-						"syntax bindings is one its authority flags fatal. If that has changed, this test is the "+
-						"place to record it", src, rule, sev)
+					t.Errorf("%s/%s was reported as %s, and no table in this package records its authority flagging "+
+						"it that way. A severity is a quotation: either the table is missing an entry or the "+
+						"emission site chose one", src, rule, sev)
 				}
 			}
 		}
