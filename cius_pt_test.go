@@ -64,32 +64,20 @@ const minimalCIUSPTUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 <cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cac:Item><cbc:Name>Widget</cbc:Name><cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>23</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </Invoice>`
 
+var ciusPTMutations = []ciusMutation{
+	{"no seller VAT (01)", "<cbc:CompanyID>PT111111111</cbc:CompanyID>", "", "BR-CIUS-PT-01"},
+	{"no buyer VAT (03)", "<cbc:CompanyID>PT222222222</cbc:CompanyID>", "", "BR-CIUS-PT-03"},
+	{"no seller street (05)", "<cbc:StreetName>SellerStreet</cbc:StreetName>", "", "BR-CIUS-PT-05"},
+	{"no seller city (06)", "<cbc:CityName>SellerCity</cbc:CityName>", "", "BR-CIUS-PT-06"},
+	{"no seller postcode (07)", "<cbc:PostalZone>1111-001</cbc:PostalZone>", "", "BR-CIUS-PT-07"},
+	{"no totals (10)", "<cac:LegalMonetaryTotal><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount>100.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount>123.00</cbc:TaxInclusiveAmount><cbc:PayableAmount>123.00</cbc:PayableAmount></cac:LegalMonetaryTotal>", "", "BR-CIUS-PT-10"},
+	{"no total VAT (11)", "<cbc:TaxAmount>23.00</cbc:TaxAmount>", "", "BR-CIUS-PT-11"},
+	{"no delivery (66)", "<cac:Delivery><cac:DeliveryLocation><cac:Address><cbc:StreetName>DelivStreet</cbc:StreetName><cbc:CityName>DelivCity</cbc:CityName><cbc:PostalZone>4444-002</cbc:PostalZone><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:Address></cac:DeliveryLocation></cac:Delivery>", "", "BR-CIUS-PT-66"},
+	{"no deliver-to street (21)", "<cbc:StreetName>DelivStreet</cbc:StreetName>", "", "BR-CIUS-PT-21"},
+	{"no deliver-to city (22)", "<cbc:CityName>DelivCity</cbc:CityName>", "", "BR-CIUS-PT-22"},
+	{"no deliver-to postcode (23)", "<cbc:PostalZone>4444-002</cbc:PostalZone>", "", "BR-CIUS-PT-23"},
+}
+
 func TestCIUSPTMutations(t *testing.T) {
-	if pt := ptRuleViolations(findings(t, context.Background(), ValidateCIUSPT, []byte(minimalCIUSPTUBL))); len(pt) != 0 {
-		t.Fatalf("baseline CIUS-PT invoice not clean: %v", pt)
-	}
-	cases := []struct{ name, remove, want string }{
-		{"no seller VAT (01)", "<cbc:CompanyID>PT111111111</cbc:CompanyID>", "BR-CIUS-PT-01"},
-		{"no buyer VAT (03)", "<cbc:CompanyID>PT222222222</cbc:CompanyID>", "BR-CIUS-PT-03"},
-		{"no seller street (05)", "<cbc:StreetName>SellerStreet</cbc:StreetName>", "BR-CIUS-PT-05"},
-		{"no seller city (06)", "<cbc:CityName>SellerCity</cbc:CityName>", "BR-CIUS-PT-06"},
-		{"no seller postcode (07)", "<cbc:PostalZone>1111-001</cbc:PostalZone>", "BR-CIUS-PT-07"},
-		{"no totals (10)", "<cac:LegalMonetaryTotal><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount>100.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount>123.00</cbc:TaxInclusiveAmount><cbc:PayableAmount>123.00</cbc:PayableAmount></cac:LegalMonetaryTotal>", "BR-CIUS-PT-10"},
-		{"no total VAT (11)", "<cbc:TaxAmount>23.00</cbc:TaxAmount>", "BR-CIUS-PT-11"},
-		{"no delivery (66)", "<cac:Delivery><cac:DeliveryLocation><cac:Address><cbc:StreetName>DelivStreet</cbc:StreetName><cbc:CityName>DelivCity</cbc:CityName><cbc:PostalZone>4444-002</cbc:PostalZone><cac:Country><cbc:IdentificationCode>PT</cbc:IdentificationCode></cac:Country></cac:Address></cac:DeliveryLocation></cac:Delivery>", "BR-CIUS-PT-66"},
-		{"no deliver-to street (21)", "<cbc:StreetName>DelivStreet</cbc:StreetName>", "BR-CIUS-PT-21"},
-		{"no deliver-to city (22)", "<cbc:CityName>DelivCity</cbc:CityName>", "BR-CIUS-PT-22"},
-		{"no deliver-to postcode (23)", "<cbc:PostalZone>4444-002</cbc:PostalZone>", "BR-CIUS-PT-23"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			broken := strings.Replace(minimalCIUSPTUBL, tc.remove, "", 1)
-			if broken == minimalCIUSPTUBL {
-				t.Fatalf("mutation string not found: %q", tc.remove)
-			}
-			if !hasFacturXRule(findings(t, context.Background(), ValidateCIUSPT, []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, ptRuleViolations(findings(t, context.Background(), ValidateCIUSPT, []byte(broken))))
-			}
-		})
-	}
+	runCIUSSuite(t, ciusSuites()[0])
 }

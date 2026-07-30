@@ -59,32 +59,20 @@ const minimalUBLBE = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:x
 <cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </Invoice>`
 
+var ublBEMutations = []ciusMutation{
+	{"no document type (02)", "<cbc:DocumentDescription>CommercialInvoice</cbc:DocumentDescription>", "<cbc:DocumentDescription>Foo</cbc:DocumentDescription>", "ubl-BE-02"},
+	{"no UBL.BE marker (03)", "<cbc:ID>UBL.BE</cbc:ID>", "", "ubl-BE-03"},
+	{"bad delivery terms (05)", "<cbc:ID>BELM-001</cbc:ID>", "<cbc:ID>BELM-999</cbc:ID>", "ubl-BE-05"},
+	{"bad tax category name (10)", "<cbc:Name>03</cbc:Name>", "<cbc:Name>99</cbc:Name>", "ubl-BE-10"},
+	{"bad exemption code (11)", "<cbc:TaxExemptionReasonCode>BETE-45</cbc:TaxExemptionReasonCode>", "<cbc:TaxExemptionReasonCode>BETE-XX</cbc:TaxExemptionReasonCode>", "ubl-BE-11"},
+	{"bad settlement percent (07)", "<cbc:SettlementDiscountPercent>2</cbc:SettlementDiscountPercent>", "<cbc:SettlementDiscountPercent>150</cbc:SettlementDiscountPercent>", "ubl-BE-07"},
+	{"settlement without amount (08)", "<cbc:Amount>2.00</cbc:Amount>", "", "ubl-BE-08"},
+	{"settlement bad due date (09)", "<cbc:PaymentDueDate>2024-02-15</cbc:PaymentDueDate>", "<cbc:PaymentDueDate>15/02/2024</cbc:PaymentDueDate>", "ubl-BE-09"},
+	{"line without tax total (14)", "<cac:TaxTotal><cbc:TaxAmount>21.01</cbc:TaxAmount></cac:TaxTotal>", "", "ubl-BE-14"},
+	{"line tax amount not numeric (13)", "<cbc:TaxAmount>21.01</cbc:TaxAmount>", "<cbc:TaxAmount>abc</cbc:TaxAmount>", "ubl-BE-13"},
+	{"classified category no name (15)", "<cbc:Name>45</cbc:Name>", "", "ubl-BE-15"},
+}
+
 func TestUBLBEMutations(t *testing.T) {
-	if be := beRuleViolations(findings(t, context.Background(), ValidateUBLBE, []byte(minimalUBLBE))); len(be) != 0 {
-		t.Fatalf("baseline UBL.BE invoice not clean: %v", be)
-	}
-	cases := []struct{ name, from, to, want string }{
-		{"no document type (02)", "<cbc:DocumentDescription>CommercialInvoice</cbc:DocumentDescription>", "<cbc:DocumentDescription>Foo</cbc:DocumentDescription>", "ubl-BE-02"},
-		{"no UBL.BE marker (03)", "<cbc:ID>UBL.BE</cbc:ID>", "", "ubl-BE-03"},
-		{"bad delivery terms (05)", "<cbc:ID>BELM-001</cbc:ID>", "<cbc:ID>BELM-999</cbc:ID>", "ubl-BE-05"},
-		{"bad tax category name (10)", "<cbc:Name>03</cbc:Name>", "<cbc:Name>99</cbc:Name>", "ubl-BE-10"},
-		{"bad exemption code (11)", "<cbc:TaxExemptionReasonCode>BETE-45</cbc:TaxExemptionReasonCode>", "<cbc:TaxExemptionReasonCode>BETE-XX</cbc:TaxExemptionReasonCode>", "ubl-BE-11"},
-		{"bad settlement percent (07)", "<cbc:SettlementDiscountPercent>2</cbc:SettlementDiscountPercent>", "<cbc:SettlementDiscountPercent>150</cbc:SettlementDiscountPercent>", "ubl-BE-07"},
-		{"settlement without amount (08)", "<cbc:Amount>2.00</cbc:Amount>", "", "ubl-BE-08"},
-		{"settlement bad due date (09)", "<cbc:PaymentDueDate>2024-02-15</cbc:PaymentDueDate>", "<cbc:PaymentDueDate>15/02/2024</cbc:PaymentDueDate>", "ubl-BE-09"},
-		{"line without tax total (14)", "<cac:TaxTotal><cbc:TaxAmount>21.01</cbc:TaxAmount></cac:TaxTotal>", "", "ubl-BE-14"},
-		{"line tax amount not numeric (13)", "<cbc:TaxAmount>21.01</cbc:TaxAmount>", "<cbc:TaxAmount>abc</cbc:TaxAmount>", "ubl-BE-13"},
-		{"classified category no name (15)", "<cbc:Name>45</cbc:Name>", "", "ubl-BE-15"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			broken := strings.Replace(minimalUBLBE, tc.from, tc.to, 1)
-			if broken == minimalUBLBE {
-				t.Fatalf("mutation string not found: %q", tc.from)
-			}
-			if !hasFacturXRule(findings(t, context.Background(), ValidateUBLBE, []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, beRuleViolations(findings(t, context.Background(), ValidateUBLBE, []byte(broken))))
-			}
-		})
-	}
+	runCIUSSuite(t, ciusSuites()[2])
 }

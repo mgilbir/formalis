@@ -61,37 +61,25 @@ const minimalCIUSROUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:sche
 <cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cac:Item><cbc:Name>Widget</cbc:Name><cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>19</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
 </Invoice>`
 
+var ciusROMutations = []ciusMutation{
+	{"number without digit (010)", "<cbc:ID>INV-1</cbc:ID>", "<cbc:ID>INVOICE</cbc:ID>", "BR-RO-010"},
+	{"bad type code (020)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>100</cbc:InvoiceTypeCode>", "BR-RO-020"},
+	{"non-RON without RON tax currency (030)", "<cbc:DocumentCurrencyCode>RON</cbc:DocumentCurrencyCode>", "<cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>", "BR-RO-030"},
+	{"no seller street (081)", "<cbc:StreetName>SellerStreet</cbc:StreetName>", "", "BR-RO-081"},
+	{"no seller city (091)", "<cbc:CityName>SellerCity</cbc:CityName>", "", "BR-RO-091"},
+	{"no buyer street (082)", "<cbc:StreetName>BuyerStreet</cbc:StreetName>", "", "BR-RO-082"},
+	{"no buyer city (092)", "<cbc:CityName>BuyerCity</cbc:CityName>", "", "BR-RO-092"},
+	{"no tax rep street (140)", "<cbc:StreetName>RepStreet</cbc:StreetName>", "", "BR-RO-140"},
+	{"no tax rep city (150)", "<cbc:CityName>RepCity</cbc:CityName>", "", "BR-RO-150"},
+	{"no delivery street (180)", "<cbc:StreetName>DelivStreet</cbc:StreetName>", "", "BR-RO-180"},
+	{"no delivery city (201)", "<cbc:CityName>DelivCity</cbc:CityName>", "", "BR-RO-201"},
+	{"no seller subdivision (110)", "<cbc:CountrySubentity>RO-CJ</cbc:CountrySubentity>", "", "BR-RO-110"},
+	{"no buyer subdivision (111)", "<cbc:CountrySubentity>RO-TM</cbc:CountrySubentity>", "", "BR-RO-111"},
+	{"invalid tax rep subdivision (170)", "<cbc:CountrySubentity>RO-IS</cbc:CountrySubentity>", "<cbc:CountrySubentity>XX</cbc:CountrySubentity>", "BR-RO-170"},
+	{"no delivery subdivision (211)", "<cbc:CountrySubentity>RO-BV</cbc:CountrySubentity>", "", "BR-RO-211"},
+	{"invalid delivery subdivision (212)", "<cbc:CountrySubentity>RO-BV</cbc:CountrySubentity>", "<cbc:CountrySubentity>XX</cbc:CountrySubentity>", "BR-RO-212"},
+}
+
 func TestCIUSROMutations(t *testing.T) {
-	if ro := roRuleViolations(findings(t, context.Background(), ValidateCIUSRO, []byte(minimalCIUSROUBL))); len(ro) != 0 {
-		t.Fatalf("baseline CIUS-RO invoice not clean: %v", ro)
-	}
-	cases := []struct{ name, from, to, want string }{
-		{"number without digit (010)", "<cbc:ID>INV-1</cbc:ID>", "<cbc:ID>INVOICE</cbc:ID>", "BR-RO-010"},
-		{"bad type code (020)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>100</cbc:InvoiceTypeCode>", "BR-RO-020"},
-		{"non-RON without RON tax currency (030)", "<cbc:DocumentCurrencyCode>RON</cbc:DocumentCurrencyCode>", "<cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>", "BR-RO-030"},
-		{"no seller street (081)", "<cbc:StreetName>SellerStreet</cbc:StreetName>", "", "BR-RO-081"},
-		{"no seller city (091)", "<cbc:CityName>SellerCity</cbc:CityName>", "", "BR-RO-091"},
-		{"no buyer street (082)", "<cbc:StreetName>BuyerStreet</cbc:StreetName>", "", "BR-RO-082"},
-		{"no buyer city (092)", "<cbc:CityName>BuyerCity</cbc:CityName>", "", "BR-RO-092"},
-		{"no tax rep street (140)", "<cbc:StreetName>RepStreet</cbc:StreetName>", "", "BR-RO-140"},
-		{"no tax rep city (150)", "<cbc:CityName>RepCity</cbc:CityName>", "", "BR-RO-150"},
-		{"no delivery street (180)", "<cbc:StreetName>DelivStreet</cbc:StreetName>", "", "BR-RO-180"},
-		{"no delivery city (201)", "<cbc:CityName>DelivCity</cbc:CityName>", "", "BR-RO-201"},
-		{"no seller subdivision (110)", "<cbc:CountrySubentity>RO-CJ</cbc:CountrySubentity>", "", "BR-RO-110"},
-		{"no buyer subdivision (111)", "<cbc:CountrySubentity>RO-TM</cbc:CountrySubentity>", "", "BR-RO-111"},
-		{"invalid tax rep subdivision (170)", "<cbc:CountrySubentity>RO-IS</cbc:CountrySubentity>", "<cbc:CountrySubentity>XX</cbc:CountrySubentity>", "BR-RO-170"},
-		{"no delivery subdivision (211)", "<cbc:CountrySubentity>RO-BV</cbc:CountrySubentity>", "", "BR-RO-211"},
-		{"invalid delivery subdivision (212)", "<cbc:CountrySubentity>RO-BV</cbc:CountrySubentity>", "<cbc:CountrySubentity>XX</cbc:CountrySubentity>", "BR-RO-212"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			broken := strings.Replace(minimalCIUSROUBL, tc.from, tc.to, 1)
-			if broken == minimalCIUSROUBL {
-				t.Fatalf("mutation string not found: %q", tc.from)
-			}
-			if !hasFacturXRule(findings(t, context.Background(), ValidateCIUSRO, []byte(broken)), tc.want) {
-				t.Errorf("expected %s to fire; got %v", tc.want, roRuleViolations(findings(t, context.Background(), ValidateCIUSRO, []byte(broken))))
-			}
-		})
-	}
+	runCIUSSuite(t, ciusSuites()[1])
 }

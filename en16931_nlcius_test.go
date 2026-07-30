@@ -74,3 +74,52 @@ func TestNLCIUSConformanceSuite(t *testing.T) {
 	atLeast(t, "NLCIUS error instances caught", caught, minNLCIUSErrorsCaught)
 	t.Logf("NLCIUS conformance: %d error instances caught, %d false positives", caught, len(falsePositives))
 }
+
+// minimalNLCIUSUBL is a small SI-UBL 2.0 invoice from a Dutch supplier that
+// satisfies every fatal BR-NL rule, with distinct values so each term can be
+// mutated in isolation. BuyerReference and OrderReference sit adjacent so that
+// BR-NL-2 — which needs *both* gone — is one substitution.
+const minimalNLCIUSUBL = `<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:fdc:nen.nl:nlcius:v1.0</cbc:CustomizationID>
+<cbc:ID>INV-1</cbc:ID><cbc:IssueDate>2024-01-15</cbc:IssueDate>
+<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode><cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+<cbc:BuyerReference>NLBUYERREF</cbc:BuyerReference><cac:OrderReference><cbc:ID>ORD-1</cbc:ID></cac:OrderReference>
+<cac:AccountingSupplierParty><cac:Party>
+  <cac:PostalAddress><cbc:StreetName>SellerStreet</cbc:StreetName><cbc:CityName>SellerCity</cbc:CityName><cbc:PostalZone>1011AA</cbc:PostalZone><cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+  <cac:PartyTaxScheme><cbc:CompanyID>NL123456789B01</cbc:CompanyID><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:PartyTaxScheme>
+  <cac:PartyLegalEntity><cbc:RegistrationName>Seller BV</cbc:RegistrationName><cbc:CompanyID schemeID="0106">11223344</cbc:CompanyID></cac:PartyLegalEntity>
+</cac:Party></cac:AccountingSupplierParty>
+<cac:AccountingCustomerParty><cac:Party>
+  <cac:PostalAddress><cbc:StreetName>BuyerStreet</cbc:StreetName><cbc:CityName>BuyerCity</cbc:CityName><cbc:PostalZone>2022BB</cbc:PostalZone><cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country></cac:PostalAddress>
+  <cac:PartyLegalEntity><cbc:RegistrationName>Buyer BV</cbc:RegistrationName><cbc:CompanyID schemeID="0106">55667788</cbc:CompanyID></cac:PartyLegalEntity>
+</cac:Party></cac:AccountingCustomerParty>
+<cac:TaxRepresentativeParty><cac:PartyName><cbc:Name>Rep BV</cbc:Name></cac:PartyName><cac:PostalAddress><cbc:StreetName>RepStreet</cbc:StreetName><cbc:CityName>RepCity</cbc:CityName><cbc:PostalZone>3033CC</cbc:PostalZone><cac:Country><cbc:IdentificationCode>NL</cbc:IdentificationCode></cac:Country></cac:PostalAddress></cac:TaxRepresentativeParty>
+<cac:PaymentMeans><cbc:PaymentMeansCode>30</cbc:PaymentMeansCode><cac:PayeeFinancialAccount><cbc:ID>NL02ABNA0123456789</cbc:ID></cac:PayeeFinancialAccount></cac:PaymentMeans>
+<cac:TaxTotal><cbc:TaxAmount>21.00</cbc:TaxAmount><cac:TaxSubtotal><cbc:TaxableAmount>100.00</cbc:TaxableAmount><cbc:TaxAmount>21.00</cbc:TaxAmount><cac:TaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>21</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:TaxCategory></cac:TaxSubtotal></cac:TaxTotal>
+<cac:LegalMonetaryTotal><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cbc:TaxExclusiveAmount>100.00</cbc:TaxExclusiveAmount><cbc:TaxInclusiveAmount>121.00</cbc:TaxInclusiveAmount><cbc:PayableAmount>121.00</cbc:PayableAmount></cac:LegalMonetaryTotal>
+<cac:InvoiceLine><cbc:ID>1</cbc:ID><cbc:InvoicedQuantity unitCode="C62">1</cbc:InvoicedQuantity><cbc:LineExtensionAmount>100.00</cbc:LineExtensionAmount><cac:OrderLineReference><cbc:LineID>1</cbc:LineID></cac:OrderLineReference><cac:Item><cbc:Name>Widget</cbc:Name><cac:ClassifiedTaxCategory><cbc:ID>S</cbc:ID><cbc:Percent>21</cbc:Percent><cac:TaxScheme><cbc:ID>VAT</cbc:ID></cac:TaxScheme></cac:ClassifiedTaxCategory></cac:Item><cac:Price><cbc:PriceAmount>100.00</cbc:PriceAmount></cac:Price></cac:InvoiceLine>
+</Invoice>`
+
+// nlciusMutations is one fixture per fatal BR-NL identifier. NLCIUS is the one CIUS
+// here whose authority also ships per-rule fixtures (TestNLCIUSPerRuleFixtures
+// reads them), so these are the belt to that suite's braces: they run without a
+// corpus, and they pin the two rules the SI-UBL suite exercises only through a
+// document that also trips something else.
+var nlciusMutations = []ciusMutation{
+	{"seller legal id not KVK or OIN (1)", `<cbc:CompanyID schemeID="0106">11223344</cbc:CompanyID>`, `<cbc:CompanyID schemeID="0088">11223344</cbc:CompanyID>`, "BR-NL-1"},
+	{"no buyer reference and no order reference (2)", `<cbc:BuyerReference>NLBUYERREF</cbc:BuyerReference><cac:OrderReference><cbc:ID>ORD-1</cbc:ID></cac:OrderReference>`, "", "BR-NL-2"},
+	{"no seller street (3)", "<cbc:StreetName>SellerStreet</cbc:StreetName>", "", "BR-NL-3"},
+	{"no Dutch buyer street (4)", "<cbc:StreetName>BuyerStreet</cbc:StreetName>", "", "BR-NL-4"},
+	{"no Dutch tax representative street (5)", "<cbc:StreetName>RepStreet</cbc:StreetName>", "", "BR-NL-5"},
+	{"type code outside the permitted set (7)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>100</cbc:InvoiceTypeCode>", "BR-NL-7"},
+	{"credit-note type code in an Invoice (8)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>381</cbc:InvoiceTypeCode>", "BR-NL-8"},
+	{"corrective invoice without a preceding reference (9)", "<cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>", "<cbc:InvoiceTypeCode>384</cbc:InvoiceTypeCode>", "BR-NL-9"},
+	{"Dutch buyer legal id not KVK or OIN (10)", `<cbc:CompanyID schemeID="0106">55667788</cbc:CompanyID>`, `<cbc:CompanyID schemeID="0088">55667788</cbc:CompanyID>`, "BR-NL-10"},
+	{"no means of payment (11)", `<cac:PaymentMeans><cbc:PaymentMeansCode>30</cbc:PaymentMeansCode><cac:PayeeFinancialAccount><cbc:ID>NL02ABNA0123456789</cbc:ID></cac:PayeeFinancialAccount></cac:PaymentMeans>`, "", "BR-NL-11"},
+	{"payment means code outside the permitted set (12)", "<cbc:PaymentMeansCode>30</cbc:PaymentMeansCode>", "<cbc:PaymentMeansCode>31</cbc:PaymentMeansCode>", "BR-NL-12"},
+	{"order line reference without a document order reference (13)", `<cac:OrderReference><cbc:ID>ORD-1</cbc:ID></cac:OrderReference>`, "", "BR-NL-13"},
+}
+
+func TestNLCIUSMutations(t *testing.T) {
+	runCIUSSuite(t, ciusSuites()[4])
+}
