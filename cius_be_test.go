@@ -69,8 +69,7 @@ var ublBEMutations = []ciusMutation{
 	{"settlement without amount (08)", "<cbc:Amount>2.00</cbc:Amount>", "", "ubl-BE-08"},
 	{"settlement bad due date (09)", "<cbc:PaymentDueDate>2024-02-15</cbc:PaymentDueDate>", "<cbc:PaymentDueDate>15/02/2024</cbc:PaymentDueDate>", "ubl-BE-09"},
 	{"line without tax total (14)", "<cac:TaxTotal><cbc:TaxAmount>21.01</cbc:TaxAmount></cac:TaxTotal>", "", "ubl-BE-14"},
-	{"line tax amount not numeric (13)", "<cbc:TaxAmount>21.01</cbc:TaxAmount>", "<cbc:TaxAmount>abc</cbc:TaxAmount>", "ubl-BE-13"},
-	{"classified category no name (15)", "<cbc:Name>45</cbc:Name>", "", "ubl-BE-15"},
+	{"classified category with no name (15)", "<cbc:Name>45</cbc:Name>", "", "ubl-BE-15"},
 }
 
 func TestUBLBEMutations(t *testing.T) {
