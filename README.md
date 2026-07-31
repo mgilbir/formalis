@@ -166,7 +166,7 @@ gap left — the core and every CIUS:
 
 - the **EN 16931 core**: every fatal rule of the semantic model, of the UBL binding
   and of the CII binding is evaluated, bar the few CEN's own reference
-  implementation cannot report, so `Validate` with `ProfileEN16931` — and
+  implementation cannot report, so `ValidateEN16931` — and
   `ValidateCIUS` on a document that declares no CIUS — returns
   `Conformant() == true` for a clean invoice;
 - **XRechnung**: the Schematron a German buyer validates against is 78 identifiers,
@@ -334,7 +334,8 @@ omits.
 
 | Format | Entry point | `Is*` predicate | `Source` |
 |---|---|---|---|
-| EN 16931 core (CII + UBL, incl. Factur-X/ZUGFeRD) | `Validate` (with a `Profile`), `ValidateCIUS` | — | `SourceEN16931` |
+| EN 16931 core (CII + UBL) | `ValidateEN16931`, `ValidateCIUS` | — | `SourceEN16931` |
+| Factur-X / ZUGFeRD (FR/DE), five profiles | `Validate` (with a `Profile`), `ValidateCIUS` | — | `SourceFacturX` |
 | XRechnung (DE) | `ValidateXRechnung` | — | `SourceXRechnung` |
 | Peppol BIS Billing 3.0 | `ValidatePeppol` | — | `SourcePeppol` |
 | NLCIUS / SimplerInvoicing (NL) | `ValidateNLCIUS` | — | `SourceNLCIUS` |
@@ -414,11 +415,24 @@ case ok:
 ```
 
 `Profile` is a Factur-X/ZUGFeRD **data-richness** tier (`MINIMUM`, `BASIC WL`,
-`BASIC`, `EN 16931`, `EXTENDED`) and nothing else — it never selects a national
-rule set. `ProfileFor` maps a PDF's XMP `ConformanceLevel` to one; `CIUSFor` maps
-the levels that name a CIUS instead (today, `"XRECHNUNG"`). A `Profile` this
-package does not implement is refused with a `RuleProfile` violation rather than
-silently read as EN 16931.
+`BASIC`, `EN 16931`, `EXTENDED`). It never selects a *national* rule set, and it
+does select Factur-X's: naming one says "judge this as Factur-X", which means the
+EN 16931 core, the rules that tier is expected to satisfy, and the CII syntax
+binding FNFE-MPE publishes for that profile rather than CEN's. `ProfileFor` maps a
+PDF's XMP `ConformanceLevel` to one; `CIUSFor` maps the levels that name a CIUS
+instead (today, `"XRECHNUNG"`). A `Profile` this package does not implement is
+refused with a `RuleProfile` violation rather than silently read as EN 16931.
+
+Factur-X binds EN 16931 with its own rule set and does not adopt CEN's CII syntax
+binding: its five profile Schematrons carry four of CEN's 583 `CII-SR-*`/`CII-DT-*`
+assertions and, in their place, a per-profile data model of between 48 and 1,241
+assertions of their own. Judging a Factur-X document by CEN's binding reported 76
+fatal findings on 13 of FNFE-MPE's own 59 published examples — documents FNFE's own
+validator passes. So `Validate` is the **Factur-X** verdict, and `ValidateEN16931`
+is CEN's, with CEN's binding and no `Profile` because CEN publishes none.
+`Coverage(SourceFacturX)` names what of Factur-X's own rule set is not evaluated,
+which is why `Validate` no longer reports `Conformant()` for a clean document and
+`ValidateEN16931` does.
 
 ## Rule identity is `(Source, Rule)`
 
@@ -448,7 +462,7 @@ minted here. The `Source` is still the format the document was judged against,
 which is what a caller routing or suppressing by format needs; it is not a claim
 that the format's own documentation uses these names. The `Source`s whose
 identifiers *are* quoted from a published rule set are EN 16931, XRechnung,
-Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and SRBDT. `BR-GA-*` is SimplerInvoicing's
+Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE, SRBDT and Factur-X. `BR-GA-*` is SimplerInvoicing's
 too — the G-account extension is published in the same repository under the same
 customization identifier as NLCIUS, so its findings carry `SourceNLCIUS`.
 
