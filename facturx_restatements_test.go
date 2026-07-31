@@ -646,6 +646,16 @@ func TestFacturXRestatementsBreakNoDocumentOnTheirOwn(t *testing.T) {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
 			return nil
 		}
+		// testdata/facturx/extracted holds documents known to draw fatal
+		// findings — see its README, and #61 for what the corpus should assert
+		// about them. The count below requires every profile-declaring document
+		// to be Conformant(), which is a claim about a corpus believed clean; a
+		// corpus that also holds known-divergent documents has to say which is
+		// which. The forced-EXTENDED half of this sweep would read them happily,
+		// but it shares this walk.
+		if strings.Contains(filepath.ToSlash(p), "testdata/facturx/extracted/") {
+			return nil
+		}
 		data, rerr := os.ReadFile(p)
 		if rerr != nil {
 			t.Errorf("%s: %v", p, rerr)
