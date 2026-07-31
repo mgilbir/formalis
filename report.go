@@ -269,9 +269,12 @@ type Report struct {
 // to be discovered. It used to return the sentence above because it applied CEN's
 // binding to a Factur-X document; Factur-X publishes a binding of its own and does
 // not adopt CEN's, so what it was reporting Conformant on was a verdict against
-// the wrong authority's rules. Coverage(SourceFacturX) names the binding it does
-// publish and this package does not evaluate. A caller who wants the old answer
-// wants ValidateEN16931, which is what the old call actually was.
+// the wrong authority's rules. That binding — the per-profile data model, 2,159
+// assertions across the five tiers — is evaluated now, and Validate stays here on
+// the strength of one smaller entry: the 42 BR-FXEXT-* rules that restate a CEN
+// identifier the EXTENDED profile drops, whose stricter CEN originals this package
+// does evaluate. A caller who wants the old answer wants ValidateEN16931, which is
+// what the old call actually was.
 // Coverage says why for any Source, and Report.NotEvaluated says why for any
 // particular run. A caller who wants the older, weaker claim writes
 // len(r.Fatal()) == 0 and now has r.NotEvaluated sitting beside it, naming
@@ -539,14 +542,19 @@ var notEvaluated = map[Source][]RuleFamily{
 	//     new ground rather than a restatement — and the other 42 are the second and
 	//     third entries.
 	//   - one OpenPEPPOL rule FNFE merges in, the fourth entry.
-	//   - a per-profile data model of between 51 and 1,238 unnamed assertions, the
-	//     fifth entry and by far the largest thing here.
+	//   - a per-profile data model of 2,159 unnamed assertions, from 48 in MINIMUM
+	//     to 1,241 in EXTENDED. All of them are evaluated — see
+	//     facturx_datamodel.go — and the fifth entry is the three of them no
+	//     processor can report.
 	//
-	// The fifth entry is why Report.Conformant is false for every Validate call,
-	// and that is a change: while this package applied CEN's binding to a Factur-X
-	// document it reported Conformant for a clean one, and it was applying the
-	// wrong authority's rule set to do so. A verdict withheld for a gap that is
-	// named is the honest form of the same answer.
+	// That last tier used to be the whole of it, named here as an unimplemented
+	// fatal gap, and it is why Report.Conformant was false for every Validate call.
+	// It is implemented now, and what remains fatal and evaluable under this Source
+	// is the 24 unflagged BR-FXEXT-* restatements in the second entry, which is
+	// therefore what Conformant now turns on. That entry argues why the gap cannot
+	// let a broken document through — this package evaluates CEN's stricter
+	// original for every identifier those restate — but it is a gap, and a gap is
+	// what it is recorded as.
 	//
 	// The 41 CEN identifiers the EXTENDED profile drops are not an entry here.
 	// This package evaluates CEN's original for all 41 — see facturXCENOmissions,
@@ -595,19 +603,16 @@ var notEvaluated = map[Source][]RuleFamily{
 				"ValidateCIUS anyway",
 		},
 		{
-			Rules:    "the Factur-X profile data model: 1,241 assertions in EXTENDED, 412 in EN 16931, 262 in BASIC, 196 in BASIC WL, 48 in MINIMUM",
-			Severity: SeverityFatal,
-			Reason: "this is the binding Factur-X publishes in place of CEN's, and it is the honest gap. Each profile Schematron carries, beside " +
-				"its named business rules, a generated data model — one assertion per element of that profile's element table — in six mechanical " +
-				"shapes: count(X)=n / <=n / >=n cardinality, report true() for an element the profile does not use, assert @a and report @a for a " +
-				"required and a forbidden attribute, and a lookup of a code value in an external FACTUR-X_<PROFILE>_codedb.xml the specification " +
-				"bundle ships beside the .sch and which is not fetchable on its own. None of these assertions carries an identifier: FNFE names a " +
-				"rule by an [ID]- prefix on its message text and these have none, which is why a survey of this artefact written the way CEN's, " +
-				"KoSIT's and OpenPEPPOL's are written reports the binding as empty. They decide exactly the questions CEN's CII-SR-*/CII-DT-* rules " +
-				"decide and give per-profile answers — CEN's CII-DT-027 forbids ram:FormattedIssueDateTime on every document reference but the " +
-				"preceding invoice, the EN 16931 profile forbids it on ram:AdditionalReferencedDocument by type code, and EXTENDED permits it — so " +
-				"substituting CEN's binding for them is what issue #56 reported. It is not implemented: a generated tier of this size is the shape " +
-				"of en16931_syntax_advisory_table.go and cius_pt_datatype_table.go, and it is the work this entry names",
+			Rules:       "three data-model assertions of the EXTENDED profile: report @listID on the context ram:ReasonCode[not (@listID)]",
+			Severity:    SeverityFatal,
+			Unevaluable: true,
+			Reason: "FNFE forbids @listID on a node it selects by that attribute being absent. testdata/facturx/schematron/FACTUR-X_EXTENDED.sch " +
+				"carries the rule three times — under the document-level, line-level and gross-price allowance charges whose ChargeIndicator is " +
+				"true — and in each the condition and the rule's own context predicate are the same test at opposite polarities, so the nodes that " +
+				"would break the assertion are exactly the nodes the rule does not claim. No processor can report it. The severity is the one every " +
+				"unflagged Factur-X assertion carries, for the reason facturx.go gives; fxDMContradictory derives the contradiction from the table " +
+				"rather than listing it, and TestEveryFacturXDataModelAssertionFires requires these three to stay silent on the same document that " +
+				"makes the other 2,156 report",
 		},
 	},
 

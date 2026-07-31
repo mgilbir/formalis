@@ -73,11 +73,14 @@
 // Validate joined that second group deliberately and recently. It reported
 // Conformant for a clean Factur-X document while it was judging one by CEN's CII
 // syntax binding, which Factur-X does not adopt — 76 fatal findings on 13 of
-// FNFE-MPE's own 59 published examples — and Coverage(SourceFacturX) is what it
-// says instead: Factur-X publishes a per-profile data model of between 48 and
-// 1,241 assertions in place of that binding, and this package does not evaluate
-// it. A verdict withheld for a gap that is named is the honest form of the same
-// answer.
+// FNFE-MPE's own 59 published examples. The per-profile data model Factur-X
+// publishes in place of that binding, between 48 and 1,241 assertions a tier, is
+// evaluated now; what keeps Validate in this group is the smaller entry beside
+// it, the 42 BR-FXEXT-* rules that restate a CEN identifier the EXTENDED profile
+// drops. This package evaluates CEN's stricter original for every one of those,
+// so the gap cannot let a broken document through — but Coverage records gaps and
+// not arguments, and a verdict withheld for a gap that is named is the honest form
+// of the same answer.
 //
 // The distinction the third field carries is worth one sentence here, because it
 // is what makes Complete answerable rather than permanently false: CEN publishes
@@ -171,6 +174,17 @@ import (
 // with 76 fatal findings naming rules Factur-X does not impose. So a Profile now
 // selects Factur-X's binding, and EXTENDED additionally brings in the BR-FXEXT-*
 // rules that are Factur-X's own. See Validate and SourceFacturX.
+//
+// That data model is the larger half of what a Profile now decides, and it is
+// where the five tiers differ most. It is one assertion per element of that
+// tier's element table — 48 in MINIMUM, 196 in BASIC WL, 262 in BASIC, 412 in
+// EN 16931, 1,241 in EXTENDED — and the answers are genuinely per tier: MINIMUM
+// does not use the buyer postal address at all, the EN 16931 tier forbids a
+// formatted issue date on a document reference by type code, and EXTENDED permits
+// it. So the same document is not conformant at every tier, and it is not meant to
+// be: a Profile names the tier a document *claims*, and the tier's element table
+// is what that claim is worth. facturx_datamodel.go evaluates it and
+// TestFacturXTiersDifferInTheirDataModel measures the difference.
 //
 // A caller who wants CEN's own EN 16931 verdict, with CEN's binding and no
 // Factur-X rule at all, calls ValidateEN16931, which takes no Profile because CEN

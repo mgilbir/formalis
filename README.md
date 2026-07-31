@@ -426,13 +426,23 @@ refused with a `RuleProfile` violation rather than silently read as EN 16931.
 Factur-X binds EN 16931 with its own rule set and does not adopt CEN's CII syntax
 binding: its five profile Schematrons carry four of CEN's 583 `CII-SR-*`/`CII-DT-*`
 assertions and, in their place, a per-profile data model of between 48 and 1,241
-assertions of their own. Judging a Factur-X document by CEN's binding reported 76
+assertions of their own — 2,159 across the five tiers, one per element of that
+tier's element table. Judging a Factur-X document by CEN's binding reported 76
 fatal findings on 13 of FNFE-MPE's own 59 published examples — documents FNFE's own
 validator passes. So `Validate` is the **Factur-X** verdict, and `ValidateEN16931`
 is CEN's, with CEN's binding and no `Profile` because CEN publishes none.
-`Coverage(SourceFacturX)` names what of Factur-X's own rule set is not evaluated,
-which is why `Validate` no longer reports `Conformant()` for a clean document and
-`ValidateEN16931` does.
+
+All 2,159 of those assertions are evaluated, the 366 code-list lookups included.
+None of them carries an identifier in the artefact — FNFE names a rule by an
+`[ID]-` prefix on its message and these have none — so each is reported under a
+key this package mints, `FX-DM-<PROFILE>-<NNNN>`, documented in
+`facturx_datamodel.go`. `Coverage(SourceFacturX)` names what is left: three of
+those assertions that no processor can report, and the 42 `BR-FXEXT-*` rules that
+restate a CEN identifier the EXTENDED profile drops. That second entry is why
+`Validate` still does not report `Conformant()` for a clean document where
+`ValidateEN16931` does — this package evaluates CEN's stricter original for every
+identifier those 42 restate, so the gap cannot let a broken document through, but
+it is a gap and it is recorded as one.
 
 ## Rule identity is `(Source, Rule)`
 
