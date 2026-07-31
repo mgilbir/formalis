@@ -66,21 +66,21 @@
 // and Report.Complete whenever any evaluable rule went unevaluated. Today CEN's
 // EN 16931 core is the one rule set with no unevaluated fatal rule and the one
 // whose clean documents report both Conformant and Complete — reached by
-// ValidateEN16931, or by ValidateCIUS on a document declaring no profile at all;
-// every CIUS and national validator, and Validate, still names a fatal gap it
-// could close and so reports false whatever the document.
+// ValidateEN16931, or by ValidateCIUS on a document declaring no profile at all.
+// Validate reports Conformant and not Complete, and every national format
+// validator still names a fatal gap it could close and so reports false whatever
+// the document.
 //
-// Validate joined that second group deliberately and recently. It reported
+// Validate spent two releases in that last group deliberately. It reported
 // Conformant for a clean Factur-X document while it was judging one by CEN's CII
 // syntax binding, which Factur-X does not adopt — 76 fatal findings on 13 of
-// FNFE-MPE's own 59 published examples. The per-profile data model Factur-X
-// publishes in place of that binding, between 48 and 1,241 assertions a tier, is
-// evaluated now; what keeps Validate in this group is the smaller entry beside
-// it, the 42 BR-FXEXT-* rules that restate a CEN identifier the EXTENDED profile
-// drops. This package evaluates CEN's stricter original for every one of those,
-// so the gap cannot let a broken document through — but Coverage records gaps and
-// not arguments, and a verdict withheld for a gap that is named is the honest form
-// of the same answer.
+// FNFE-MPE's own 59 published examples — so scoping the binding correctly made
+// the answer false until Factur-X's own rule set was evaluated in its place. It
+// is now: the per-profile data model, between 48 and 1,241 assertions a tier, and
+// the 33 BR-FXEXT-* rules that are fatal, nine of them Factur-X's own new ground
+// and 24 restatements of a CEN identifier the profile drops. What is left under
+// SourceFacturX is advisory or unevaluable, which is why Conformant is true again
+// and Complete is not.
 //
 // The distinction the third field carries is worth one sentence here, because it
 // is what makes Complete answerable rather than permanently false: CEN publishes
@@ -172,8 +172,13 @@ import (
 // to a document whose profile exists to carry more than that subset — measured over
 // FNFE's own 59 published examples, 13 conforming EXTENDED invoices were reported
 // with 76 fatal findings naming rules Factur-X does not impose. So a Profile now
-// selects Factur-X's binding, and EXTENDED additionally brings in the BR-FXEXT-*
-// rules that are Factur-X's own. See Validate and SourceFacturX.
+// selects Factur-X's binding, and EXTENDED additionally brings in 33 BR-FXEXT-*
+// rules that are Factur-X's own — nine that are new ground and 24 that restate a
+// CEN identifier EXTENDED drops — while MINIMUM brings in one more, BR-FXEXT-G-08.
+// Those are the second way the named rule sets differ between tiers, alongside
+// BR-CO-11 and BR-CO-12 above, and
+// TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes pins that the
+// list is exhaustive. See Validate, SourceFacturX and facturx_restatements.go.
 //
 // That data model is the larger half of what a Profile now decides, and it is
 // where the five tiers differ most. It is one assertion per element of that

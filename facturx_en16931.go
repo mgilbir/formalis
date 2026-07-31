@@ -367,10 +367,12 @@ func (n *ciiNode) str(path ...string) string {
 //
 // The Report names the rule families this package does not evaluate, from both
 // Sources it declares — see Coverage(SourceEN16931) and Coverage(SourceFacturX),
-// neither of which is empty — so Report.Conformant is false even for a document
-// with no findings. Report says why, and Coverage(SourceFacturX) says why that is
-// a change: this call reported Conformant for a clean document while it was
-// applying CEN's binding, and it was applying the wrong authority's rules to do so.
+// neither of which is empty. Neither holds a fatal evaluable gap, so
+// Report.Conformant is true for a document with no fatal finding, which it was not
+// while the Factur-X rule set was being landed a tier at a time.
+// Report.Complete stays false: what is left under both Sources is advisory
+// families and rules their own authority published and no processor can report,
+// which is the distinction those two methods exist to draw.
 func Validate(ctx context.Context, xmlData []byte, profile Profile) (Report, error) {
 	if !knownProfile(profile) {
 		// No Source: a rejected Profile chose no rule set, so there is no
