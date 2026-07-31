@@ -676,3 +676,86 @@ func TestCENRulesYieldToFacturXOnDocumentsFNFEPasses(t *testing.T) {
 	t.Logf("authority parity: %d of the %d superseded CEN identifiers have a document CEN reports and Factur-X accepts",
 		len(seen), len(facturXSuperseded[ProfileExtended]))
 }
+
+// TestAllowanceAndChargeTotalsAreCheckedAtEveryProfile is C45's first gate,
+// asserted gone.
+//
+// BR-CO-11 and BR-CO-12 were skipped outright at ProfileExtended, so an EXTENDED
+// document's BT-107 and BT-108 were checked against its BG-20/21 entries by
+// nothing. The rules do not move with the profile any more, and this is the
+// firing verdict on that: a document whose totals no entry accounts for reports
+// both, at all five tiers.
+//
+// It is the document TestProfilesThatDifferStillDiffer used to carry as a
+// profile *difference*, moved here because it stopped being one.
+func TestAllowanceAndChargeTotalsAreCheckedAtEveryProfile(t *testing.T) {
+	unitemized := strings.Replace(validCII,
+		"<TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>",
+		"<AllowanceTotalAmount>10.00</AllowanceTotalAmount><ChargeTotalAmount>5.00</ChargeTotalAmount><TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>", 1)
+	if unitemized == validCII {
+		t.Fatal("the mutation did not apply; the document is unchanged")
+	}
+	for _, rule := range []string{"BR-CO-11", "BR-CO-12"} {
+		for _, p := range profiles {
+			got := findings(t, context.Background(), withProfile(p), []byte(unitemized))
+			if !hasFacturXRule(got, rule) {
+				t.Errorf("profile %q: %s is not reported for a total no BG-20/21 entry accounts for", string(p), rule)
+			}
+			// And FNFE's restatement reports it too at EXTENDED, which is why the
+			// parity pass leaves CEN's finding standing here.
+			if p == ProfileExtended {
+				id := facturXSuperseded[ProfileExtended][rule]
+				if !hasFacturXRule(got, id) {
+					t.Errorf("%s did not report at EXTENDED; CEN's %s should not be standing alone", id, rule)
+				}
+			}
+		}
+	}
+}
+
+// TestVATTaxableSumsAreCheckedOnSubLineDocuments is C45's second gate, asserted
+// gone, in both directions.
+//
+// BR-{fam}-08 was skipped for any document carrying a sub-line structure, so an
+// EXTENDED invoice with sub-lines had no VAT taxable-amount check at all. The
+// firing half is a sub-line document whose BT-116 is wrong; the silent half is
+// the same document with BT-116 right, which is what the gate was protecting.
+func TestVATTaxableSumsAreCheckedOnSubLineDocuments(t *testing.T) {
+	// A parent line and a sub-line that names it. CEN sums both — they are
+	// siblings in CII — so the taxable amount is 140,00.
+	sub := `<IncludedSupplyChainTradeLineItem>` +
+		`<AssociatedDocumentLineDocument><LineID>1.1</LineID><ParentLineID>1</ParentLineID><LineStatusReasonCode>DETAIL</LineStatusReasonCode></AssociatedDocumentLineDocument>` +
+		`<SpecifiedTradeProduct><Name>Part</Name></SpecifiedTradeProduct>` +
+		`<SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>40.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>` +
+		`<SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>` +
+		`<SpecifiedLineTradeSettlement><ApplicableTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>` +
+		`<SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>40.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation>` +
+		`</SpecifiedLineTradeSettlement></IncludedSupplyChainTradeLineItem>`
+	ctx := context.Background()
+
+	wrong := fxParityCII("S", "20.00", sub, "", "130.00", "26.00", "156.00", "156.00")
+	if !hasFacturXRule(findings(t, ctx, ValidateEN16931, []byte(wrong)), "BR-S-08") {
+		t.Error("BR-S-08 did not report on a sub-line document whose BT-116 is 130,00 against a line sum of 140,00; " +
+			"the rule is inert on the shape C45 named")
+	}
+	right := fxParityCII("S", "20.00", sub, "", "140.00", "28.00", "168.00", "168.00")
+	if hasFacturXRule(findings(t, ctx, ValidateEN16931, []byte(right)), "BR-S-08") {
+		t.Error("BR-S-08 reported on a sub-line document whose BT-116 is the sum of its lines")
+	}
+	// And the document the old gate was protecting: a producer whose GROUP line
+	// rolls its children up, which is how FNFE's own X02/X17/X18/X20 examples are
+	// written. CEN counts the amount twice and reports; a Factur-X processor does
+	// not, and at EXTENDED neither does this package.
+	rollup := strings.Replace(
+		fxParityCII("S", "20.00",
+			strings.Replace(sub, `<LineTotalAmount>40.00</LineTotalAmount>`, `<LineTotalAmount>100.00</LineTotalAmount>`, 1),
+			"", "100.00", "20.00", "120.00", "120.00"),
+		`<LineID>1</LineID><LineStatusReasonCode>DETAIL</LineStatusReasonCode>`,
+		`<LineID>1</LineID><LineStatusReasonCode>GROUP</LineStatusReasonCode>`, 1)
+	if !hasFacturXRule(findings(t, ctx, ValidateEN16931, []byte(rollup)), "BR-S-08") {
+		t.Error("CEN's BR-S-08 is silent on a rolled-up sub-line document; the fixture does not exercise the divergence")
+	}
+	if got := findings(t, ctx, withProfile(ProfileExtended), []byte(rollup)); hasFacturXRule(got, "BR-S-08") {
+		t.Error("BR-S-08 reports at EXTENDED on a rolled-up sub-line document, which every Factur-X processor accepts")
+	}
+}

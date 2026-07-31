@@ -155,13 +155,20 @@ import (
 //
 // Naming a Profile says "judge this document as Factur-X". Two things follow.
 //
-// The first is the excuse list, which is all a Profile used to be, and it is
-// unchanged: MINIMUM and BASIC WL are head-only, so the invoice-line rules
-// (BR-12, BR-16) are not applied to them; MINIMUM additionally omits the buyer
-// postal address (BR-10, BR-11), the VAT breakdown (BR-CO-18) and the amount-due
-// summation (BR-CO-16); and EXTENDED is exempt from the allowance/charge total
-// summations (BR-CO-11, BR-CO-12), whose operands it may carry unitemized.
-// TestProfilesThatDifferStillDiffer pins each of those differences.
+// The first is the excuse list, which is all a Profile used to be: MINIMUM and
+// BASIC WL are head-only, so the invoice-line rules (BR-12, BR-16) are not
+// applied to them, and MINIMUM additionally omits the buyer postal address
+// (BR-10, BR-11), the VAT breakdown (BR-CO-18) and the amount-due summation
+// (BR-CO-16). TestProfilesThatDifferStillDiffer pins each of those differences.
+//
+// EXTENDED used to carry a fourth entry — an exemption from the allowance and
+// charge total summations (BR-CO-11, BR-CO-12) "whose operands it may carry
+// unitemized" — and it is gone. Measured over the corpus, unitemized totals are a
+// producer habit and not a property of the tier: two EXTENDED documents have them
+// and three UBL documents do, while 23 EXTENDED documents were exempted that
+// never needed it. Both rules now apply at every profile, and the two documents
+// that needed the exemption get it from the authority that governs them rather
+// than from a profile test — see facturXAuthorityParity.
 //
 // The second is which syntax binding a CII document is held to, and it is why
 // this type is no longer only an excuse list. Factur-X publishes a CII binding of
@@ -175,10 +182,9 @@ import (
 // selects Factur-X's binding, and EXTENDED additionally brings in 33 BR-FXEXT-*
 // rules that are Factur-X's own — nine that are new ground and 24 that restate a
 // CEN identifier EXTENDED drops — while MINIMUM brings in one more, BR-FXEXT-G-08.
-// Those are the second way the named rule sets differ between tiers, alongside
-// BR-CO-11 and BR-CO-12 above; the third is that 21 of those 24 restatements
-// *supersede* the CEN identifier they restate, so EXTENDED can be silent on a CEN
-// rule whose Factur-X replacement is satisfied.
+// Those are the second way the named rule sets differ between tiers; the third is
+// that 21 of those 24 restatements *supersede* the CEN identifier they restate, so
+// EXTENDED can be silent on a CEN rule whose Factur-X replacement is satisfied.
 // TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes pins that the
 // list is exhaustive. See Validate, SourceFacturX and facturx_restatements.go.
 //
