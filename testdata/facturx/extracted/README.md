@@ -36,12 +36,20 @@ reach either. These add three MINIMUM, two BASIC and one BASIC WL.
 Both repositories are Apache-2.0. The XML is byte-identical to the stream inside
 the PDF — extraction copies the attachment out, it does not reserialise.
 
-Each was checked against every `.xml` under `testdata/` — 1,807 of them, not only
+Each was checked against every `.xml` under `testdata/` — 1,805 of them, not only
 `examples/` — comparing whitespace-normalised content, and again on invoice
 identity (BT-1, BT-2, the seller name and the grand total) so that a document
 that had been reserialised somewhere could not slip through a byte comparison.
-None of the six duplicates anything fetched. Eleven further documents were
-extracted from the same PDFs and dropped for exactly that reason.
+None of the six duplicates anything fetched.
+
+The selection is the reason there are only six. The container corpus these came
+from holds 75 PDFs, 74 of which yield an invoice: 5 MINIMUM, 3 BASIC WL, 5 BASIC,
+31 EN 16931, 26 EXTENDED and 4 XRechnung. **59 of the 74 are duplicates of
+documents already fetched** — the FNFE specification bundle publishes most of
+them as bare XML too — and 15 are not. Of those 15, six are lean-tier and are
+here; the other nine are eight EN 16931 and one EXTENDED, which are the two tiers
+`examples/` already covers 23 and 25 deep. They are worth having one day and are
+not worth a second exception to the gitignore today.
 
 ## What the tests assert about them
 
