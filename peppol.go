@@ -85,6 +85,6 @@ func ValidatePeppol(ctx context.Context, xmlData []byte) (Report, error) {
 }
 
 func validatePeppol(r *run, p *parsed) []Violation {
-	out := validateEN16931(r, p, ProfileEN16931)
+	out := validateEN16931(r, p, ProfileEN16931, ciiBindingCEN)
 	return append(out, validatePeppolRuleSet(r, p, false)...)
 }

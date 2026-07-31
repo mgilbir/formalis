@@ -445,7 +445,15 @@ func (d Detection) Recognised() bool { return d.Source != SourceNone }
 // input the validator may go on to refuse.
 func (d Detection) Validator() func(context.Context, []byte) (Report, error) {
 	switch d.Source {
-	case SourceEN16931:
+	case SourceEN16931, SourceFacturX:
+		// Both map to ValidateCIUS, and for the same reason: that entry point
+		// applies this very arbitration, so it reaches the rule set Detect named.
+		// Factur-X is the one Source whose rule set needs a second fact — which
+		// data-richness tier — and ValidateCIUS reads it out of the same BT-24
+		// this detection came from, so nothing has to be invented here. A caller
+		// who knows the tier from a PDF container's XMP and does not trust the
+		// invoice to agree calls Validate with it; DetectCIUS's own comment on
+		// which of the two to believe applies unchanged.
 		return ValidateCIUS
 	case SourceXRechnung:
 		return ValidateXRechnung
@@ -731,6 +739,18 @@ func route(f routeFacts) Source {
 		// sends it to a validator that says so — "the document root shall be a
 		// UBL Invoice or CreditNote" — rather than quietly validating it against
 		// a rule set it did not claim.
+		//
+		// Factur-X is asked about first and separately, because it is not a CIUS
+		// and so has no CIUS constant for DetectCIUS to answer with — it is a
+		// profile family with a rule set of its own, which is what SourceFacturX
+		// says. specIDRules is consulted rather than a test written here, so the
+		// order this shares with routeUBL cannot drift: a ZUGFeRD document
+		// declaring the XRechnung identifier matches that rule first and comes
+		// back SourceXRechnung, which falls through to the CIUS question below
+		// and is answered there.
+		if specIDSource(f.specID) == SourceFacturX {
+			return SourceFacturX
+		}
 		if src := ciusSource(DetectCIUS(f.specID)); src != SourceNone {
 			return src
 		}

@@ -922,7 +922,7 @@ func TestConditionOverridesChangeNoCorpusVerdict(t *testing.T) {
 			return nil
 		}
 		with := validateCIUSPT(newRun(context.Background()), parsed)
-		core := validateEN16931(newRun(context.Background()), parsed, ProfileEN16931)
+		core := validateEN16931(newRun(context.Background()), parsed, ProfileEN16931, ciiBindingCEN)
 		without := append(core,
 			validateCIUSPTRules(newRun(context.Background()), parsed.inv, parsed.root)...)
 		if ccFingerprint(with) != ccFingerprint(without) {

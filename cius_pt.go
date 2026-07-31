@@ -130,7 +130,7 @@ func ValidateCIUSPT(ctx context.Context, xmlData []byte) (Report, error) {
 }
 
 func validateCIUSPT(r *run, p *parsed) []Violation {
-	out := validateEN16931(r, p, ProfileEN16931)
+	out := validateEN16931(r, p, ProfileEN16931, ciiBindingCEN)
 	// AT/eSPap ships a copy of CEN's Schematron and wrote nine of its conditions
 	// itself, so on this path those nine are judged by AT's reading and not by CEN's.
 	// The findings keep CEN's identifier and carry Reading = SourceCIUSPT. See

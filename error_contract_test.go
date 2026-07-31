@@ -67,6 +67,7 @@ const unknownRoot = `<NotAnInvoice/>`
 // what it answers to input it cannot read.
 var errorContracts = map[string]errorContract{
 	"Validate":          {source: SourceChecker, wrongRoot: RuleRoot},
+	"ValidateEN16931":   {source: SourceChecker, wrongRoot: RuleRoot},
 	"ValidateCIUS":      {source: SourceChecker, wrongRoot: RuleRoot},
 	"ValidateXRechnung": {source: SourceChecker, wrongRoot: RuleRoot},
 	"ValidatePeppol":    {source: SourceChecker, wrongRoot: RuleRoot},

@@ -311,7 +311,7 @@ func TestAdvisoryTableClaimsEveryWarningCENPublishes(t *testing.T) {
 // advisoryFor reports the advisory rule identifiers a document produces, sorted.
 func advisoryFor(t *testing.T, doc string) []string {
 	t.Helper()
-	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(doc))
+	r := mustReport(t, context.Background(), ValidateEN16931, []byte(doc))
 	var out []string
 	for _, v := range r.Warnings() {
 		out = append(out, v.Rule)
@@ -551,7 +551,7 @@ func TestAdvisoryRulesCENCannotReportAreNotReported(t *testing.T) {
 		`<TypeCode name="Commercial invoice" listURI="urn:x" ` +
 		`listID="UNTDID1001" listAgencyID="6" listVersionID="D16B">380</TypeCode>` +
 		`</ExchangedDocument></CrossIndustryInvoice>`
-	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(doc))
+	r := mustReport(t, context.Background(), ValidateEN16931, []byte(doc))
 	seen := map[string]bool{}
 	for _, v := range r.Violations {
 		seen[v.Rule] = true
@@ -701,7 +701,7 @@ func TestAdvisoryBindingsFireAcrossTheCorpus(t *testing.T) {
 			return nil
 		}
 		files++
-		r, verr := Validate(ctx, data, ProfileEN16931)
+		r, verr := ValidateEN16931(ctx, data)
 		if verr != nil {
 			return nil
 		}
@@ -742,7 +742,7 @@ func TestAdvisoryFindingsDoNotMoveTheVerdict(t *testing.T) {
 	if doc == minimalUBL {
 		t.Fatal("the fixture was not modified; minimalUBL no longer holds the anchor this test edits")
 	}
-	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(doc))
+	r := mustReport(t, context.Background(), ValidateEN16931, []byte(doc))
 	if v := r.Fatal(); len(v) != 0 {
 		t.Fatalf("the base invoice is not clean, so this test measures nothing: %v", v)
 	}

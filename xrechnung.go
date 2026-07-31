@@ -163,7 +163,7 @@ func validateXRechnung(r *run, p *parsed) []Violation {
 	// which is what the removed ProfileXRechnung constant did anyway: it matched
 	// none of the three profile predicates in validateEN16931, and produced an
 	// identical finding set on every EN 16931 document in testdata.
-	for _, v := range validateEN16931(r, p, ProfileEN16931) {
+	for _, v := range validateEN16931(r, p, ProfileEN16931, ciiBindingCEN) {
 		switch {
 		case ext && xrechnungSuppressedForExtension[v.Rule] != "":
 			continue

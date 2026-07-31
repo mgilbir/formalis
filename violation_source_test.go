@@ -17,6 +17,7 @@ import (
 // error_contract_test.go are checked over too; a new validator belongs here.
 var allValidators = map[string]validator{
 	"Validate":               withProfile(ProfileEN16931),
+	"ValidateEN16931":        ValidateEN16931,
 	"ValidateCIUS":           ValidateCIUS,
 	"ValidateXRechnung":      ValidateXRechnung,
 	"ValidatePeppol":         ValidatePeppol,

@@ -24,9 +24,12 @@
 //     that checks it.
 //   - ValidateCIUS applies that same arbitration and validates in one call,
 //     falling back to the EN 16931 core for a document that declares nothing.
-//   - Validate checks the EN 16931 core against a named Factur-X Profile, for a
-//     caller who has that data-richness metadata from a container the invoice
-//     itself does not carry.
+//   - Validate checks a document as Factur-X, at a named Profile: the EN 16931
+//     core, the rules that tier is expected to satisfy, and the syntax binding
+//     FNFE-MPE publishes for it rather than CEN's. It is for a caller who has that
+//     data-richness metadata from a container the invoice itself does not carry.
+//   - ValidateEN16931 checks it as CEN's own EN 16931, with CEN's binding and no
+//     Factur-X rule. It takes no Profile, because CEN publishes none.
 //   - The format-specific validators (ValidateXRechnung, ValidateZATCA, …) are
 //     the direct route when the format is already known.
 //
@@ -60,11 +63,21 @@
 // to call it. Report.NotEvaluated repeats those gaps for the run that just
 // happened; Report.Conformant is false whenever a rule that could have rejected
 // this document was one a validator could have evaluated and this package did not,
-// and Report.Complete whenever any evaluable rule went unevaluated. Today the EN
-// 16931 core is the one rule set with no unevaluated fatal rule and the one whose
-// clean documents report both Conformant and Complete; every CIUS and national
-// validator still names a fatal gap it could close and so reports false whatever
-// the document.
+// and Report.Complete whenever any evaluable rule went unevaluated. Today CEN's
+// EN 16931 core is the one rule set with no unevaluated fatal rule and the one
+// whose clean documents report both Conformant and Complete — reached by
+// ValidateEN16931, or by ValidateCIUS on a document declaring no profile at all;
+// every CIUS and national validator, and Validate, still names a fatal gap it
+// could close and so reports false whatever the document.
+//
+// Validate joined that second group deliberately and recently. It reported
+// Conformant for a clean Factur-X document while it was judging one by CEN's CII
+// syntax binding, which Factur-X does not adopt — 76 fatal findings on 13 of
+// FNFE-MPE's own 59 published examples — and Coverage(SourceFacturX) is what it
+// says instead: Factur-X publishes a per-profile data model of between 48 and
+// 1,241 assertions in place of that binding, and this package does not evaluate
+// it. A verdict withheld for a gap that is named is the honest form of the same
+// answer.
 //
 // The distinction the third field carries is worth one sentence here, because it
 // is what makes Complete answerable rather than permanently false: CEN publishes
@@ -135,14 +148,33 @@ import (
 // mistyped profile was silently read as EN 16931. Validate now reports a
 // Profile it does not implement — see RuleProfile.
 //
-// Only three of the five change what Validate checks, and only in these ways:
-// MINIMUM and BASIC WL are head-only, so the invoice-line rules (BR-12, BR-16)
-// are not applied to them; MINIMUM additionally omits the buyer postal address
-// (BR-10, BR-11), the VAT breakdown (BR-CO-18) and the amount-due summation
-// (BR-CO-16); and EXTENDED is exempt from the allowance/charge total
+// # A Profile selects a rule set, and not only an excuse list
+//
+// Naming a Profile says "judge this document as Factur-X". Two things follow.
+//
+// The first is the excuse list, which is all a Profile used to be, and it is
+// unchanged: MINIMUM and BASIC WL are head-only, so the invoice-line rules
+// (BR-12, BR-16) are not applied to them; MINIMUM additionally omits the buyer
+// postal address (BR-10, BR-11), the VAT breakdown (BR-CO-18) and the amount-due
+// summation (BR-CO-16); and EXTENDED is exempt from the allowance/charge total
 // summations (BR-CO-11, BR-CO-12), whose operands it may carry unitemized.
-// BASIC, EN 16931 and EXTENDED are otherwise checked alike.
 // TestProfilesThatDifferStillDiffer pins each of those differences.
+//
+// The second is which syntax binding a CII document is held to, and it is why
+// this type is no longer only an excuse list. Factur-X publishes a CII binding of
+// its own and does not adopt CEN's: the five profile Schematrons carry four of
+// CEN's 583 CII-SR-*/CII-DT-* assertions, and in their place a per-profile data
+// model of their own. Applying CEN's binding to a Factur-X document applies a rule
+// set whose purpose is to hold a document down to the EN 16931 core subset of CII
+// to a document whose profile exists to carry more than that subset — measured over
+// FNFE's own 59 published examples, 13 conforming EXTENDED invoices were reported
+// with 76 fatal findings naming rules Factur-X does not impose. So a Profile now
+// selects Factur-X's binding, and EXTENDED additionally brings in the BR-FXEXT-*
+// rules that are Factur-X's own. See Validate and SourceFacturX.
+//
+// A caller who wants CEN's own EN 16931 verdict, with CEN's binding and no
+// Factur-X rule at all, calls ValidateEN16931, which takes no Profile because CEN
+// publishes none.
 type Profile string
 
 const (
@@ -270,7 +302,8 @@ func CIUSFor(level string) (CIUS, bool) {
 //     against, which is what a caller routing or suppressing by format needs; it
 //     is not a claim that the format's own documentation uses these names. The
 //     Sources whose identifiers *are* quoted from a published rule set are
-//     EN 16931, XRechnung, Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and SRBDT.
+//     EN 16931, Factur-X, XRechnung, Peppol, NLCIUS, CIUS-PT, CIUS-RO, UBL.BE and
+//     SRBDT.
 type Source string
 
 const (
@@ -286,6 +319,28 @@ const (
 	// together with the UBL and CII syntax bindings (UBL-DT-*, UBL-SR-*, CII-SR-*,
 	// CII-DT-*).
 	SourceEN16931 Source = "EN 16931"
+	// SourceFacturX is FNFE-MPE and FeRD's Factur-X / ZUGFeRD, the Franco-German
+	// CII profile family. Its own identifiers are BR-FXEXT-*, the rule set the
+	// EXTENDED profile adds on top of EN 16931.
+	//
+	// It is a Source rather than only a Profile because Factur-X binds EN 16931
+	// with a rule set of its own and does not adopt CEN's CII syntax binding. Of
+	// the 583 CII-SR-* and CII-DT-* assertions CEN publishes, the five Factur-X
+	// Schematrons carry four (CII-SR-463..466, and CII-DT-097 in EXTENDED only);
+	// in their place they carry a profile data-model layer of their own — 51
+	// assertions at MINIMUM rising to 1,241 at EXTENDED — deciding, per profile,
+	// which element may appear where, how often, and with which attributes. Those
+	// are the same questions CEN's binding decides, and they get different answers,
+	// which is the whole point of a profile family whose richest tier is defined by
+	// carrying more than the EN 16931 core.
+	//
+	// So the identifiers a Factur-X document is judged by are mostly CEN's — the
+	// BR-* core, which Factur-X republishes verbatim — and those keep
+	// SourceEN16931, as CIUS-RO's copy of BR-27 does. This Source carries the
+	// identifiers FNFE minted. See Validate, which is the entry point that selects
+	// this rule set, and Coverage(SourceFacturX), which says what of it is not
+	// evaluated.
+	SourceFacturX Source = "Factur-X"
 	// SourceXRechnung is the German KoSIT XRechnung CIUS (BR-DE-*).
 	SourceXRechnung Source = "XRechnung"
 	// SourcePeppol is OpenPEPPOL BIS Billing 3.0: PEPPOL-EN16931-* and

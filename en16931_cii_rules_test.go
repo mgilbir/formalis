@@ -77,7 +77,7 @@ func ciiWith(t *testing.T, anchor, x string) string {
 func TestCIISyntaxRules(t *testing.T) {
 	// The fixture every case is built from must itself be clean, or a case that
 	// expects silence would be asserting nothing.
-	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII)); len(v) != 0 {
+	if v := findings(t, context.Background(), ValidateEN16931, []byte(validCII)); len(v) != 0 {
 		t.Fatalf("baseline CII not clean: %d violations (first %s: %s)", len(v), v[0].Rule, v[0].Message)
 	}
 
@@ -760,7 +760,7 @@ func TestCIISyntaxRulesAreNotAskedOfUBL(t *testing.T) {
 		{"UBL credit note", ublCreditNote(minimalUBL)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			for _, v := range findings(t, context.Background(), withProfile(ProfileEN16931), []byte(tc.doc)) {
+			for _, v := range findings(t, context.Background(), ValidateEN16931, []byte(tc.doc)) {
 				if strings.HasPrefix(v.Rule, "CII-") {
 					t.Errorf("UBL invoice reported the CII binding rule %s: %s", v.Rule, v.Message)
 				}
@@ -783,7 +783,7 @@ func TestCIISyntaxRulesAreNotAskedOfUBL(t *testing.T) {
 //     CII-DT-011 and CII-DT-012 cannot fire, which is why Coverage names them.
 func TestCIIDatatypeRuleOrderFollowsTheSchematron(t *testing.T) {
 	scoped := mutate(t, validCII, `<ID>INV-1</ID>`, `<ID schemeName="x">INV-1</ID>`)
-	v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(scoped))
+	v := findings(t, context.Background(), ValidateEN16931, []byte(scoped))
 	if !reports(v, "CII-DT-001") {
 		t.Errorf("@schemeName on the invoice number should be CII-DT-001; got %v", v)
 	}
@@ -794,7 +794,7 @@ func TestCIIDatatypeRuleOrderFollowsTheSchematron(t *testing.T) {
 	for _, attr := range []string{"listID", "listAgencyID", "listVersionID"} {
 		doc := mutate(t, validCII, `<TypeCode>380</TypeCode>`,
 			fmt.Sprintf(`<TypeCode %s="x">380</TypeCode>`, attr))
-		for _, x := range findings(t, context.Background(), withProfile(ProfileEN16931), []byte(doc)) {
+		for _, x := range findings(t, context.Background(), ValidateEN16931, []byte(doc)) {
 			if ciiUnreachableRules[x.Rule] {
 				t.Errorf("@%s on the invoice type code reported %s, which no reference validator can reach", attr, x.Rule)
 			}
@@ -808,7 +808,7 @@ func TestCIIDatatypeRuleOrderFollowsTheSchematron(t *testing.T) {
 func TestCIISyntaxRulesCarryTheEN16931Source(t *testing.T) {
 	doc := ciiWith(t, ciiAtExchangedDoc, `<TypeCode>380</TypeCode>`)
 	found := false
-	for _, v := range findings(t, context.Background(), withProfile(ProfileEN16931), []byte(doc)) {
+	for _, v := range findings(t, context.Background(), ValidateEN16931, []byte(doc)) {
 		if v.Rule != "CII-SR-014" {
 			continue
 		}

@@ -186,7 +186,7 @@ func ValidateNLCIUS(ctx context.Context, xmlData []byte) (Report, error) {
 }
 
 func validateNLCIUS(r *run, p *parsed) []Violation {
-	out := validateEN16931(r, p, ProfileEN16931)
+	out := validateEN16931(r, p, ProfileEN16931, ciiBindingCEN)
 	// A document that declares the G-account extension is judged by the extension's
 	// copy of CEN's abstract syntax file, which removes three advisory rules the
 	// extension's own data model requires a document to break. See

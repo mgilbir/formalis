@@ -119,6 +119,27 @@ var specIDRules = []specIDRule{
 	// XRechnung before Peppol, because an XRechnung identifier may also
 	// reference the Peppol base.
 	{src: SourceXRechnung, cius: CIUSXRechnung, marks: []string{"xrechnung"}},
+
+	// Factur-X after XRechnung, because a ZUGFeRD 2.x document may carry the
+	// XRechnung identifier and is an XRechnung when it does — KoSIT's rule set is
+	// the one its recipient validates against.
+	//
+	// cius is CIUSNone: Factur-X is a profile family and not a Core Invoice Usage
+	// Specification, which is the same reason OIOUBL and UBL-TR carry CIUSNone.
+	// What it does name is a Profile, and validateFacturXRouted reads that back
+	// out of this same identifier.
+	//
+	// The mark is the authority's domain and nothing wider. It matches the four
+	// tiers that name themselves — "urn:factur-x.eu:1p0:minimum", ":basicwl",
+	// and the "#compliant#"/"#conformant#" forms of ":basic" and ":extended" —
+	// and deliberately not the EN 16931 tier, whose Specification identifier is
+	// CEN's own "urn:cen.eu:en16931:2017" with nothing added. A Factur-X EN 16931
+	// invoice is therefore indistinguishable from a plain EN 16931 CII invoice by
+	// this test, which is what FNFE intends by writing that identifier: at that
+	// tier the document claims to be exactly EN 16931. A caller who knows better
+	// — because the PDF container's XMP said EN 16931 — calls Validate with the
+	// Profile.
+	{src: SourceFacturX, marks: []string{"factur-x.eu"}},
 	{src: SourceNLCIUS, cius: CIUSNLCIUS, marks: []string{"nlcius", "nen.nl"}},
 	{src: SourceCIUSPT, cius: CIUSPortugal, marks: []string{"cius-pt", "feap.gov.pt"}},
 	{src: SourceCIUSRO, cius: CIUSRomania, marks: []string{"cius-ro", "mfinante.ro"}},
@@ -296,6 +317,7 @@ var modelValidators = map[Source]struct {
 	check   func(*run, *parsed) []Violation
 	sources []Source
 }{
+	SourceFacturX:   {validateFacturXRouted, []Source{SourceEN16931, SourceFacturX}},
 	SourceXRechnung: {validateXRechnung, []Source{SourceEN16931, SourceXRechnung}},
 	SourcePeppol:    {validatePeppol, []Source{SourceEN16931, SourcePeppol}},
 	SourceNLCIUS:    {validateNLCIUS, []Source{SourceEN16931, SourceNLCIUS}},
@@ -353,5 +375,5 @@ func validateCIUS(r *run, p *parsed) ([]Violation, []Source) {
 	// SourceEN16931 — a document declaring no profile — and, unreachably from
 	// here, SourceNone: parseEN16931 accepts three roots and route answers one
 	// of the two maps above for every profile they can declare.
-	return validateEN16931(r, p, ProfileEN16931), []Source{SourceEN16931}
+	return validateEN16931(r, p, ProfileEN16931, ciiBindingCEN), []Source{SourceEN16931}
 }

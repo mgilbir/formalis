@@ -233,7 +233,15 @@ const vatAmountTolerance = 1.0
 // CII-SR-* and CII-DT-* for CII — whose rules are about the shape of the XML,
 // and those are evaluated on the tree, in en16931_ubl_rules.go and
 // en16931_cii_rules.go, which say why at greater length.
-func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
+//
+// binding names whose CII binding the caller wants, because the CII binding is
+// the one part of this that is not CEN's everywhere. Every CIUS in this package
+// imports CEN's — KoSIT's released Schematron and OpenPEPPOL's both include
+// EN16931-CII-validation — and Factur-X does not, publishing one of its own
+// instead. Naming it at each call site rather than deriving it from profile is
+// deliberate: eight callers pass ciiBindingCEN and mean it, and that is a fact
+// about those authorities worth reading at the call. See facturx.go.
+func validateEN16931(r *run, p *parsed, profile Profile, binding ciiBinding) []Violation {
 	inv := p.inv
 	var out []Violation
 	add := adder(&out, SourceEN16931)
@@ -911,22 +919,39 @@ func validateEN16931(r *run, p *parsed, profile Profile) []Violation {
 		}
 	}
 
-	// The two syntax bindings. Each reads the tree, each is a no-op on a document
-	// in the other syntax, and both are stamped with this same Source because CEN
-	// publishes the bindings as normative parts of EN 16931.
+	// The syntax bindings. Each reads the tree and each is a no-op on a document
+	// in the other syntax.
+	//
+	// The UBL half is CEN's under either binding, and that is not an omission:
+	// Factur-X is a CII format and publishes no UBL binding at all, so there is
+	// nothing of its own for a UBL document to be judged by. The CII half is the
+	// one the binding argument chooses between.
 	out = append(out, validateUBLSyntaxRules(r, p.root)...)
 	if r.stopped() {
 		return out
 	}
-	out = append(out, validateCIISyntaxRules(r, p.root)...)
+	switch binding {
+	case ciiBindingFacturX:
+		out = append(out, validateFacturXRules(r, p, profile)...)
+	default:
+		out = append(out, validateCIISyntaxRules(r, p.root)...)
+	}
 	if r.stopped() {
 		return out
 	}
-	// And their advisory halves, generated from the same Schematron and reported
-	// as the warnings CEN flags them. They come last because they are the only
+	// And the advisory halves, generated from CEN's Schematron and reported as
+	// the warnings CEN flags them. They come last because they are the only
 	// findings here that no authority rejects a document for: a caller reading
 	// Violations in order meets everything blocking before anything advisory.
-	out = append(out, advisorySyntaxRules(r, p.root)...)
+	//
+	// Under Factur-X's binding the CII half of that table is not CEN's to apply
+	// either — the 471 advisory CII-SR-*/CII-DT-* rules are the same binding as
+	// the 109 fatal ones — so a CII document under a Factur-X profile skips it.
+	// advisorySyntaxRules dispatches on the root, so a UBL document reaching here
+	// still gets CEN's advisory UBL binding, which is the same reasoning as above.
+	if binding != ciiBindingFacturX || p.root == nil || p.root.name != "CrossIndustryInvoice" {
+		out = append(out, advisorySyntaxRules(r, p.root)...)
+	}
 
 	return out
 }
