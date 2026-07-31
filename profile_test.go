@@ -82,15 +82,34 @@ func TestUnknownProfileIsRefusedBeforeTheDocumentIsRead(t *testing.T) {
 
 // TestKnownProfilesAreAccepted pins the other half: a caller passing a real
 // profile sees no trace of the new check.
+//
+// "No trace" is now the whole of the claim, and the rest of it had to go. It used
+// to assert that validCII produced no finding at any of the five profiles, which
+// stopped being a statement about the Profile check the moment each tier acquired
+// its own element-table data model: validCII declares CEN's own identifier
+// (urn:cen.eu:en16931:2017), which is the EN 16931 tier's, and it carries a buyer
+// postal address, which MINIMUM does not use. It is a conformant document at the
+// tier it claims and it is not one at MINIMUM, and that is the design rather than
+// a regression — see TestFacturXTiersDifferInTheirDataModel, which measures it.
+//
+// So the assertion here is the one the test was written to make: every profile is
+// accepted, and no profile produces a checker finding of any kind. The clean-run
+// half is asserted at the tier the fixture actually declares.
 func TestKnownProfilesAreAccepted(t *testing.T) {
 	for _, p := range profiles {
 		if !knownProfile(p) {
 			t.Errorf("knownProfile(%q) = false for a declared profile", string(p))
 		}
-		v := findings(t, context.Background(), withProfile(p), []byte(validCII))
-		if len(v) != 0 {
-			t.Errorf("Validate(%q).Violations on a conformant invoice reported %d violation(s): %v", string(p), len(v), v)
+		for _, v := range findings(t, context.Background(), withProfile(p), []byte(validCII)) {
+			if IsCheckerViolation(v) {
+				t.Errorf("Validate(%q) reported %s/%s on a document it should have judged: %s",
+					string(p), v.Source, v.Rule, v.Message)
+			}
 		}
+	}
+	if v := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII)); len(v) != 0 {
+		t.Errorf("Validate(%q).Violations on a document conformant at that tier reported %d violation(s): %v",
+			string(ProfileEN16931), len(v), v)
 	}
 }
 
@@ -159,7 +178,7 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 	// No VAT breakdown group: BR-CO-18 except under MINIMUM, which carries only
 	// totals.
 	noBreakdown := strings.Replace(validCII,
-		"<ApplicableTradeTax><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>",
+		"<ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>",
 		"", 1)
 
 	// Amount due that does not follow from the totals: BR-CO-16 except under
@@ -211,10 +230,17 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 }
 
 // TestBasicEN16931AndExtendedDifferOnlyInBRCO1112 records the flatness that is
-// by design, so it is not mistaken for the flatness C4 found. These three tiers
-// differ from each other in one place and no other; if that ever stops being
-// true the doc comment on Profile — which enumerates the differences — has to
-// change with it.
+// by design, so it is not mistaken for the flatness C4 found. Across the *named*
+// rules these three tiers differ from each other in one place and no other; if
+// that ever stops being true the doc comment on Profile — which enumerates the
+// differences — has to change with it.
+//
+// The scope to named rules is the one thing that moved, and it is not a
+// weakening. The data-model assertions are keyed by a synthetic identifier
+// per profile, so FX-DM-BASIC-0104 and FX-DM-EN16931-0204 are the same assertion
+// under two names and could not be compared as strings at all. What they say is
+// compared instead, by TestFacturXTiersDifferInTheirDataModel below, which asserts
+// the tiers differ there rather than that they do not.
 func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
 	docs := map[string]string{"conformant": validCII}
 	// A document that trips a broad spread of rules, to make the comparison
@@ -225,12 +251,12 @@ func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
 	docs["broken"] = broken
 
 	for name, doc := range docs {
-		base := ruleSet(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(doc)))
+		base := namedRuleSet(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(doc)))
 		if name == "broken" && len(base) < 3 {
 			t.Fatalf("the broken document reported only %d rules (%v); it is not exercising enough", len(base), base)
 		}
 		for _, p := range []Profile{ProfileBasic, ProfileExtended} {
-			got := ruleSet(findings(t, context.Background(), withProfile(p), []byte(doc)))
+			got := namedRuleSet(findings(t, context.Background(), withProfile(p), []byte(doc)))
 			for rule := range got {
 				if !base[rule] {
 					t.Errorf("%s: profile %q reports %s, which EN 16931 does not", name, string(p), rule)
@@ -247,6 +273,76 @@ func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
 			}
 		}
 	}
+}
+
+// TestFacturXTiersDifferInTheirDataModel is the other side of that, and it is the
+// assertion issue #56 turns on: naming a Profile has to change the rule set, and
+// the element-table data model is where it changes most.
+//
+// The document is validCII, which is conformant at the tier it declares. What the
+// tiers say about it differs because their element tables differ — MINIMUM does
+// not use the buyer postal address, the leaner tiers do not carry the line-level
+// tax group, and only the EN 16931 tier accepts CEN's own specification
+// identifier in BT-24. A change that flattened the tiers back to one rule set
+// would leave every finding-count assertion in this file green and fail here.
+func TestFacturXTiersDifferInTheirDataModel(t *testing.T) {
+	// Each tier's findings, reduced to the assertion text rather than the
+	// identifier: FX-DM-BASIC-0104 and FX-DM-EN16931-0204 are the same assertion
+	// under two synthetic names, and comparing the names would report a difference
+	// between every pair of tiers whatever they said.
+	said := map[Profile]map[string]bool{}
+	for _, p := range profiles {
+		said[p] = map[string]bool{}
+		for _, v := range findings(t, context.Background(), withProfile(p), []byte(validCII)) {
+			if fxIsDataModelRule(v.Rule) {
+				said[p][v.Message] = true
+			}
+		}
+		t.Logf("profile %q: %d data-model findings on a document conformant at EN 16931", string(p), len(said[p]))
+	}
+	if len(said[ProfileEN16931]) != 0 {
+		t.Errorf("the EN 16931 tier reports %d data-model findings on a document that declares its own identifier and "+
+			"carries its whole element table: %v", len(said[ProfileEN16931]), said[ProfileEN16931])
+	}
+	for _, p := range []Profile{ProfileMinimum, ProfileBasicWL, ProfileBasic, ProfileExtended} {
+		if len(said[p]) == 0 {
+			t.Errorf("profile %q reports the same data-model findings as the EN 16931 tier on a document written for "+
+				"that tier; the five element tables are not the same table and a Profile that does not select one is "+
+				"the flatness C4 found", string(p))
+		}
+	}
+	// And the specific difference the tiers are named for: MINIMUM does not use
+	// the buyer postal address, which every other tier requires.
+	want := "Element 'ram:PostalTradeAddress' is marked as not used in the given context."
+	found := false
+	for msg := range said[ProfileMinimum] {
+		if strings.HasPrefix(msg, want) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("MINIMUM did not report %q on a document carrying a buyer postal address: %v", want, said[ProfileMinimum])
+	}
+	for _, p := range []Profile{ProfileBasicWL, ProfileBasic, ProfileEN16931, ProfileExtended} {
+		for msg := range said[p] {
+			if strings.HasPrefix(msg, want) {
+				t.Errorf("profile %q reported %q, and only MINIMUM drops the buyer postal address", string(p), msg)
+			}
+		}
+	}
+}
+
+// namedRuleSet is ruleSet without the data-model assertions, whose identifiers
+// this package mints per profile and which therefore cannot be compared across
+// profiles by name.
+func namedRuleSet(vs []Violation) map[string]bool {
+	m := map[string]bool{}
+	for _, v := range vs {
+		if !fxIsDataModelRule(v.Rule) {
+			m[v.Rule] = true
+		}
+	}
+	return m
 }
 
 func ruleSet(vs []Violation) map[string]bool {

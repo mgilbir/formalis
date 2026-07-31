@@ -22,7 +22,7 @@ func bigCIIInvoice(n int) []byte {
 		`<AssociatedDocumentLineDocument><LineID>1</LineID></AssociatedDocumentLineDocument>` +
 		`<SpecifiedTradeProduct><Name>Widget</Name></SpecifiedTradeProduct>` +
 		`<SpecifiedLineTradeSettlement>` +
-		`<ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>` +
+		`<ApplicableTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>` +
 		`<SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>1.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation>` +
 		`</SpecifiedLineTradeSettlement></IncludedSupplyChainTradeLineItem>`
 	var b strings.Builder

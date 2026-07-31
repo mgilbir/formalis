@@ -283,7 +283,7 @@ func TestBRDEC25And28LineAllowanceChargeBase(t *testing.T) {
 // and must not be reported here (BR-DEC-13 is that rule).
 func TestBRDEC15VATTotalInAccountingCurrency(t *testing.T) {
 	cii := func(inTaxCurrency string) string {
-		return mutate(t, validCII, "<TaxTotalAmount>20.00</TaxTotalAmount>",
+		return mutate(t, validCII, `<TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>`,
 			`<TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>`+
 				`<TaxTotalAmount currencyID="SEK">`+inTaxCurrency+`</TaxTotalAmount>`)
 	}
