@@ -1794,7 +1794,8 @@ func coverageText(src Source) string {
 // reported false with "UBL-CR-666, UBL-CR-673" as the reason. Every validator
 // here reaches that state through the core:
 //
-//   - Validate with ProfileEN16931 runs the core and nothing else;
+//   - Validate runs the core and Factur-X's own rule set, neither of which has a
+//     fatal evaluable gap left;
 //   - ValidateNLCIUS runs the core and NLCIUS, whose own rule set has no gap left
 //     at all: what Coverage(SourceNLCIUS) still names is four assertions no
 //     processor reaches;
@@ -1842,7 +1843,18 @@ func coverageText(src Source) string {
 // extension rules and the 7 assertions of the abstract pdvcat pattern, plus the 15
 // that no processor reaches. It is the validator this list's counterpart test used
 // to be demonstrated on, which is why that test moved for the third time.
+// Validate joined it when the 24 fatal BR-FXEXT-* restatements were evaluated, and
+// its route into the list is the longest here because it left twice. It was on
+// this list, as "Validate with ProfileEN16931 runs the core and nothing else",
+// until a Profile began selecting Factur-X's binding — which is what issue #56
+// asked for and which correctly made Conformant false for every Validate call,
+// because Factur-X's own rule set was then almost entirely unevaluated. It came
+// back in two steps: the 2,159 assertions of the per-profile data model, and then
+// these 24. A clean Factur-X document reports Conformant() == true again at every
+// tier, and the entry is now a claim about Factur-X's rule set rather than about
+// the core reached through it.
 var validatorsWithNoFatalGap = map[string]bool{
+	"Validate":          true,
 	"ValidateEN16931":   true,
 	"ValidateNLCIUS":    true,
 	"ValidateCIUS":      true,

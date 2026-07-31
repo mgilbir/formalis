@@ -229,19 +229,35 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 	}
 }
 
-// TestBasicEN16931AndExtendedDifferOnlyInBRCO1112 records the flatness that is
-// by design, so it is not mistaken for the flatness C4 found. Across the *named*
-// rules these three tiers differ from each other in one place and no other; if
-// that ever stops being true the doc comment on Profile — which enumerates the
-// differences — has to change with it.
+// TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes records the
+// flatness that is by design, so it is not mistaken for the flatness C4 found.
+// Across the *named* rules these three tiers differ from each other in exactly
+// two ways and no other; if that ever stops being true the doc comment on
+// Profile — which enumerates the differences — has to change with it.
 //
-// The scope to named rules is the one thing that moved, and it is not a
-// weakening. The data-model assertions are keyed by a synthetic identifier
-// per profile, so FX-DM-BASIC-0104 and FX-DM-EN16931-0204 are the same assertion
-// under two names and could not be compared as strings at all. What they say is
-// compared instead, by TestFacturXTiersDifferInTheirDataModel below, which asserts
-// the tiers differ there rather than that they do not.
-func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
+// The two ways are:
+//
+//   - EXTENDED is silent on BR-CO-11 and BR-CO-12, whose operands it may carry
+//     unitemized. That is the excuse list.
+//   - EXTENDED reports BR-FXEXT-* identifiers no other tier publishes. Those are
+//     the rules Factur-X adds at that tier, and the assertion is not "EXTENDED
+//     may report anything extra": the extra rule has to be one of the
+//     identifiers this package evaluates for that profile, so a stray finding
+//     from any other family still fails.
+//
+// The second arm is what changed when the 24 fatal restatements landed. It is a
+// tightening rather than a weakening — before, the test asserted the two sets
+// were equal and could not have distinguished "EXTENDED reports a BR-FXEXT-*
+// rule it publishes" from "EXTENDED reports a rule nobody publishes", because
+// neither happened.
+//
+// The scope to named rules is unchanged and is also not a weakening. The
+// data-model assertions are keyed by a synthetic identifier per profile, so
+// FX-DM-BASIC-0104 and FX-DM-EN16931-0204 are the same assertion under two names
+// and could not be compared as strings at all. What they say is compared instead,
+// by TestFacturXTiersDifferInTheirDataModel below, which asserts the tiers differ
+// there rather than that they do not.
+func TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes(t *testing.T) {
 	docs := map[string]string{"conformant": validCII}
 	// A document that trips a broad spread of rules, to make the comparison
 	// mean something more than "both were clean".
@@ -249,6 +265,20 @@ func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
 	broken = strings.Replace(broken, "<CountryID>FR</CountryID>", "", 1)
 	broken = strings.Replace(broken, "<GrandTotalAmount>120.00</GrandTotalAmount>", "<GrandTotalAmount>999.00</GrandTotalAmount>", 1)
 	docs["broken"] = broken
+
+	// The rules Factur-X publishes at EXTENDED and nowhere else: the nine that
+	// are its own new ground and the 24 restatements. Read from the two tables
+	// rather than listed, so a rule added to either is admitted here and a rule
+	// from any other family still fails.
+	extendedOnly := map[string]bool{}
+	for _, id := range facturXExtensionRules {
+		extendedOnly[id] = true
+	}
+	for _, rs := range facturXRestatementRules {
+		if rs.profile == ProfileExtended {
+			extendedOnly[rs.id] = true
+		}
+	}
 
 	for name, doc := range docs {
 		base := namedRuleSet(findings(t, context.Background(), withProfile(ProfileEN16931), []byte(doc)))
@@ -258,9 +288,13 @@ func TestBasicEN16931AndExtendedDifferOnlyInBRCO1112(t *testing.T) {
 		for _, p := range []Profile{ProfileBasic, ProfileExtended} {
 			got := namedRuleSet(findings(t, context.Background(), withProfile(p), []byte(doc)))
 			for rule := range got {
-				if !base[rule] {
-					t.Errorf("%s: profile %q reports %s, which EN 16931 does not", name, string(p), rule)
+				if base[rule] {
+					continue
 				}
+				if p == ProfileExtended && extendedOnly[rule] {
+					continue // a rule the EXTENDED Schematron publishes and no other does
+				}
+				t.Errorf("%s: profile %q reports %s, which EN 16931 does not", name, string(p), rule)
 			}
 			for rule := range base {
 				if got[rule] {
