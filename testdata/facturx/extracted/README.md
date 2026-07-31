@@ -53,13 +53,31 @@ not worth a second exception to the gitignore today.
 
 ## What the tests assert about them
 
-`TestFacturXLeanTierSamplesDrawExactlyTheseFindings` records, per document, every
-fatal finding it draws at the tier its own BT-24 declares, and fails if the list
-moves **in either direction** — a finding that appears is as interesting as one
-that vanishes. That is shape (1) of the three
+`facturx_lean_tiers_test.go` holds them as an **expected-failure table**. Each
+document carries the tier its own BT-24 declares, every fatal finding it draws
+with the node that finding fires at, and a written reason naming what in the
+document causes it and what FNFE's rule says. That is shape (1) of the three
 [#61](https://github.com/mgilbir/formalis/issues/61) offers: it keeps the
 documents that disagree without claiming they pass. It needs no corpus, so it
 runs in CI's corpus-less job too.
+
+Three tests hold it up:
+
+- `TestFacturXLeanTierSamplesDrawExactlyTheseFindings` compares (rule, node)
+  pairs and fails **in either direction** — a finding that appears is as
+  interesting as one that vanishes, and the vanishing case is the more dangerous:
+  it would mean a rule that is present, reachable and now inert. Comparing nodes
+  rather than a rule list is what makes fourteen findings becoming fourteen
+  *different* findings red.
+- `TestFacturXLeanTierExpectedFailuresHaveTheStatedCause` checks the reasons. Each
+  row's stated cause is looked up in the generated data-model table and has to be
+  the shape FNFE publishes for that rule, and each is checked against the document
+  decoded with `encoding/xml` — independently of the parser that produced the
+  finding. It also closes the currency claim over the whole file: every
+  `@currencyID` anywhere in a document is either on `ram:TaxTotalAmount` or is
+  accounted for by exactly one row.
+- `TestFacturXForbidsRestatingTheCurrencyOnEveryAmountButTaxTotalAmount` reads the
+  design those reasons appeal to out of all five profile tables.
 
 ```
                        tier       fatal  rules
@@ -76,21 +94,53 @@ MINIMUM: 3 documents, 11 findings · BASIC: 2 documents, 14 · BASIC WL: 1, 0
 The findings are correct rather than false, and each was read back out of the
 vendored profile Schematron:
 
-- the `@currencyID` ones are `report @currencyID` on amounts whose tier's element
-  table marks the attribute unused. They are also what CEN's `CII-DT-031`
-  reported before v0.3.0 narrowed the binding — two authorities reaching the same
-  conclusion by different routes.
-- `FX-DM-MINIMUM-0019` is `report true()` on the buyer's `ram:PostalTradeAddress`,
-  an element MINIMUM does not use. Three independent producers carry it and
-  neither fetched MINIMUM document does, so the rule agrees with the corpus.
-- `FX-DM-BASIC-0018` is the code-database lookup on BT-24 itself.
+- **Nineteen** are `report @currencyID` on an amount. The attribute is not
+  optional-and-omitted at these tiers: the element table excludes it, because an
+  invoice is denominated once as BT-5 `ram:InvoiceCurrencyCode` and a per-amount
+  restatement adds nothing while letting one document carry two answers. The one
+  exception is `ram:TaxTotalAmount`, where FNFE *constrains* `@currencyID` against
+  the currency code list instead of forbidding it — the one place two amounts in
+  two currencies legitimately coexist, BT-110 and BT-111. CEN reached the same
+  design independently, carving `ram:TaxTotalAmount` out of `CII-DT-031` by name.
+  All six documents here carry the attribute on their `ram:TaxTotalAmount` and
+  draw nothing for it.
+- **Five** are `report true()`: the buyer's `ram:PostalTradeAddress` and
+  `ram:SpecifiedTaxRegistration` at MINIMUM, a head-only tier whose element table
+  has neither. Presence is the whole of the offence. The evidence for these is the
+  artefact alone. It is worth being precise about what is *not* evidence: the two
+  fetched MINIMUM documents carry no buyer address, and that corroborates nothing
+  — a `report true()` rule fires on presence, so a document without the element
+  never reaches the rule. What those two documents *do* corroborate is the
+  `@currencyID` claim: each carries the attribute on `ram:TaxTotalAmount` and on
+  no other amount, which is exactly what `FX-DM-MINIMUM-0043/0044/0045` require
+  and what FNFE's own MINIMUM samples do not do.
+- **One**, `FX-DM-BASIC-0018`, is the code-database lookup on BT-24 itself.
   `FACTUR-X_BASIC_codedb.xml` enumerates exactly two values and
-  `Avoir_FR_type381_BASIC` declares a third,
-  `urn:cen.eu:en16931:2017:compliant:factur-x.eu:1p0:basic`, with colons where
-  both published identifiers write `#`.
+  `Avoir_FR_type381_BASIC` declares neither:
+  `urn:cen.eu:en16931:2017:compliant:factur-x.eu:1p0:basic`, which writes the
+  separators as `:` where both published identifiers write `#` and drops the inner
+  `urn:` scheme. It names the profile the code list permits and spells it a way
+  the code list does not hold — which is also why routing still reads it as BASIC:
+  `facturXProfileFromSpecID` matches the brand stem as a substring, while the
+  code-list assertion is an exact lookup. `intarsys_BASIC.xml` is the same tier
+  with the identifier written correctly and draws nothing, so the rule
+  discriminates rather than accusing.
 
 So the reading is that some published sample invoices depart from the published
 data model at the leanest tiers.
+
+### One open question, recorded and not acted on
+
+MINIMUM selects one of its three `ram:TaxTotalAmount` rules on
+`@currencyID=../../ram:TaxCurrencyCode` — BT-6, the accounting currency — at a
+tier whose purpose is a reduced head-only summary, and it is the only one of the
+five profiles that references BT-6 without defining it: the other four give
+`ram:TaxCurrencyCode` a rule of its own, MINIMUM gives it none. Whether the tier
+genuinely admits a second currency or the predicate is copy-paste from the richer
+profiles is unresolved. No document decides it — of the 65 Factur-X documents in
+this tree exactly one carries a BT-6, `X07_01_Fremdwaehrung.xml`, and it is
+EXTENDED. `TestMinimumKeysARuleOnACurrencyItsOwnTierNeverDefines` pins the
+asymmetry so a revision resolving it arrives as a question rather than as silence.
 
 These are **not** in `TestAuthoritySamplesDrawNoFatalFinding`'s population, and
 that guard is unchanged. Its Factur-X entry judges the documents FNFE's own

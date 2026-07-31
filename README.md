@@ -671,8 +671,9 @@ The oracles need corpora this repository does not vendor (`testdata/` is
 gitignored, with one carve-out: the six lean-tier Factur-X invoices under
 `testdata/facturx/extracted/` are committed, because they exist only inside
 PDF/A-3 containers and no fetch target can produce them — that directory's README
-says why, and `TestFacturXLeanTierSamplesDrawExactlyTheseFindings` records
-exactly what each of them draws). Fetching the rest needs **`git`**, **`bash`**, **`curl`**, **`python3`**
+says why, and `facturx_lean_tiers_test.go` holds them as an expected-failure
+table: what each draws, at which node, and a written reason that is itself
+checked against the document and the artefact). Fetching the rest needs **`git`**, **`bash`**, **`curl`**, **`python3`**
 — several Romanian and Portuguese sample filenames are non-ASCII and are
 URL-encoded with it — and **`gh` authenticated against GitHub**, because the
 fetch makes about fifteen `gh api` calls and the unauthenticated rate limit of 60
