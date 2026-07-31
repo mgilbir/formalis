@@ -151,8 +151,8 @@ the two tests that hold the table to it.
 
 **`Conformant()` returns false for most documents, whatever they contain.** That is
 not a bug and it is the first thing to understand about this package. The EN 16931
-core and the seven CIUS layered on it are the exceptions today; every national
-format validator here returns false for a clean invoice.
+core, Factur-X and the seven CIUS layered on it are the exceptions today; every
+national format validator here returns false for a clean invoice.
 
 `len(report.Violations) == 0` means only *the checks that ran found nothing*. It
 is equally true of a run that checked everything, a run that was cancelled or hit
@@ -161,14 +161,20 @@ authority publishes. Every rule set here is a documented subset, and
 `Coverage(src)` is where each one says so.
 
 `Conformant()` is the weaker and more useful question, because it passes over the
-gaps an authority would not reject a document for. Eight rule sets have no **fatal**
-gap left — the core and every CIUS:
+gaps an authority would not reject a document for. Nine rule sets have no **fatal**
+gap left — the core, Factur-X and every CIUS:
 
 - the **EN 16931 core**: every fatal rule of the semantic model, of the UBL binding
   and of the CII binding is evaluated, bar the few CEN's own reference
   implementation cannot report, so `ValidateEN16931` — and
   `ValidateCIUS` on a document that declares no CIUS — returns
   `Conformant() == true` for a clean invoice;
+- **Factur-X / ZUGFeRD**: everything the five profile Schematrons publish that is
+  fatal — the four CEN-minted binding assertions they carry, the nine `BR-FXEXT-*`
+  rules that are Factur-X's own new ground, the 24 `BR-FXEXT-*` that restate a CEN
+  identifier the profile drops, and all 2,159 assertions of the per-profile element
+  data model. `Validate` returns `Conformant() == true` for a clean document at
+  every tier, and does so for all 32 profile-declaring documents FNFE ships;
 - **XRechnung**: the Schematron a German buyer validates against is 78 identifiers,
   KoSIT's own 57 plus 21 it merges in from Peppol BIS Billing 3.0, and all 78 are
   evaluated. The imported findings carry `SourcePeppol`, because `Source` names the
@@ -436,13 +442,38 @@ All 2,159 of those assertions are evaluated, the 366 code-list lookups included.
 None of them carries an identifier in the artefact — FNFE names a rule by an
 `[ID]-` prefix on its message and these have none — so each is reported under a
 key this package mints, `FX-DM-<PROFILE>-<NNNN>`, documented in
-`facturx_datamodel.go`. `Coverage(SourceFacturX)` names what is left: three of
-those assertions that no processor can report, and the 42 `BR-FXEXT-*` rules that
-restate a CEN identifier the EXTENDED profile drops. That second entry is why
-`Validate` still does not report `Conformant()` for a clean document where
-`ValidateEN16931` does — this package evaluates CEN's stricter original for every
-identifier those 42 restate, so the gap cannot let a broken document through, but
-it is a gap and it is recorded as one.
+`facturx_datamodel.go`.
+
+The 42 `BR-FXEXT-*` rules that restate a CEN identifier the EXTENDED profile drops
+were the last fatal gap, and the 24 of them FNFE leaves unflagged — which within
+these files means fatal — are evaluated now. They were expected to be duplicates
+of a stricter CEN rule this package already applies, and more than half of them
+are not: `BR-FXEXT-CO-12` adds the logistics service charges (BT-X-272) EXTENDED
+introduces to the charge total, `BR-FXEXT-CO-16` adds the charges collected on
+behalf of a third party (BT-179), the nine `-08b` summations restrict the base to
+`DETAIL` sub-lines and tighten CEN's ±1 tolerance to 0,01 × the operand count, and
+`BR-FXEXT-CO-15` closes an escape clause CEN leaves open. Against *this package*
+they add more still: `BR-CO-11` and `BR-CO-12` were not evaluated at all at
+`ProfileExtended`, and CEN's `BR-{fam}-08` is switched off on any document that
+carries a sub-line structure — which is the shape those rules exist for.
+`facturx_restatements.go` states, rule by rule, what CEN asserts, what FNFE
+asserts, which fires where the other cannot, and where that leaves this package
+stricter than the authority.
+
+So `Validate` reports `Conformant()` for a clean document again, at every tier.
+`Coverage(SourceFacturX)` names what is left, and none of it is fatal and
+evaluable: `CII-SR-464`, which FNFE rewrote into a tautology; three data-model
+assertions that contradict their own context; one OpenPEPPOL rule FNFE merges in;
+and the eighteen `-08ini`/`-08rev` readings FNFE flags warning, which keep
+`Complete()` false and are an advisory gap — exactly the distinction the two
+methods exist to draw.
+
+One consequence is worth knowing before you count findings: this package reports
+the **union** of CEN's rule set and Factur-X's, so a document that breaks both
+`BR-S-08` and `BR-FXEXT-S08b` is reported twice, once under each authority's
+identifier. FNFE's own validator prints one line, because its EXTENDED Schematron
+does not carry `BR-S-08` at all. `Source` is the discriminator; filter on it for
+exactly FNFE's verdict.
 
 ## Rule identity is `(Source, Rule)`
 
