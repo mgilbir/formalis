@@ -26,8 +26,9 @@ URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
 	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron cius-pt-rules \
-	cius-ro-rules cius-condition-overrides \
-	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles
+	cius-ro-rules cius-condition-overrides facturx-schematron facturx-examples \
+	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles \
+	clean-facturx-schematron
 
 # Run the tests. Oracle-backed tests skip when their (gitignored) data is absent;
 # fetch it with the targets below. When it is present, each oracle also ratchets
@@ -63,6 +64,7 @@ EN16931_DIR := testdata/en16931-artefacts
 CODELISTS_DIR := testdata/en16931-codelists
 CIUS_STAMP := testdata/.cius-oracles.ok
 CIUS_SCH_STAMP := testdata/.cius-schematron.ok
+FACTURX_SCH_STAMP := testdata/.facturx-schematron.ok
 
 # git-sync clones $(1) into $(2), or refreshes it if it is already there, so the
 # fetch targets can be re-run without `git clone` failing on an existing
@@ -453,5 +455,72 @@ $(CIUS_SCH_STAMP): | check-deps
 	fi; \
 	echo "make: vendored $$n CIUS Schematron files"
 	touch $@
+# Factur-X 1.09 / ZUGFeRD 2.5 profile Schematrons.
+#
+# Factur-X binds EN 16931 with its own rule set rather than adopting CEN's CII
+# syntax binding, so the two disagree about which rules a Factur-X document is
+# judged by: EXTENDED publishes one CII-DT-* rule (CII-DT-097) where CEN's
+# binding has 101, and it adds 50 BR-FXEXT-* rules of its own that CEN has no
+# counterpart for. Reading that from the artefact is the only way to know it.
+#
+# FNFE publishes these inside a ~33 MB specification bundle that is not
+# individually addressable, so they are fetched from mustangproject, which
+# vendors the same five files. Checked: its EXTENDED copy and FNFE's agree
+# exactly — 217 identifiers over 1458 assertions, same set both directions.
+#
+# Note for the reader: these Schematrons carry no `id` attribute. A rule is
+# identified by an "[ID]-" prefix on its message text, so an enumeration written
+# the way CEN's, KoSIT's and OpenPEPPOL's are written finds nothing here.
+MUSTANG := https://raw.githubusercontent.com/ZUGFeRD/mustangproject/master/validator/src/main/resources/schematron/ZF_250
+
+facturx-schematron: $(FACTURX_SCH_STAMP)
+$(FACTURX_SCH_STAMP): | check-deps
+	mkdir -p testdata/facturx/schematron
+	for f in MINIMUM BASIC-WL BASIC EN16931 EXTENDED; do \
+		$(CURL) "$(MUSTANG)/FACTUR-X_$$f.sch" -o "testdata/facturx/schematron/FACTUR-X_$$f.sch"; \
+	done
+	@# The fetch-side ratchet, as for the CIUS Schematrons above: curl -f under
+	@# pipefail has already failed on a missing file, so this catches only an
+	@# edited-down list.
+	@n=$$(find testdata/facturx/schematron -name '*.sch' | wc -l); \
+	if [ "$$n" -ne 5 ]; then \
+		echo "make: fetched $$n Factur-X Schematron files, expected 5" >&2; \
+		exit 1; \
+	fi; \
+	echo "make: vendored $$n Factur-X profile Schematron files"
+	touch $@
+# Factur-X example invoices and the authority's own validation reports.
+#
+# These are not fetchable individually. FNFE-MPE publishes them inside the
+# Factur-X 1.09 / ZUGFeRD 2.5 specification bundle (a ~33 MB zip, downloaded
+# from fnfe-mpe.org / ferd-net.de), and ZUGFeRD/corpus on GitHub carries only
+# the EN 16931 subset as bare XML — 3 EXTENDED documents against the bundle's
+# 25, which is the profile the two rule sets actually disagree about.
+#
+# So this corpus is vendored from the bundle rather than fetched, and this
+# target only reports whether it is present. The oracle tests skip without it,
+# the way every other corpus-backed test here does; what they must not do is
+# quietly pass on a subset (C8/C26), which is what the ratchets in
+# corpus_test.go are for.
+#
+#   testdata/facturx/examples/  bare CII invoice XML, one per published example
+#   testdata/facturx/reports/   *_fx_validation_report.xml, FNFE's own verdict
+#                               per document — the same class of oracle as
+#                               KoSIT's <?xmute?> fixtures and OpenPEPPOL's
+#                               unit-test sets
+facturx-examples:
+	@e=$$(ls testdata/facturx/examples/*.xml 2>/dev/null | wc -l); \
+	r=$$(ls testdata/facturx/reports/*.xml 2>/dev/null | wc -l); \
+	if [ "$$e" -eq 0 ]; then \
+		echo "make: no Factur-X examples under testdata/facturx/examples/" >&2; \
+		echo "  unpack the Factur-X 1.09 / ZUGFeRD 2.5 bundle and copy the example" >&2; \
+		echo "  CII XML there; *_fx_validation_report.xml go in testdata/facturx/reports/" >&2; \
+		exit 1; \
+	fi; \
+	echo "make: $$e Factur-X example invoices, $$r validation reports"
+
+clean-facturx-schematron:
+	rm -rf testdata/facturx/schematron $(FACTURX_SCH_STAMP)
+
 clean-cius-oracles:
 	rm -rf testdata/xrechnung testdata/peppol testdata/nlcius testdata/cius-pt testdata/cius-ro testdata/cius-be testdata/cius-rs testdata/fatturapa testdata/facturae testdata/ebinterface testdata/ksef testdata/finvoice testdata/zatca testdata/svefaktura testdata/teapps testdata/oioubl testdata/turkey testdata/osa testdata/pint $(CIUS_STAMP) $(CIUS_SCH_STAMP)

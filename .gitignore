@@ -12,6 +12,7 @@
 /testdata/cius-be/
 /testdata/cius-rs/
 /testdata/fatturapa/
+/testdata/facturx/
 /testdata/facturae/
 /testdata/ebinterface/
 /testdata/ksef/
@@ -28,3 +29,4 @@
 # corpus directories already ignored above (testdata/cius-pt/schematron/, ...), so
 # they need no pattern of their own; only the stamp does.
 /testdata/.cius-schematron.ok
+/testdata/.facturx-schematron.ok
