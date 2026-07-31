@@ -816,17 +816,30 @@ func validateEN16931(r *run, p *parsed, profile Profile, binding ciiBinding) []V
 	}
 
 	// BR-CO-10: Sum of Invoice line net amounts (BT-106) = sum of line net
-	// amounts (BT-131). A sub-invoice line's amount is rolled up into its parent,
-	// so only top-level lines are summed.
+	// amounts (BT-131), over every line the document carries.
+	//
+	// This used to skip a line that named another as its parent, on the premise
+	// that a sub-invoice line's amount is rolled up into its parent's BT-131. That
+	// premise came in with the initial import, carries no argument, and is not
+	// CEN's: EN16931-CII-model.sch sums ../../ram:IncludedSupplyChainTradeLineItem,
+	// and a CII sub-line is a sibling of the line it references rather than a
+	// child of it, so CEN counts both. The corpus settles it —
+	// cii-br-dex-15-test-on-sub-invoice-lines.xml, one of KoSIT's own instances,
+	// has a parent of 288,79, a sub-line of 26,07 and a BT-106 of 314,86 — and the
+	// carve-out was reporting that document for a rule CEN's validator passes it
+	// on. Nothing is rolled up there.
+	//
+	// A producer whose GROUP lines *do* roll their children up gets a finding here
+	// and gets the same one from any validator that imports CEN's CII binding.
+	// Factur-X reads the same summation over the DETAIL lines only, which is
+	// BR-FXEXT-CO-10, and on a document being validated as Factur-X that reading
+	// governs — see facturXAuthorityParity.
 	if len(inv.lines) > 0 && inv.hasTotals {
 		var lineSum float64
 		if r.stopped() {
 			return out
 		}
 		for _, li := range inv.lines {
-			if li.parentLineID != "" {
-				continue
-			}
 			if v, ok := parseAmount(li.netAmount); ok {
 				lineSum += v
 			}
@@ -850,11 +863,29 @@ func validateEN16931(r *run, p *parsed, profile Profile, binding ciiBinding) []V
 	}
 
 	// BR-CO-11/12: the allowance (BT-107) and charge (BT-108) totals equal the sum
-	// of the document-level allowance (BT-92) and charge (BT-99) amounts. Some
-	// EXTENDED producers carry amounts in the totals without an itemizable BG-20/21
-	// entry, so these are checked only when every such amount is itemized — i.e.
-	// outside the EXTENDED profile.
-	if inv.hasTotals && profile != ProfileExtended {
+	// of the document-level allowance (BT-92) and charge (BT-99) amounts.
+	//
+	// There is no profile in this condition and there must not be one. It used to
+	// read `profile != ProfileExtended`, with the stated reason that some EXTENDED
+	// producers carry amounts in the totals without an itemizable BG-20/21 entry —
+	// a producer habit written as a profile test, which is C45. Measured over the
+	// corpus the two do not coincide: of the documents carrying BT-107 or BT-108
+	// that no itemized entry accounts for, 2 are Factur-X EXTENDED and 3 are UBL,
+	// while 23 EXTENDED documents were exempted that never needed it. So the gate
+	// removed the rule for 23 documents it had nothing to protect and left it in
+	// place for the 3 it did.
+	//
+	// It is removed rather than narrowed, because there is nothing left for a
+	// narrower document test to say. CEN's binding states BR-CO-11 and BR-CO-12
+	// unconditionally; "the entries do not account for the total" is not a reason
+	// to stay silent, it is the finding. The two documents the gate was actually
+	// protecting are Factur-X EXTENDED invoices whose BT-108 folds in a
+	// ram:SpecifiedLogisticsServiceCharge (BT-X-272), which FNFE's own
+	// BR-FXEXT-CO-12 adds to the sum and CEN's rule does not know about — and that
+	// is not a CEN question at all. It is answered where it belongs, by the
+	// authority-parity pass in facturx_restatements.go, which drops a CEN finding
+	// on the Factur-X path when FNFE's restatement of that same rule is satisfied.
+	if inv.hasTotals {
 		var allowSum, chargeSum float64
 		if r.stopped() {
 			return out

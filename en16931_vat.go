@@ -147,11 +147,26 @@ func validateVATCategories(r *run, inv *en16931Invoice, add func(rule, msg strin
 
 	// BR-{fam}-08: each breakdown's taxable amount equals the sum of matching
 	// line net amounts + charges - allowances of the same category (and, for the
-	// standard category, the same rate). Checked only when it can be computed
-	// reliably: at least one line, every line/allowance/charge carrying a
-	// category, no EXTENDED sub-line roll-up, and every document-level allowance
-	// and charge itemized as a BG-20/21 entry.
-	if len(inv.lines) > 0 && vatCategoriesComplete(inv) && !hasSubLines(inv) && docAllowanceChargesItemized(inv) {
+	// standard category, the same rate).
+	//
+	// Two preconditions, both properties of the document rather than of its
+	// profile: at least one line with every line and document allowance/charge
+	// carrying a VAT category — without which the operands cannot be selected —
+	// and BT-107/BT-108 accounted for by the BG-20/21 entries, without which the
+	// allowance/charge arm of the sum is not the quantity the totals describe and
+	// the finding would accuse a conforming invoice. That second one is exactly
+	// what BR-CO-11 and BR-CO-12 assert, and it is now their finding to make: this
+	// rule stays quiet about a document those two already report.
+	//
+	// A third precondition used to sit here — !hasSubLines(inv), which removed the
+	// check from every document carrying an EXTENDED sub-line structure. That is
+	// C45's second gate, and like the first it answered a real hazard with far too
+	// blunt an instrument. The hazard is double counting: a sub-invoice line's net
+	// amount is rolled up into its parent's BT-131, so summing both counts it
+	// twice. The answer is the one BR-CO-10 four hundred lines above already uses —
+	// sum the top-level lines only — and newVATSummands now applies it, so a
+	// document with sub-lines is summed rather than skipped.
+	if len(inv.lines) > 0 && vatCategoriesComplete(inv) && docAllowanceChargesItemized(inv) {
 		validateVATTaxableSums(r, inv, add)
 	}
 
@@ -319,9 +334,16 @@ func checkVATRate(cat, rate, suffix, label string, add func(rule, msg string)) {
 
 // vatCategoriesComplete reports whether every line and document allowance/charge
 // carries a VAT category code (the precondition for the -08 sum checks).
+//
+// Every line means every line. A sub-invoice line used to be excused here, which
+// was consistent with the gate that skipped these documents outright and is not
+// consistent with summing them: a sub-line with no category is an amount CEN's
+// operand filter does not select and the taxable amount does count, so the sum
+// would understate and the finding would accuse a conforming invoice. BR-CO-04
+// is what reports that line, and it is the finding a reader can act on.
 func vatCategoriesComplete(inv *en16931Invoice) bool {
 	for _, li := range inv.lines {
-		if li.parentLineID == "" && li.vatCategory == "" {
+		if li.vatCategory == "" {
 			return false
 		}
 	}
@@ -331,15 +353,6 @@ func vatCategoriesComplete(inv *en16931Invoice) bool {
 		}
 	}
 	return true
-}
-
-func hasSubLines(inv *en16931Invoice) bool {
-	for _, li := range inv.lines {
-		if li.parentLineID != "" {
-			return true
-		}
-	}
-	return false
 }
 
 // docAllowanceChargesItemized reports whether every document-level allowance and
@@ -354,6 +367,14 @@ func hasSubLines(inv *en16931Invoice) bool {
 // of BR-{fam}-08. So the question the gate has to answer is not "are there any
 // allowances or charges" but "do the entries account for the totals", which is
 // the same arithmetic BR-CO-11/BR-CO-12 perform in the rule engine.
+//
+// Which makes this the one gate in this file that is deliberately redundant with
+// a rule: a document it closes on is a document BR-CO-11 or BR-CO-12 reports,
+// and since the EXTENDED exemption on those two was removed (C45) that is true
+// at every profile. The finding a reader needs is "your BT-107 is not the sum of
+// your allowances", once, and not that plus a taxable-amount discrepancy derived
+// from it. Silence here is a choice about which of two identifiers says it, not
+// a rule left unevaluated.
 //
 // Both totals absent and no entries is the common case and passes, as before.
 // A total with no entries fails, as before. An invoice whose entries sum to its
@@ -470,6 +491,24 @@ func newVATSummands(inv *en16931Invoice) *vatSummands {
 		allowCharges: make([]vatSummand, 0, len(inv.allowCharges)),
 	}
 	for _, li := range inv.lines {
+		// Every line, sub-lines included, and that is CEN's node set rather than a
+		// simplification of it. EN16931-CII-model.sch sums
+		// /rsm:CrossIndustryInvoice/rsm:SupplyChainTradeTransaction/
+		// ram:IncludedSupplyChainTradeLineItem/…/ram:LineTotalAmount, and a CII
+		// sub-invoice line is a *sibling* of the line it names in BT-X-9, not a
+		// child of it, so CEN's step selects it. The UBL binding reaches the same
+		// place from the other side: a UBL sub-line is cac:SubInvoiceLine, which
+		// //cac:InvoiceLine does not match and mapUBL does not collect.
+		//
+		// This is worth stating because the obvious model — a parent rolls its
+		// children up, so summing both double counts — is a claim about the
+		// producer and not about the syntax, and the corpus contradicts it.
+		// testdata/xrechnung/schematron/test/instances/cii/
+		// cii-br-dex-15-test-on-sub-invoice-lines.xml carries a parent at 288,79 and
+		// a sub-line at 26,07 with BT-106 and BT-116 both 314,86, which is the sum
+		// of the two: nothing is rolled up. Excluding the sub-line there produces a
+		// finding CEN's own validator does not, which is why neither this sum nor
+		// BR-CO-10 excludes one.
 		o := vatSummand{category: li.vatCategory}
 		o.rate, o.rateOK = parseAmount(li.vatRate)
 		o.amount, o.amountOK = parseAmount(li.netAmount)

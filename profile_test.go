@@ -187,11 +187,12 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 		"<DuePayableAmount>120.00</DuePayableAmount>",
 		"<DuePayableAmount>90.00</DuePayableAmount>", 1)
 
-	// Allowance and charge totals with no itemized BG-20/21 behind them:
-	// BR-CO-11/BR-CO-12 except under EXTENDED, which permits unitemized amounts.
-	unitemizedAC := strings.Replace(validCII,
-		"<TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>",
-		"<AllowanceTotalAmount>10.00</AllowanceTotalAmount><ChargeTotalAmount>5.00</ChargeTotalAmount><TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>", 1)
+	// BR-CO-11 and BR-CO-12 used to be here, exempt at EXTENDED. They are not a
+	// profile difference any more: C45 found that gate implementing "some EXTENDED
+	// producers carry unitemized totals" as a test on the profile, measured it
+	// against the corpus and removed it. The document that showed the difference
+	// is now TestAllowanceAndChargeTotalsAreCheckedAtEveryProfile, which asserts
+	// the opposite of what this table did — every tier reports both.
 
 	cases := []struct {
 		name string
@@ -207,8 +208,6 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 		{"line net total", headOnly, "BR-12", []Profile{ProfileMinimum, ProfileBasicWL}},
 		{"a VAT breakdown group", noBreakdown, "BR-CO-18", []Profile{ProfileMinimum}},
 		{"amount due summation", dueMismatch, "BR-CO-16", []Profile{ProfileMinimum}},
-		{"allowance total summation", unitemizedAC, "BR-CO-11", []Profile{ProfileExtended}},
-		{"charge total summation", unitemizedAC, "BR-CO-12", []Profile{ProfileExtended}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -237,8 +236,12 @@ func TestProfilesThatDifferStillDiffer(t *testing.T) {
 //
 // The two ways are:
 //
-//   - EXTENDED is silent on BR-CO-11 and BR-CO-12, whose operands it may carry
-//     unitemized. That is the excuse list.
+//   - EXTENDED can be silent on a CEN identifier its own Schematron drops and
+//     replaces, when the weaker rule that replaced it is satisfied. That is
+//     facturXSuperseded, read from the rule table rather than listed here, and it
+//     is checked against the artefact by
+//     TestFacturXSupersessionMatchesTheOmissionTable. It used to be an excuse
+//     list of two, BR-CO-11 and BR-CO-12, for a profile gate C45 removed.
 //   - EXTENDED reports BR-FXEXT-* identifiers no other tier publishes. Those are
 //     the rules Factur-X adds at that tier, and the assertion is not "EXTENDED
 //     may report anything extra": the extra rule has to be one of the
@@ -299,9 +302,6 @@ func TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes(t *testing
 			for rule := range base {
 				if got[rule] {
 					continue
-				}
-				if p == ProfileExtended && (rule == "BR-CO-11" || rule == "BR-CO-12") {
-					continue // the profile gate C45 names, removed in its own change
 				}
 				// A CEN identifier this tier's Schematron drops, whose replacement
 				// is satisfied on this document, yields to the authority that
