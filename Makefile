@@ -26,7 +26,7 @@ URLENC := python3 -c "import urllib.parse,sys;print('/'.join(urllib.parse.quote(
 
 .PHONY: test check-deps en16931-artefacts en16931-codelists en16931-genericode \
 	en16931-syntax-rules en16931-ubl cius-oracles cius-schematron cius-pt-rules \
-	cius-ro-rules cius-condition-overrides facturx-schematron facturx-examples \
+	cius-ro-rules cius-condition-overrides facturx-schematron facturx-datamodel facturx-examples \
 	clean-en16931-artefacts clean-en16931-codelists clean-en16931-ubl clean-cius-oracles \
 	clean-facturx-schematron
 
@@ -476,19 +476,46 @@ MUSTANG := https://raw.githubusercontent.com/ZUGFeRD/mustangproject/master/valid
 facturx-schematron: $(FACTURX_SCH_STAMP)
 $(FACTURX_SCH_STAMP): | check-deps
 	mkdir -p testdata/facturx/schematron
+	@# Both halves of each profile, because they are one artefact. 366 of the
+	@# 2,159 data-model assertions are a lookup in FACTUR-X_<PROFILE>_codedb.xml —
+	@# `document('FACTUR-X_EN16931_codedb.xml')/codedb/cl[@id=23]/enumeration` — and
+	@# a .sch fetched without its code database is a rule set a sixth of which
+	@# cannot be evaluated. mustangproject carries the two side by side, which is
+	@# what makes the code-list tier implementable at all; PR 57 recorded these
+	@# files as obtainable only inside FNFE's ~33 MB specification bundle.
 	for f in MINIMUM BASIC-WL BASIC EN16931 EXTENDED; do \
 		$(CURL) "$(MUSTANG)/FACTUR-X_$$f.sch" -o "testdata/facturx/schematron/FACTUR-X_$$f.sch"; \
+		$(CURL) "$(MUSTANG)/FACTUR-X_$${f}_codedb.xml" -o "testdata/facturx/schematron/FACTUR-X_$${f}_codedb.xml"; \
 	done
 	@# The fetch-side ratchet, as for the CIUS Schematrons above: curl -f under
 	@# pipefail has already failed on a missing file, so this catches only an
 	@# edited-down list.
 	@n=$$(find testdata/facturx/schematron -name '*.sch' | wc -l); \
-	if [ "$$n" -ne 5 ]; then \
-		echo "make: fetched $$n Factur-X Schematron files, expected 5" >&2; \
+	c=$$(find testdata/facturx/schematron -name '*_codedb.xml' | wc -l); \
+	if [ "$$n" -ne 5 ] || [ "$$c" -ne 5 ]; then \
+		echo "make: fetched $$n Factur-X Schematron files and $$c code databases, expected 5 of each" >&2; \
 		exit 1; \
 	fi; \
-	echo "make: vendored $$n Factur-X profile Schematron files"
+	echo "make: vendored $$n Factur-X profile Schematron files and $$c code databases"
 	touch $@
+
+# The Factur-X profile data model, generated from the five Schematrons and the
+# five code databases into facturx_datamodel_table.go. Same arrangement as the
+# four generator targets above — the generator is a deliberate act, and the tests
+# that re-derive the table from the artefact run on every `make test` — with one
+# difference worth stating: this generator is tracked Go under internal/ rather
+# than a gen.py under testdata/. All five generators in this repository are
+# tracked; this one is Go so that `gofmt -l .` and `go vet ./...` reach the
+# program that decides what 2,159 fatal assertions mean.
+#
+# The test run at the end is not belt-and-braces. The generator refuses an
+# assertion outside the six shapes it can express and renders every decomposition
+# back to XPath before emitting it; the package refuses to build an index over a
+# table row it cannot read. The tests are the third gate and the only one that
+# makes each of the 2,159 assertions report on a document written to break it.
+facturx-datamodel: facturx-schematron
+	go run ./internal/gen/facturx
+	go test -count=1 -run 'TestFacturXDataModel|TestFacturXCodeLists|TestEveryFacturXDataModelAssertionFires' .
 # Factur-X example invoices and the authority's own validation reports.
 #
 # These are not fetchable individually. FNFE-MPE publishes them inside the
