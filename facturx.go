@@ -65,16 +65,26 @@ import (
 // with type code 50, 130 and 916 by name, and its EXTENDED profile permits it there.
 // Same question, per-profile answer.
 //
-// This package does not evaluate that layer. Coverage(SourceFacturX) counts it,
-// by profile and by shape, and says so; it is the honest gap, and it is the
-// reason Report.Conformant is false for every Validate call. What is here is:
+// All three layers are evaluated here:
 //
 //   - the CEN-minted binding assertions Factur-X does carry, in facturXBinding
 //     below, reported under SourceEN16931 because CEN minted the identifier, the
 //     condition and the wording — Factur-X quotes them, which
 //     TestFacturXQuotesCENsConditionVerbatim checks assertion by assertion;
 //   - the nine BR-FXEXT-* rules that are Factur-X's own new ground, reported
-//     under SourceFacturX.
+//     under SourceFacturX;
+//   - the per-profile data model, all 2,159 assertions of it, generated from the
+//     five Schematrons and the five code databases FNFE ships beside them by
+//     internal/gen/facturx, and evaluated by facturx_datamodel.go. Not one of
+//     them carries an identifier in the artefact, so each is reported under a key
+//     this package mints — FX-DM-<PROFILE>-<NNNN> — which facturx_datamodel.go
+//     documents, along with what that key is and is not worth.
+//
+// Coverage(SourceFacturX) is what is left, and the data model landing means it is
+// no longer the largest thing in it: three data-model assertions FNFE published
+// that contradict their own context, which no processor can report, and the 42
+// BR-FXEXT-* restatements the next section argues. Report.Conformant is still
+// false for a Validate call, and it is that second entry that now makes it so.
 //
 // # Which BR-FXEXT-* are here, and why the other 42 are not
 //
@@ -383,7 +393,16 @@ func validateFacturXRules(r *run, p *parsed, profile Profile) []Violation {
 	if r.stopped() {
 		return out
 	}
-	return append(out, validateFacturXExtensionRules(p, profile, nil)...)
+	out = append(out, validateFacturXExtensionRules(p, profile, nil)...)
+	if r.stopped() {
+		return out
+	}
+	// And the profile data model, which is the bulk of what Factur-X publishes in
+	// place of CEN's binding: 48 assertions in MINIMUM up to 1,241 in EXTENDED.
+	// It comes last because the named rules are the ones a reader of FNFE's own
+	// validation report will recognise, and a caller reading Violations in order
+	// meets those first.
+	return append(out, facturXDataModelRules(r, p.root, profile)...)
 }
 
 // facturXBindingRules evaluates the CEN-minted binding assertions this profile
