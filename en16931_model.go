@@ -953,5 +953,12 @@ func validateEN16931(r *run, p *parsed, profile Profile, binding ciiBinding) []V
 		out = append(out, advisorySyntaxRules(r, p.root)...)
 	}
 
+	// Last, and only under Factur-X's binding: drop the CEN findings this
+	// document's own authority would not have made. facturXAuthorityParity says
+	// what that means and why it is narrower than "suppress the duplicates".
+	if binding == ciiBindingFacturX {
+		out = facturXAuthorityParity(r, p, profile, out)
+	}
+
 	return out
 }

@@ -119,6 +119,12 @@ import (
 //     facturx_restatements.go argues why that is right and Source is what
 //     separates them.
 //
+//     What is *not* reported is a CEN finding the document's own authority
+//     overruled: for the 21 replacements that can be satisfied where CEN's rule
+//     fires, facturXAuthorityParity drops the CEN half on the Factur-X path. That
+//     is a verdict, not a coverage decision — the rule runs either way — and it
+//     is what keeps this package from refusing invoices Factur-X accepts.
+//
 //   - 9 are Factur-X's own new ground — the BT-X-* extension terms, the sub-line
 //     structure, the date format qualifier 205 CEN's binding never had a rule for.
 //     Those are implemented here.
@@ -297,10 +303,15 @@ type facturXOmission struct {
 // Coverage(SourceFacturX) — the same shape as ciusCENCopyOmissions, and for the
 // same reason.
 //
-// The practical consequence is stated rather than assumed: this package reports
-// CEN's BR-22 on an EXTENDED invoice whose sub-line carries no invoiced quantity,
-// and a Factur-X processor does not. No document in FNFE's 59 published examples
-// is in that position — the corpus sweep measures it — but the class is real.
+// The practical consequence used to be stated here as an accepted cost: this
+// package reported CEN's BR-22 on an EXTENDED invoice whose GROUP line carries no
+// invoiced quantity, and a Factur-X processor does not. That is no longer what
+// happens. Evaluating CEN's rule and reporting it are two decisions, and the
+// second one belongs to whichever authority governs the document:
+// facturXAuthorityParity drops the CEN finding at EXTENDED whenever the
+// restatement that replaced it is satisfied, for the 21 identifiers where that
+// can happen. The omission table below is unchanged and is still what records
+// which CEN identifier the profile dropped and what FNFE put in its place.
 var facturXCENOmissions = []facturXOmission{
 	{cen: "BR-22", replacedBy: "BR-FXEXT-BR-22"},
 	{cen: "BR-23", replacedBy: "BR-FXEXT-BR-23"},

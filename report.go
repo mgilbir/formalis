@@ -558,14 +558,24 @@ var notEvaluated = map[Source][]RuleFamily{
 	// The 41 CEN identifiers the EXTENDED profile drops are not an entry here.
 	// This package evaluates CEN's original for all 41 — see facturXCENOmissions,
 	// which records the omission, the 23 that have a BR-FXEXT-* replacement and the
-	// 18 that have none — so there is no gap to name; there is a divergence, and it
-	// runs the other way, and facturx_restatements.go now measures it rule by rule.
+	// 18 that have none — so there is no gap to name.
 	//
-	// One consequence of evaluating both sides is stated rather than left to be
-	// found: a document that breaks BR-S-08 and BR-FXEXT-S08b is reported twice,
-	// once under each authority's identifier. Source separates them; a caller who
-	// wants exactly FNFE's verdict filters on it. facturx_restatements.go argues
-	// the decision and TestFacturXRestatementsDuplicateTheirCENOriginal pins it.
+	// It does not always *report* all 41 at EXTENDED, and the difference is a
+	// verdict rather than a coverage claim. For 21 of the 23 that have a
+	// replacement, FNFE's restatement can be satisfied on a document CEN's rule
+	// reports — a logistics service charge folded into BT-108, a third-party
+	// charge folded into BT-115, a GROUP line CEN counts and FNFE does not, a cent
+	// inside a tolerance FNFE has and CEN does not — and on the Factur-X path the
+	// authority that governs the document decides. facturXAuthorityParity drops
+	// the CEN finding in exactly that case and nowhere else, and the rule is
+	// evaluated either way: what is dropped is a finding whose authority
+	// overruled it, not a check that was skipped.
+	//
+	// Both identifiers still report on a document that breaks both, so a document
+	// failing BR-S-08 and BR-FXEXT-S08b is reported twice, once under each
+	// authority's identifier. Source separates them; a caller who wants exactly
+	// FNFE's verdict filters on it. facturx_restatements.go argues the decision
+	// and TestFacturXRestatementsDuplicateTheirCENOriginal pins it.
 	SourceFacturX: {
 		{
 			Rules:       "CII-SR-464",

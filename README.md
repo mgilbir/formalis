@@ -452,13 +452,22 @@ are not: `BR-FXEXT-CO-12` adds the logistics service charges (BT-X-272) EXTENDED
 introduces to the charge total, `BR-FXEXT-CO-16` adds the charges collected on
 behalf of a third party (BT-179), the nine `-08b` summations restrict the base to
 `DETAIL` sub-lines and tighten CEN's ±1 tolerance to 0,01 × the operand count, and
-`BR-FXEXT-CO-15` closes an escape clause CEN leaves open. Against *this package*
-they add more still: `BR-CO-11` and `BR-CO-12` were not evaluated at all at
-`ProfileExtended`, and CEN's `BR-{fam}-08` is switched off on any document that
-carries a sub-line structure — which is the shape those rules exist for.
+`BR-FXEXT-CO-15` closes an escape clause CEN leaves open.
 `facturx_restatements.go` states, rule by rule, what CEN asserts, what FNFE
-asserts, which fires where the other cannot, and where that leaves this package
-stricter than the authority.
+asserts, and which fires where the other cannot.
+
+They also run the other way, and that is a verdict rather than a list: for 21 of
+the 24, FNFE's reading can be *satisfied* on a document CEN's rule reports — a
+logistics charge folded into BT-108, a third-party charge folded into BT-115, a
+`GROUP` line CEN counts and FNFE does not, a cent inside a tolerance FNFE has and
+CEN has not. Two of FNFE's own published examples are in that position. Where a
+document is being validated *as* Factur-X, the authority that governs it decides,
+so the CEN finding is dropped when its Factur-X replacement holds — and only
+then. `facturXAuthorityParity` implements it,
+`TestAuthoritySamplesDrawNoFatalFinding` states the principle over every
+authority in the tree that ships its own conformant samples, and
+`ValidateEN16931` is unaffected: a caller who wants CEN's own verdict on a
+Factur-X document still gets it, findings included.
 
 So `Validate` reports `Conformant()` for a clean document again, at every tier.
 `Coverage(SourceFacturX)` names what is left, and none of it is fatal and
