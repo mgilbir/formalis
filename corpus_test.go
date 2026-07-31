@@ -42,6 +42,11 @@ const (
 	// 1,690 rather than 1,680: PR 28 added the ten instances SimplerInvoicing ships
 	// for the G-account extension, which live in an upstream directory of their own
 	// and which no fetch here had ever touched.
+	// It stays at 1,690 although the tree now holds 1,800: the 59 Factur-X
+	// examples and FNFE's 51 validation reports beside them are vendored rather
+	// than fetched, so a checkout that ran every make target and copied no bundle
+	// has 1,690 and is not truncated. minFacturXExamples and minFacturXReports are
+	// the floors on that material, where they can be skipped as a unit.
 	minCorpusDocuments = 1690
 
 	// The two arbitration sweeps count different populations and are not
@@ -295,7 +300,58 @@ const (
 	minSvefakturaRecognised = 5
 	minUBLTRFiles           = 39
 	minUBLTRRecognised      = 23
+
+	// Factur-X, in two halves that arrive by different routes.
+	//
+	// The five profile Schematrons are fetchable — `make facturx-schematron`
+	// takes them from ZUGFeRD/mustangproject, which vendors FNFE's own files
+	// identifier for identifier — so their floor is a per-profile rule count and
+	// a missing one is a red build rather than a vacuously green guard. These are
+	// rule counts and not assertion counts because a rule with no assertion still
+	// claims its nodes away from every rule below it, and the ordering guard
+	// reads them all.
+	//
+	// The examples and FNFE's own validation reports are not. FNFE-MPE publishes
+	// them inside a ~33 MB specification bundle that is not individually
+	// addressable, and ZUGFeRD/corpus on GitHub carries only the EN 16931 subset
+	// — 3 EXTENDED documents against the bundle's 25, and EXTENDED is the tier the
+	// two rule sets actually disagree about. So they are vendored, the oracles
+	// skip without them the way every other corpus-backed test here does, and
+	// these floors are what stops a half-copied directory reading as a clean
+	// sweep.
+	minFacturXExamples = 59
+	minFacturXReports  = 51
+	// Of the 59 examples, 32 declare a Factur-X profile in BT-24. The other 27
+	// declare CEN's own identifier (23, which is what the EN 16931 tier declares)
+	// or an XRechnung one (4), and are validated by the rule set they name. This
+	// floor is on the first group, because it is the population the scoping
+	// change is measured over.
+	minFacturXProfiled = 32
+	// The 51 BR-FXEXT-* identifiers: 50 in EXTENDED and one more in MINIMUM.
+	minFacturXExtensionIDs = 51
+	// The EXTENDED tier alone, which is where the BR-FXEXT-* rules live, and how
+	// many of the nine this package evaluates FNFE's own EXTENDED examples reach.
+	minFacturXExtendedExamples = 25
+	// Six of the nine: FNFE's EXTENDED examples exercise BR-FXEXT-01, -03, -06,
+	// -08, -11 and -12, and reach neither BR-FXEXT-02 (a line note with a subject
+	// code), BR-FXEXT-04 (an item attribute type code) nor BR-FXEXT-CII-DT-097a (a
+	// date declaring format qualifier 205). Those three have firing fixtures and
+	// nothing else, which is a weaker position and is why this number is logged
+	// beside the rules rather than only asserted.
+	minFacturXContextsReached = 6
 )
+
+// minFacturXRules is the per-profile floor on the Factur-X Schematrons, in
+// rules. It is a map rather than five constants because every guard in
+// facturx_test.go reads it through fxDecode, which is where a short file has to
+// stop the run.
+var minFacturXRules = map[Profile]int{
+	ProfileMinimum:  55,
+	ProfileBasicWL:  178,
+	ProfileBasic:    248,
+	ProfileEN16931:  373,
+	ProfileExtended: 983,
+}
 
 // atLeast is the ratchet. It reports rather than skips: an oracle that found
 // *some* of its corpus is not in the "corpus absent" case the skips cover, it is
