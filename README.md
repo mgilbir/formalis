@@ -98,7 +98,8 @@ fatal:
   validator reports and no authority rejects an invoice for;
 - the advisory "not recommended" tier of both NLCIUS bindings — `BR-NL-19` to
   `BR-NL-35`, twenty identifiers in the UBL binding and twenty-one in the CII one,
-  which SimplerInvoicing flags `warning`;
+  which SimplerInvoicing flags `warning` — plus the empty-element rule each binding
+  ends with, `SI-UBL-2` and `empty-element-check`, also flagged `warning`;
 - eleven of XRechnung's fifty-seven — the invoice type code, the specification
   identifier, the two IBAN checks, the telephone and email formats and five more,
   which KoSIT flags `warning` or `information`;
@@ -204,15 +205,24 @@ gap left — the core and every CIUS:
   `EN16931-UBL-srbdt.sch` is a single pattern in which eleven rules repeat the
   context `/ubl:Invoice | /cn:CreditNote` and four more repeat three other contexts,
   and ISO Schematron gives a node to the first matching rule of a pattern only;
-- **NLCIUS**: 42 of the 43 identifiers of the UBL binding and 33 of the 34 of the
-  CII one, both halves — the twelve fatal rules, the twenty-two "not recommended"
-  ones, which are reported as warnings, and the eight `BR-GA-*` of the **G-account
-  extension**, which the UBL binding alone publishes. Four are `Unevaluable` for the
-  rule-order reason above, and one of those was a live false positive: `BR-NL-9` has
-  a rule of its own in the CII binding, against a context `BR-NL-7`'s rule already
-  holds, so no CII document can be reported for it. This package reported it until
-  the file was read that way. One identifier per binding is a stated gap — see
-  `Coverage(SourceNLCIUS)`.
+- **NLCIUS**: every identifier of both bindings — 43 in UBL, 34 in CII — in both
+  halves: the twelve fatal rules, the twenty-two "not recommended" ones, which are
+  reported as warnings, the eight `BR-GA-*` of the **G-account extension**, which
+  the UBL binding alone publishes, and the empty-element rule each binding ends
+  with, which each names differently (`SI-UBL-2` in UBL, `empty-element-check` in
+  CII). Four are `Unevaluable` for the rule-order reason above, and one of those was
+  a live false positive: `BR-NL-9` has a rule of its own in the CII binding, against
+  a context `BR-NL-7`'s rule already holds, so no CII document can be reported for
+  it. This package reported it until the file was read that way. Nothing else is a
+  gap — `Coverage(SourceNLCIUS)` holds `Unevaluable` entries only.
+
+  The empty-element rule is the one rule in either binding whose context carries no
+  gate, so `ValidateNLCIUS` reports it for a document that does not declare the
+  NLCIUS specification identifier at all, which is what SimplerInvoicing's own
+  validator does. It is also *last* in its pattern, so an empty element an earlier
+  rule of that pattern already claims is reported under that rule's identifier and
+  not as an empty element: an empty `cbc:TaxCurrencyCode` in a Dutch NLCIUS invoice
+  is `BR-NL-19`, not `SI-UBL-2`.
 
   The G-account extension is the invoice form for a Dutch *g-rekening*: a blocked
   account into which a contractor pays the payroll-tax share of a subcontractor's
@@ -230,15 +240,15 @@ Every national format validator still names a gap its authority flags fatal and 
 validator could close, so those return false whatever the document.
 
 `Complete()` is the stricter question — "did this package see everything a
-reference validator could see" — and seven of those eight rule sets answer yes. The EN 16931
+reference validator could see" — and all eight of those rule sets answer yes. The EN 16931
 core's 1,168 advisory binding rules used to be the reason it could not;
 they are evaluated now, and what is left in `Coverage(SourceEN16931)` is seven
 rules **CEN itself cannot evaluate**: four bound to the XPath expression `true()`,
 three unreachable in CEN's own Schematron rule ordering, and one whose UBL test a
 correctly PCI-masked card number trips. Those are marked `Unevaluable`, so they no
 longer hold the answer down — a rule nobody can check is not a rule this package
-skipped. Every other rule set still names a gap it could close, so `Complete()` is
-false there.
+skipped. The thirteen national format validators still name gaps they could close,
+so `Complete()` is false there.
 
 The XRechnung path answers yes for a different reason: it had exactly one gap, and
 it was a rule set it *imports* rather than one of its own — the twenty-one Peppol
@@ -251,17 +261,16 @@ had been carrying longest: its only gap was 290 fatal rules that had never been
 named anywhere. `ValidateCIUSPT` reported `Conformant() == false` for every
 Portuguese invoice, whatever it contained, until they were implemented.
 
-NLCIUS is the one that answers **no**, and the reason it does is worth reading.
+The NLCIUS path answers yes for a fifth reason, and it is the one worth reading.
 Implementing its "not recommended" tier made it the first rule set here whose last
-gap was advisory, and `Complete()` was true for a Dutch invoice on that basis. It is
-false again, because the survey that reached that conclusion had never counted the
-whole rule set: every guard over these five national rule sets asked its question
-about the identifiers a *prefix* admitted, `^BR-NL-` in this case, and the two
-bindings publish three things it does not match — the eight `BR-GA-*` of the
-G-account extension, which are evaluated now, and one advisory rule each binding
-names differently (`SI-UBL-2`, `empty-element-check`), which is not. That last one
-is `Coverage(SourceNLCIUS)`'s only non-`Unevaluable` entry and it is what
-`Complete()` now waits on. `Conformant()` is unaffected: the rule is advisory.
+gap was advisory, and `Complete()` was true for a Dutch invoice on that basis — but
+the survey behind that had never counted the whole rule set. Every guard over these
+five national rule sets asked its question about the identifiers a *prefix*
+admitted, `^BR-NL-` in this case, and the two bindings publish three things it does
+not match: the eight `BR-GA-*` of the G-account extension, and one advisory rule
+each binding names differently, `SI-UBL-2` and `empty-element-check`. Naming the
+last of those made `Complete()` false again; evaluating it has made it true, and
+this time over an inventory that was enumerated rather than pattern-matched.
 
 The general defect is fixed rather than the instance. Every identifier a vendored
 national Schematron publishes is now enumerated and then classified — its
@@ -304,21 +313,18 @@ for _, gap := range formalis.Coverage(formalis.SourceFatturaPA) {
 for _, gap := range formalis.Coverage(formalis.SourceNLCIUS) {
     fmt.Printf("not evaluated: %s [%s] unevaluable=%t\n", gap.Rules, gap.Severity, gap.Unevaluable)
 }
-// not evaluated: SI-UBL-2 (UBL binding), empty-element-check (CII binding) [warning] unevaluable=false
 // not evaluated: BR-NL-9, in the CII binding only [fatal] unevaluable=true
 // not evaluated: BR-NL-31, in the CII binding only [warning] unevaluable=true
 // not evaluated: BR-NL-32-2, BR-NL-32-3, in the UBL binding only [warning] unevaluable=true
 ```
 
-The answers are three kinds, and the Dutch list shows two of them. The Italian entry
-is work: a rule the SdI would reject a document over, which this package does not
-run, so it costs `Conformant()`. The three Dutch `unevaluable=true` entries are facts
-about somebody else's file — assertions SimplerInvoicing publishes that no validator,
-its own included, ever reaches — so they cost neither `Conformant()` nor
-`Complete()`. The Dutch `unevaluable=false` entry is work too, but advisory work: one
-rule, published under a different name in each binding, that a reference validator
-warns about and this package does not evaluate. It costs `Complete()` and not
-`Conformant()`, which is the distinction the two predicates exist for.
+The answers are two kinds and the two lists show one each. The Italian entry is
+work: a rule the SdI would reject a document over, which this package does not run,
+so it costs `Conformant()`. Every Dutch entry is `unevaluable=true` — a fact about
+somebody else's file, assertions SimplerInvoicing publishes that no validator, its
+own included, ever reaches — so they cost neither `Conformant()` nor `Complete()`.
+That is why an Italian invoice with no findings is reported neither conformant nor
+complete and a Dutch one with no findings is reported both.
 
 Use `Conformant()` when you need the strong claim, and `len(r.Fatal()) == 0` when
 the weaker one will do — with `r.NotEvaluated` beside it saying exactly what it
