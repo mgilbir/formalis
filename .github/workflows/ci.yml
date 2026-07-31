@@ -117,7 +117,7 @@ jobs:
         # rather than en16931-codelists — the first fetches the oracle the
         # code-list fidelity test needs, the second would also regenerate the
         # committed tables, which is not a thing a test run should do.
-        run: make cius-oracles en16931-artefacts en16931-ubl en16931-genericode
+        run: make cius-oracles en16931-artefacts en16931-ubl en16931-genericode facturx-schematron
 
       - name: save the corpora to cache
         if: steps.corpora.outcome == 'success' && steps.corpus-cache.outputs.cache-hit != 'true'
@@ -129,7 +129,7 @@ jobs:
       - name: report a fetch that did not finish
         if: steps.corpora.outcome != 'success'
         run: |
-          echo "::warning title=Conformance corpora unavailable::The corpus fetch did not finish, so the conformance oracles did not run in this build. This is not a statement about the code under test. Re-run the job, or run 'make cius-oracles en16931-artefacts en16931-ubl en16931-genericode && make test' locally."
+          echo "::warning title=Conformance corpora unavailable::The corpus fetch did not finish, so the conformance oracles did not run in this build. This is not a statement about the code under test. Re-run the job, or run 'make cius-oracles en16931-artefacts en16931-ubl en16931-genericode facturx-schematron && make test' locally."
 
       - name: test against the corpora
         if: steps.corpora.outcome == 'success'
