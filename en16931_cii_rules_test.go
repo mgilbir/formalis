@@ -507,9 +507,12 @@ func ciiCodeAttrCases(t *testing.T) []ruleCase {
 func ciiAmountAttrCases(t *testing.T) []ruleCase {
 	t.Helper()
 	return []ruleCase{
-		{"CII-DT-031 a currency on the VAT total", mutate(t, validCII,
-			`<TaxTotalAmount>20.00</TaxTotalAmount>`, `<TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>`),
-			"CII-DT-031", false},
+		// The conforming case is the baseline fixture itself: validCII writes
+		// <ram:TaxTotalAmount currencyID="EUR">, which is what a conforming CII
+		// invoice does and what Factur-X's own data model requires of it. It used
+		// to be written here as a mutation, which stopped saying anything once the
+		// fixture carried the attribute.
+		{"CII-DT-031 a currency on the VAT total", validCII, "CII-DT-031", false},
 		{"CII-DT-031 a currency on the grand total", mutate(t, validCII,
 			`<GrandTotalAmount>120.00</GrandTotalAmount>`, `<GrandTotalAmount currencyID="EUR">120.00</GrandTotalAmount>`),
 			"CII-DT-031", true},
@@ -555,18 +558,18 @@ func ciiQuantityCases(t *testing.T) []ruleCase {
 func ciiTaxTypeAndDateCases(t *testing.T) []ruleCase {
 	t.Helper()
 	return []ruleCase{
-		{"CII-DT-037 a VAT tax group", mutate(t, validCII,
-			`<ApplicableTradeTax><CalculatedAmount>`, `<ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>`),
-			"CII-DT-037", false},
+		// As above: validCII now names its tax type, because every Factur-X profile
+		// requires exactly one ram:TypeCode on a ram:ApplicableTradeTax.
+		{"CII-DT-037 a VAT tax group", validCII, "CII-DT-037", false},
 		{"CII-DT-037 a non-VAT tax group", mutate(t, validCII,
-			`<ApplicableTradeTax><CalculatedAmount>`, `<ApplicableTradeTax><TypeCode>AAA</TypeCode><CalculatedAmount>`),
+			`<ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>`, `<ApplicableTradeTax><TypeCode>AAA</TypeCode><CalculatedAmount>`),
 			"CII-DT-037", true},
 
-		{"CII-DT-097 a format-102 date written YYYYMMDD", mutate(t, validCII,
-			`<DateTimeString>20240101</DateTimeString>`, `<DateTimeString format="102">20240101</DateTimeString>`),
-			"CII-DT-097", false},
+		// And again: validCII now declares format="102" on its issue date, which is
+		// what CEN's own examples do and what every Factur-X profile asserts.
+		{"CII-DT-097 a format-102 date written YYYYMMDD", validCII, "CII-DT-097", false},
 		{"CII-DT-097 a format-102 date written with separators", mutate(t, validCII,
-			`<DateTimeString>20240101</DateTimeString>`, `<DateTimeString format="102">2024-01-01</DateTimeString>`),
+			`<DateTimeString format="102">20240101</DateTimeString>`, `<DateTimeString format="102">2024-01-01</DateTimeString>`),
 			"CII-DT-097", true},
 	}
 }

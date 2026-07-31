@@ -11,14 +11,14 @@ import (
 // namespace prefixes, which the local-name parser reads directly.
 const validCII = `<CrossIndustryInvoice>
   <ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
-  <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime></ExchangedDocument>
+  <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime></ExchangedDocument>
   <SupplyChainTradeTransaction>
     <IncludedSupplyChainTradeLineItem>
       <AssociatedDocumentLineDocument><LineID>1</LineID></AssociatedDocumentLineDocument>
       <SpecifiedTradeProduct><Name>Widget</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
       <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
-      <SpecifiedLineTradeSettlement><ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>100.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
+      <SpecifiedLineTradeSettlement><ApplicableTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>100.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
     </IncludedSupplyChainTradeLineItem>
     <ApplicableHeaderTradeAgreement>
       <SellerTradeParty><Name>Seller Co</Name><PostalTradeAddress><CountryID>FR</CountryID></PostalTradeAddress><SpecifiedTaxRegistration><ID schemeID="VA">FR12345678</ID></SpecifiedTaxRegistration></SellerTradeParty>
@@ -26,11 +26,11 @@ const validCII = `<CrossIndustryInvoice>
     </ApplicableHeaderTradeAgreement>
     <ApplicableHeaderTradeSettlement>
       <InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>
-      <ApplicableTradeTax><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
+      <ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
       <SpecifiedTradeSettlementHeaderMonetarySummation>
         <LineTotalAmount>100.00</LineTotalAmount>
         <TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>
-        <TaxTotalAmount>20.00</TaxTotalAmount>
+        <TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>
         <GrandTotalAmount>120.00</GrandTotalAmount>
         <DuePayableAmount>120.00</DuePayableAmount>
       </SpecifiedTradeSettlementHeaderMonetarySummation>
@@ -64,7 +64,7 @@ func TestValidateFacturXInvoiceViolations(t *testing.T) {
 		{"not CII or UBL", `<Foo/>`, RuleRoot},
 		{"missing spec id", strings.Replace(validCII, "<ID>urn:cen.eu:en16931:2017</ID>", "", 1), "BR-01"},
 		{"missing invoice number", strings.Replace(validCII, "<ID>INV-1</ID>", "", 1), "BR-02"},
-		{"missing issue date", strings.Replace(validCII, "<IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime>", "", 1), "BR-03"},
+		{"missing issue date", strings.Replace(validCII, `<IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime>`, "", 1), "BR-03"},
 		{"missing type code", strings.Replace(validCII, "<TypeCode>380</TypeCode>", "", 1), "BR-04"},
 		{"missing currency", strings.Replace(validCII, "<InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>", "", 1), "BR-05"},
 		{"missing seller name", strings.Replace(validCII, "<Name>Seller Co</Name>", "", 1), "BR-06"},
@@ -78,7 +78,7 @@ func TestValidateFacturXInvoiceViolations(t *testing.T) {
 		{"vat breakdown no category", strings.Replace(validCII, "<BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode>", "<BasisAmount>100.00</BasisAmount>", 1), "BR-47"},
 		{"vat breakdown no rate", strings.Replace(validCII, "<BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent>", "<BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode>", 1), "BR-48"},
 		{"vat calc wrong", strings.Replace(validCII, "<CalculatedAmount>20.00</CalculatedAmount>", "<CalculatedAmount>99.00</CalculatedAmount>", 1), "BR-CO-17"},
-		{"vat total mismatch", strings.Replace(validCII, "<TaxTotalAmount>20.00</TaxTotalAmount>", "<TaxTotalAmount>25.00</TaxTotalAmount>", 1), "BR-CO-14"},
+		{"vat total mismatch", strings.Replace(validCII, `<TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>`, `<TaxTotalAmount currencyID="EUR">25.00</TaxTotalAmount>`, 1), "BR-CO-14"},
 		{"line sum mismatch", strings.Replace(validCII, "<LineTotalAmount>100.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", "<LineTotalAmount>77.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", 1), "BR-CO-13"},
 		{"zero rated with tax", strings.Replace(validCII, "<BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode>", "<BasisAmount>100.00</BasisAmount><CategoryCode>Z</CategoryCode>", 1), "BR-Z-09"},
 		{"standard with exemption reason", strings.Replace(validCII, "<BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode>", "<BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><ExemptionReason>oops</ExemptionReason>", 1), "BR-S-10"},
@@ -118,8 +118,8 @@ func TestValidateFacturXInvoiceViolations(t *testing.T) {
 // under a grouping line (1). The grouping line rolls up its children (60+40=100)
 // and carries no quantity/price; the summation line total is the top-level sum.
 const subLineCII = `<CrossIndustryInvoice>
-  <ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:factur-x.eu:1p0:extended</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
-  <ExchangedDocument><ID>INV-2</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime></ExchangedDocument>
+  <ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
+  <ExchangedDocument><ID>INV-2</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime></ExchangedDocument>
   <SupplyChainTradeTransaction>
     <IncludedSupplyChainTradeLineItem>
       <AssociatedDocumentLineDocument><LineID>1</LineID><LineStatusReasonCode>GROUP</LineStatusReasonCode></AssociatedDocumentLineDocument>
@@ -131,14 +131,14 @@ const subLineCII = `<CrossIndustryInvoice>
       <SpecifiedTradeProduct><Name>Child A</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>60.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
       <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
-      <SpecifiedLineTradeSettlement><ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>60.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
+      <SpecifiedLineTradeSettlement><ApplicableTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>60.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
     </IncludedSupplyChainTradeLineItem>
     <IncludedSupplyChainTradeLineItem>
       <AssociatedDocumentLineDocument><LineID>12</LineID><ParentLineID>1</ParentLineID><LineStatusReasonCode>DETAIL</LineStatusReasonCode></AssociatedDocumentLineDocument>
       <SpecifiedTradeProduct><Name>Child B</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>40.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
       <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
-      <SpecifiedLineTradeSettlement><ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>40.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
+      <SpecifiedLineTradeSettlement><ApplicableTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>40.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
     </IncludedSupplyChainTradeLineItem>
     <ApplicableHeaderTradeAgreement>
       <SellerTradeParty><Name>Seller Co</Name><PostalTradeAddress><CountryID>FR</CountryID></PostalTradeAddress><SpecifiedTaxRegistration><ID schemeID="VA">FR12345678</ID></SpecifiedTaxRegistration></SellerTradeParty>
@@ -146,11 +146,11 @@ const subLineCII = `<CrossIndustryInvoice>
     </ApplicableHeaderTradeAgreement>
     <ApplicableHeaderTradeSettlement>
       <InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>
-      <ApplicableTradeTax><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
+      <ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
       <SpecifiedTradeSettlementHeaderMonetarySummation>
         <LineTotalAmount>100.00</LineTotalAmount>
         <TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>
-        <TaxTotalAmount>20.00</TaxTotalAmount>
+        <TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>
         <GrandTotalAmount>120.00</GrandTotalAmount>
         <DuePayableAmount>120.00</DuePayableAmount>
       </SpecifiedTradeSettlementHeaderMonetarySummation>

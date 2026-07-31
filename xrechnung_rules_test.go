@@ -49,14 +49,14 @@ import (
 // half the rule set unexercised.
 const minimalXRechnungCII = `<CrossIndustryInvoice>
   <ExchangedDocumentContext><BusinessProcessSpecifiedDocumentContextParameter><ID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</ID></BusinessProcessSpecifiedDocumentContextParameter><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext>
-  <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime></ExchangedDocument>
+  <ExchangedDocument><ID>INV-1</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime></ExchangedDocument>
   <SupplyChainTradeTransaction>
     <IncludedSupplyChainTradeLineItem>
       <AssociatedDocumentLineDocument><LineID>1</LineID></AssociatedDocumentLineDocument>
       <SpecifiedTradeProduct><Name>Widget</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>100.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
       <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
-      <SpecifiedLineTradeSettlement><ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>100.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
+      <SpecifiedLineTradeSettlement><ApplicableTradeTax><TypeCode>VAT</TypeCode><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>100.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
     </IncludedSupplyChainTradeLineItem>
     <ApplicableHeaderTradeAgreement>
       <BuyerReference>04011000-12345-03</BuyerReference>
@@ -78,11 +78,11 @@ const minimalXRechnungCII = `<CrossIndustryInvoice>
       <InvoiceCurrencyCode>EUR</InvoiceCurrencyCode>
       <SpecifiedTradeSettlementPaymentMeans><TypeCode>58</TypeCode>
         <PayeePartyCreditorFinancialAccount><IBANID>DE75512108001245126199</IBANID></PayeePartyCreditorFinancialAccount></SpecifiedTradeSettlementPaymentMeans>
-      <ApplicableTradeTax><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
+      <ApplicableTradeTax><TypeCode>VAT</TypeCode><CalculatedAmount>20.00</CalculatedAmount><BasisAmount>100.00</BasisAmount><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax>
       <SpecifiedTradeSettlementHeaderMonetarySummation>
         <LineTotalAmount>100.00</LineTotalAmount>
         <TaxBasisTotalAmount>100.00</TaxBasisTotalAmount>
-        <TaxTotalAmount>20.00</TaxTotalAmount>
+        <TaxTotalAmount currencyID="EUR">20.00</TaxTotalAmount>
         <GrandTotalAmount>120.00</GrandTotalAmount>
         <DuePayableAmount>120.00</DuePayableAmount>
       </SpecifiedTradeSettlementHeaderMonetarySummation>
