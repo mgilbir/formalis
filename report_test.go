@@ -1011,7 +1011,10 @@ func TestOnlySeveritiesAnAuthorityPublishedAreEmittedAsWarnings(t *testing.T) {
 			}
 		}
 	}
-	if s.files > 0 {
+	// corpusFetched and not s.files > 0, for the reason corpus_test.go gives: the
+	// sweep's own count includes hand-written and committed documents and is
+	// therefore non-zero on a checkout that fetched nothing.
+	if corpusFetched() {
 		atLeast(t, "severity sweep corpus", s.files, minCorpusDocuments)
 	}
 }

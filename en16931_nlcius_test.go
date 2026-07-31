@@ -518,9 +518,6 @@ func TestNLCIUSRuleContextsAreReachable(t *testing.T) {
 	seen, files := ciusContextSweep(t, func(p *parsed, seen ruleContexts) {
 		validateNLCIUSRules(p, seen)
 	})
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
-	}
 	atLeast(t, "NLCIUS context sweep corpus", files, minCorpusDocuments)
 
 	const noCII = "the corpus holds no CII document declaring the NLCIUS customization identifier, and these " +
@@ -812,6 +809,7 @@ func TestNLCIUSEmptyElementIsReportedOutsideTheGate(t *testing.T) {
 // handful of documents, and a change that stopped emitting it would otherwise leave
 // every other NLCIUS assertion green.
 func TestNLCIUSEmptyElementFindingsAreEmptyElements(t *testing.T) {
+	skipWithoutCorpus(t)
 	docs, reported := 0, 0
 	perID := map[string]int{}
 	worst, worstFile := 0, ""
@@ -861,9 +859,6 @@ func TestNLCIUSEmptyElementFindingsAreEmptyElements(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if docs == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "empty-element sweep corpus", docs, minCorpusDocuments)
 	atLeast(t, "NLCIUS empty-element findings", reported, minNLCIUSEmptyElementFindings)

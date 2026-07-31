@@ -630,6 +630,7 @@ func TestFacturXRestatementContextsAreReachedInTheCorpus(t *testing.T) {
 // summations, and that is a correct answer to a question nobody asks it, but a
 // document these rules alone condemn would be one to look at.
 func TestFacturXRestatementsBreakNoDocumentOnTheirOwn(t *testing.T) {
+	skipWithoutCorpus(t)
 	ctx := context.Background()
 	restatement := map[string]bool{}
 	for _, rs := range facturXRestatementRules {
@@ -646,14 +647,19 @@ func TestFacturXRestatementsBreakNoDocumentOnTheirOwn(t *testing.T) {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
 			return nil
 		}
-		// testdata/facturx/extracted holds documents known to draw fatal
-		// findings — see its README, and #61 for what the corpus should assert
-		// about them. The count below requires every profile-declaring document
-		// to be Conformant(), which is a claim about a corpus believed clean; a
-		// corpus that also holds known-divergent documents has to say which is
-		// which. The forced-EXTENDED half of this sweep would read them happily,
-		// but it shares this walk.
-		if strings.Contains(filepath.ToSlash(p), "testdata/facturx/extracted/") {
+		// Shape 2 in corpus_test.go, and the only sweep that takes it. The count
+		// below requires every profile-declaring document to be Conformant(),
+		// which is a claim about a population believed conformant, and the six
+		// committed documents are in the tree precisely because four of them are
+		// not — that is what they are evidence of. A sweep asserting cleanliness
+		// over a corpus that deliberately holds known-divergent documents has to
+		// say which is which, and this is where it says it.
+		//
+		// They are not thereby unjudged: TestFacturXLeanTierSamplesDrawExactlyTheseFindings
+		// pins what each of them draws, per tier, in both directions. The
+		// forced-EXTENDED half of this sweep would read them happily, but it
+		// shares this walk.
+		if inCommittedCorpus(p) {
 			return nil
 		}
 		data, rerr := os.ReadFile(p)
@@ -700,9 +706,6 @@ func TestFacturXRestatementsBreakNoDocumentOnTheirOwn(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("%v", err)
-	}
-	if files == 0 {
-		t.Skip("no corpus present")
 	}
 	if haveExamples {
 		atLeast(t, "restatement sweep corpus", files, minCorpusDocuments)

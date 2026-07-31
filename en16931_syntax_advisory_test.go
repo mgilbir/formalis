@@ -665,7 +665,10 @@ func TestAdvisoryContextsAgreeWithTheHandWrittenGatherers(t *testing.T) {
 		}
 		return nil
 	})
-	if files > 0 {
+	// The table check above runs everywhere; the sweep is only evidence where the
+	// fetched corpus is, and the gate asks the fetch stamps rather than the walk's
+	// own count — see corpus_test.go on why a count cannot answer that any more.
+	if corpusFetched() {
 		atLeast(t, "advisory context cross-check corpus", files, minCorpusDocuments)
 	}
 	t.Logf("cross-checked %d context matchers against the hand-written gatherers over %d UBL documents",
@@ -687,6 +690,7 @@ func TestAdvisoryContextsAgreeWithTheHandWrittenGatherers(t *testing.T) {
 // number that has to be lowered is either a corpus that shrank or a fetch that
 // did not finish.
 func TestAdvisoryBindingsFireAcrossTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	advisory := advisoryRuleIDs()
 	ctx := context.Background()
 	seen := map[string]int{}
@@ -720,9 +724,6 @@ func TestAdvisoryBindingsFireAcrossTheCorpus(t *testing.T) {
 		}
 		return nil
 	})
-	if files == 0 {
-		t.Skip("no corpus present")
-	}
 	atLeast(t, "advisory sweep corpus", files, minCorpusDocuments)
 	atLeast(t, "distinct advisory binding rules seen to fire", len(seen), minAdvisoryRulesFiring)
 	atLeast(t, "advisory binding findings over the corpus", findings, minAdvisoryFindings)

@@ -294,6 +294,7 @@ func TestCIUSROUnevaluableAssertsAreDerivedFromTheArtefact(t *testing.T) {
 // There is no exception list, because there is nothing to except: every one of the
 // ninety is reached.
 func TestCIUSRORuleContextsAreReachable(t *testing.T) {
+	skipWithoutCorpus(t)
 	total := map[string]int{}
 	dynamicErrors := 0
 	files := 0
@@ -326,9 +327,6 @@ func TestCIUSRORuleContextsAreReachable(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "CIUS-RO context sweep corpus", files, minCorpusDocuments)
 
@@ -373,6 +371,7 @@ func TestCIUSRORuleContextsAreReachable(t *testing.T) {
 // limit documents genuinely exceed — BR-RO-L302, the 300-character cap on a free-text
 // note. The firing evidence for the other eighty-nine is in roBuiltFixtures.
 func TestCIUSRORulesFireAcrossTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	fired := map[string]int{}
 	findings, files := 0, 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, werr error) error {
@@ -399,9 +398,6 @@ func TestCIUSRORulesFireAcrossTheCorpus(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "CIUS-RO firing sweep corpus", files, minCorpusDocuments)
 	atLeast(t, "CIUS-RO generated rules firing over the corpus", len(fired), minCIUSRORulesFiring)

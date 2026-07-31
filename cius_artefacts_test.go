@@ -732,7 +732,10 @@ func TestCIUSFindingsStayInsideTheEvaluatedSet(t *testing.T) {
 			}
 		}
 	}
-	if s.files > 0 {
+	// corpusFetched and not s.files > 0: the sweep also reads hand-written
+	// documents and six committed ones, so its count is non-zero on a checkout
+	// with no corpus at all. See corpus_test.go.
+	if corpusFetched() {
 		atLeast(t, "CIUS artefact sweep corpus", s.files, minCorpusDocuments)
 	}
 }

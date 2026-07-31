@@ -906,6 +906,7 @@ func overrideSetFor(s Source) *ciusOverrides {
 // carries Reading. That is counted rather than asserted away, because it is the one
 // output difference a caller can see today.
 func TestConditionOverridesChangeNoCorpusVerdict(t *testing.T) {
+	skipWithoutCorpus(t)
 	files, changed, reworded := 0, 0, 0
 	var moved []string
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
@@ -941,9 +942,6 @@ func TestConditionOverridesChangeNoCorpusVerdict(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "condition-override corpus sweep", files, minCorpusDocuments)
 	if changed != 0 {

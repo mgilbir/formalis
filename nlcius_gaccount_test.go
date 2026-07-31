@@ -530,6 +530,7 @@ func TestNLCIUSGAccountFixtures(t *testing.T) {
 // the ten the extension ships: no document declares the conformant identifier, and
 // none carries a payment instruction whose identifier is the literal GACCOUNT.
 func TestGAccountAppliesToNothingElseInTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	files, inside := 0, 0
 	var strays []string
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, werr error) error {
@@ -557,9 +558,6 @@ func TestGAccountAppliesToNothingElseInTheCorpus(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "G-account gate sweep corpus", files, minCorpusDocuments)
 	sort.Strings(strays)

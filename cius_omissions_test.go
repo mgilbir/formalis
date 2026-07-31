@@ -541,6 +541,7 @@ func ccSameSet(t *testing.T, what string, got, want []string) {
 // The numbers are floors on the corpus, not equalities: a corpus that grows makes
 // them grow. They are here to make a change in either direction a red build.
 func TestOmittedCENIdentifiersUnderValidateCIUSPT(t *testing.T) {
+	skipWithoutCorpus(t)
 	dropped, postdates := map[string]bool{}, map[string]bool{}
 	for _, o := range ciusCENCopyOmissions {
 		if o.source != SourceCIUSPT || !o.classified {
@@ -595,9 +596,6 @@ func TestOmittedCENIdentifiersUnderValidateCIUSPT(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "omitted-identifier corpus sweep", files, minCorpusDocuments)
 	atLeast(t, "findings under identifiers AT/eSPap dropped", nDropped, minCIUSPTDroppedFindings)
@@ -803,6 +801,7 @@ var ptReplacements = []ptReplacement{
 // a zero would mean the corpus no longer witnesses the difference and this test had
 // quietly stopped being evidence for anything.
 func TestATsArithmeticReplacementsAreWeakerThanCENs(t *testing.T) {
+	skipWithoutCorpus(t)
 	files, cenOnly, both := 0, 0, 0
 	perRule := map[string]int{}
 	docs := map[string]bool{}
@@ -846,9 +845,6 @@ func TestATsArithmeticReplacementsAreWeakerThanCENs(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "arithmetic-replacement corpus sweep", files, minCorpusDocuments)
 	if cenOnly == 0 {

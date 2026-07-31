@@ -321,6 +321,7 @@ func TestRoutingAndArbitrationAgreeOnHandWrittenDocuments(t *testing.T) {
 // EN 16931 parser accepts, which is what ValidateCIUS can be asked to route,
 // rather than every document whose corpus publishes one format.
 func TestRoutingAndArbitrationAgreeOverTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	checked, disagreed := 0, 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
@@ -355,9 +356,6 @@ func TestRoutingAndArbitrationAgreeOverTheCorpus(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if checked == 0 {
-		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
 	}
 	// The same ratchet the other corpus sweeps carry: a test that agreed with
 	// three files would agree with anything.

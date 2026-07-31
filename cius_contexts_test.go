@@ -42,10 +42,16 @@ import (
 // parseEN16931 accepts, and returns how many context nodes each identifier was asked
 // about, together with the number of files read.
 //
-// It returns 0 files when there is no corpus, which is the caller's cue to skip: a
-// guard that read nothing must say so rather than report that it found no gap.
+// It skips the calling test when the fetched corpus is absent, rather than
+// returning zero for the caller to notice: a guard that read nothing must say so
+// rather than report that it found no gap, and the file count stopped being able
+// to tell those apart when testdata gained tracked documents (see corpus_test.go).
+// The six committed Factur-X documents are part of the swept population — shape 1
+// there — because a context count only ever gets stronger for another real
+// invoice.
 func ciusContextSweep(t *testing.T, body func(*parsed, ruleContexts)) (ruleContexts, int) {
 	t.Helper()
+	skipWithoutCorpus(t)
 	seen, files := ruleContexts{}, 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil || d.IsDir() || filepath.Ext(p) != ".xml" {

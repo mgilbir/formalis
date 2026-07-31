@@ -1,6 +1,11 @@
 package formalis
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 // The corpus ratchets, in one place.
 //
@@ -414,4 +419,117 @@ func atLeast(t *testing.T, what string, got, want int) {
 			"`make clean-cius-oracles cius-oracles`, and if upstream really did shrink, lower the "+
 			"constant in corpus_test.go deliberately", what, got, want, got)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Which population a sweep is sweeping
+// ---------------------------------------------------------------------------
+
+// testdata holds two populations that arrive by different routes, and a sweep
+// over it has to say which one it means.
+//
+// The *fetched* corpus is everything `make cius-oracles`, `make en16931-artefacts`
+// and `make en16931-ubl` pull over the network, about 1,800 documents. None of it
+// is in git — every directory under testdata is gitignored — so a clean checkout
+// has none of it, which is why the oracles over it skip rather than fail, and why
+// CI runs them in a second job that fetches first.
+//
+// The *committed* corpus is committedCorpusDir: six Factur-X invoices that exist
+// only inside PDF/A-3 containers and that no fetch target can therefore produce,
+// because extracting the attachment needs a PDF parser this package deliberately
+// does not depend on. They are tracked, so they are present in every checkout,
+// including CI's corpus-less build-test job. Four of the six draw fatal findings,
+// on purpose: they are the evidence that FNFE's published samples depart from
+// FNFE's published data model at the leanest tiers (#61).
+//
+// # The defect this fixes
+//
+// Until those six landed the distinction did not have to exist, and every
+// whole-corpus sweep gated on the count its own walk produced:
+//
+//	if files == 0 { t.Skip("no corpus present") }
+//	atLeast(t, "advisory sweep corpus", files, minCorpusDocuments)
+//
+// Committing six documents made that gate answer a question nobody was asking. A
+// corpus-less checkout no longer finds zero files, it finds six, so twenty sweeps
+// stopped skipping, ran against six documents and failed their ratchets —
+// "advisory sweep corpus: 6, want at least 1690". The ratchets were right; the
+// gate in front of them conflated "the fetched corpus is absent" with "the walk
+// found nothing", which were the same fact only for as long as nothing under
+// testdata was tracked.
+//
+// A file count cannot tell them apart, and it never could: an interrupted fetch
+// also leaves some files. corpusFetched asks the Makefile's own stamps instead,
+// which state directly whether a fetch target ran to completion.
+//
+// # The three shapes a sweep may take
+//
+// Splitting the populations makes the second question — whether the committed
+// six are in the swept population — one a sweep answers explicitly rather than by
+// accident of what its walk happens to find:
+//
+//  1. skipWithoutCorpus, then walk all of testdata. The six join the population.
+//     They are real invoices from real producers, and a sweep asking "does this
+//     rule ever fire", "do the scanner and the tree agree about this document",
+//     "does one source claim an identifier another publishes" is strictly
+//     stronger for having them. This is the default and what every sweep here
+//     does but one.
+//
+//  2. skipWithoutCorpus, then walk all of testdata except inCommittedCorpus. For
+//     a sweep whose assertion is "every document in this population is clean",
+//     which is a claim about a corpus believed conformant and is false of these
+//     six by construction. TestFacturXRestatementsBreakNoDocumentOnTheirOwn is
+//     the only one, and it says so where it excludes them.
+//
+//  3. No skip at all, and the committed six *are* the population:
+//     TestFacturXLeanTierSamplesDrawExactlyTheseFindings, which pins what each
+//     tier draws so that a change in either direction is a red build. It needs no
+//     corpus and therefore runs in the corpus-less job, which is where a table
+//     somebody emptied would otherwise go unnoticed.
+const committedCorpusDir = "testdata/facturx/extracted"
+
+// corpusFetchStamps are the stamps whose three targets between them produce the
+// documents minCorpusDocuments counts. The Makefile writes each only after its
+// recipe finishes, under `set -e -u -o pipefail` with `curl -f`, so a stamp on
+// disk is the fetch saying it completed rather than an inference from what landed.
+var corpusFetchStamps = []string{
+	filepath.Join("testdata", ".cius-oracles.ok"),
+	filepath.Join("testdata", "en16931-artefacts", ".ok"),
+	filepath.Join("testdata", "en16931-ubl", ".ok"),
+}
+
+// corpusFetched reports whether the fetched corpus is on disk.
+//
+// Any stamp rather than all of them, and the distinction matters. "All" would
+// turn a checkout that ran two of the three targets into a *skip*, which is
+// exactly the silent-shrinkage failure C8 and C26 are about: the sweep would
+// report nothing while a third of its evidence was missing. "Any" keeps that case
+// where it has always been — the sweep runs, counts what is there, and atLeast
+// reports it as a truncated corpus, which is a red build naming the shortfall.
+//
+// So this gate only ever answers "was any of it fetched at all", and every
+// judgement about *how much* arrived stays with the ratchets.
+func corpusFetched() bool {
+	for _, s := range corpusFetchStamps {
+		if _, err := os.Stat(s); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// skipWithoutCorpus skips t unless the fetched corpus is on disk. Call it before
+// the walk: the six committed documents would otherwise make the walk look
+// productive on a checkout that has no corpus at all.
+func skipWithoutCorpus(t *testing.T) {
+	t.Helper()
+	if !corpusFetched() {
+		t.Skip("no fetched corpus present (make cius-oracles en16931-artefacts en16931-ubl)")
+	}
+}
+
+// inCommittedCorpus reports whether p is one of the tracked documents rather than
+// a fetched one. Callers are shape 2 above, and there is one.
+func inCommittedCorpus(p string) bool {
+	return strings.HasPrefix(filepath.ToSlash(p), committedCorpusDir+"/")
 }
