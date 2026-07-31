@@ -83,9 +83,10 @@ import (
 //
 //	BR-FXEXT-CO-11 — Σ document-level allowances. FNFE is CEN's with a
 //	0,01 × count tolerance, so against CEN's rule it can only be silent where
-//	CEN's fires. Against *this package* it adds coverage outright, because
-//	en16931_model.go skips BR-CO-11 and BR-CO-12 entirely at ProfileExtended.
-//	Nothing checked BT-107 against BG-20 on an EXTENDED document before this file.
+//	CEN's fires, and it is a rule this package's own BR-CO-11 used to be skipped
+//	for: en16931_model.go exempted BR-CO-11 and BR-CO-12 at ProfileExtended
+//	outright until C45 removed that gate. Both are evaluated at every profile now,
+//	and the CEN half of this pair yields to FNFE's tolerance.
 //
 //	BR-FXEXT-CO-12 — Σ document-level charges. FNFE adds the logistics service
 //	charges (BT-X-272) EXTENDED introduces to the sum, and a tolerance. Fires
@@ -94,8 +95,10 @@ import (
 //	rule and fails FNFE's. Silent where CEN's fires: yes, and this is the
 //	interesting direction — a conforming Factur-X EXTENDED invoice that folds its
 //	logistics charges into BT-108 is reported by CEN's BR-CO-12 and accepted by
-//	FNFE. This package does not currently make that report, because BR-CO-12 is
-//	off at EXTENDED, so the divergence is latent rather than live.
+//	FNFE. Two of FNFE's own 59 examples are in exactly that position, and once C45
+//	removed the profile gate the divergence stopped being latent: it is
+//	facturXAuthorityParity that keeps this package's verdict on them equal to
+//	valitool's.
 //
 //	BR-FXEXT-CO-13 — BT-109 against the line, allowance and charge sums. CEN
 //	computes it from the three *totals* BT-106/107/108; FNFE computes it from the
@@ -114,14 +117,24 @@ import (
 //	both, so the added coverage is against CEN's artefact rather than against this
 //	package.
 //
+//	Silent where CEN fires: yes, and PR 33 recorded "no" here, which was wrong.
+//	FNFE's first disjunct is not CEN's equality but
+//	`$abs le $maxTolerance and $nbTaxTotalAmountInvoiceCurrency eq 1`, where
+//	$maxTolerance is 0,01 × (DETAIL lines + document allowances + document and
+//	logistics charges) — read back out of FACTUR-X_EXTENDED.sch rather than from
+//	the earlier summary. CEN's BR-CO-15 is exact and this package's is exact to
+//	half a cent, so a twelve-line invoice one cent out fails here and passes every
+//	Factur-X processor. It carries the weaker verdict for that reason.
+//
 //	BR-FXEXT-CO-16 — BT-115. FNFE adds Σ BT-179, the charges collected on behalf
 //	of a third party (ram:SpecifiedFinancialAdjustment) EXTENDED introduces.
 //	Fires where CEN's does not: yes — an invoice with a third-party charge whose
 //	BT-115 ignores it satisfies CEN and fails FNFE. Silent where CEN's fires:
 //	yes, and this one is live. A conforming EXTENDED invoice that adds BT-179
-//	into BT-115 is reported by this package under BR-CO-16 and accepted by every
-//	Factur-X processor. That is a false positive against the authority, it is not
-//	introduced here, and it is recorded in Coverage(SourceFacturX).
+//	into BT-115 was reported by this package under BR-CO-16 and accepted by every
+//	Factur-X processor — C46, recorded by PR 33 and not acted on. It is acted on
+//	now: facturXAuthorityParity drops the BR-CO-16 finding on the Factur-X path
+//	when BR-FXEXT-CO-16 holds.
 //
 //	BR-FXEXT-{AE,E,G,IC,AF,AG,O,S,Z}-08b — nine VAT-category taxable-amount
 //	summations, and BR-FXEXT-S-09b, the category-S tax amount. Each is FNFE's two
@@ -142,17 +155,20 @@ import (
 //	charge passes CEN and fails FNFE; two AE breakdowns at different rates are one
 //	sum to CEN and two to FNFE.
 //
-//	And against *this package* they add more than that, because
-//	en16931_vat.go's BR-{fam}-08 is skipped outright on any document carrying a
-//	sub-line structure (hasSubLines), on any document where a line or document
-//	allowance lacks a category code, and on any document whose BG-20/21 entries do
-//	not account for BT-107/BT-108. An EXTENDED invoice with sub-lines — the shape
-//	these rules exist for — had no VAT taxable-amount check at all before this
-//	file.
+//	And against *this package* they used to add more than that, because
+//	en16931_vat.go's BR-{fam}-08 was skipped outright on any document carrying a
+//	sub-line structure (the hasSubLines gate C45 named), so an EXTENDED invoice
+//	with sub-lines — the shape these rules exist for — had no VAT taxable-amount
+//	check at all. That gate is gone; the sums now exclude the sub-lines whose
+//	amounts their parents roll up, which is what the gate was reaching for. Two
+//	preconditions remain and are properties of the document rather than of its
+//	profile: every line and document allowance/charge must carry a category, and
+//	BT-107/BT-108 must be accounted for by the BG-20/21 entries.
 //
 //	Silent where CEN fires: yes, for the same four axes read the other way, and
-//	the sub-line one is not hypothetical. A conforming EXTENDED invoice whose
-//	GROUP lines carry BT-131 has a CEN sum that counts each amount twice.
+//	the line-set one is not hypothetical. A GROUP line with no children carries
+//	BT-131, has no parent to be rolled into, and so is an operand of this package's
+//	sum and not of FNFE's.
 //
 //	BR-FXEXT-G-08 — the 51st identifier, and the only one outside EXTENDED. FNFE
 //	publishes it in FACTUR-X_MINIMUM.sch beside CEN's own BR-G-08, so the MINIMUM
@@ -163,7 +179,7 @@ import (
 //	breakdown on a non-VAT tax is reached by FNFE's rule and not by CEN's — one
 //	more way it fires where CEN cannot.
 //
-// # Duplicate reporting
+// # Duplicate reporting, and the one place it is not kept
 //
 // Both rules of each pair fire on a document that breaks both, so a caller
 // validating an EXTENDED invoice with a bad category-S base gets BR-S-08 under
@@ -180,6 +196,15 @@ import (
 // caller who wants exactly FNFE's verdict filters on it. This is the reasoning
 // PR 20 recorded for UBL-SR-07 duplicating BR-55, with the difference stated
 // rather than glossed: there, CEN's own reference validator prints both.
+//
+// The exception is the direction that changes a verdict rather than a list. Where
+// FNFE's restatement is *satisfied* and CEN's original fires, keeping the CEN
+// finding makes this package refuse a document Factur-X accepts, and that is not
+// a cosmetic difference in identifiers — it is the C29 defect. So on the
+// Factur-X path, and there only, a CEN finding is dropped when the weaker rule
+// that replaced it holds. facturXAuthorityParity implements it and argues the
+// boundaries; the "silent where CEN fires" verdict recorded per rule below is
+// what decides which identifiers it covers.
 //
 // # What is not reported
 //
@@ -215,6 +240,24 @@ type facturXRestatement struct {
 	id      string
 	cen     string
 	profile Profile
+	// weaker records that FNFE's reading can be *silent* where CEN's original
+	// fires: that there exists a document CEN's rule reports and a Factur-X
+	// processor accepts. It is the direction that matters for a verdict, because a
+	// document the authority accepts must not draw a fatal finding here (C29), and
+	// facturXAuthorityParity is what acts on it.
+	//
+	// It is per rule and argued per rule in the file comment above. 21 of the 23
+	// EXTENDED restatements carry it. The two that do not are BR-FXEXT-BR-38 and
+	// BR-FXEXT-BR-44, whose context and test are CEN's character for character —
+	// (../ram:Reason) or (../ram:ReasonCode) on the same context node — so there is
+	// no document one reports and the other does not, and suppressing CEN's half
+	// there would be churning identifiers for a duplicate that costs nothing.
+	//
+	// MINIMUM's BR-FXEXT-G-08 does not carry it either, and for a different
+	// reason: FACTUR-X_MINIMUM.sch publishes it *beside* CEN's BR-G-08 rather than
+	// in place of it, so a Factur-X processor at MINIMUM reports both readings and
+	// there is no divergence to close.
+	weaker bool
 }
 
 // facturXRestatementRules is the 24, in the order the rule bodies below report
@@ -222,29 +265,29 @@ type facturXRestatement struct {
 // restatements are implemented" is one list rather than a grep for add() calls —
 // the arrangement facturXExtensionRules already uses.
 var facturXRestatementRules = []facturXRestatement{
-	{id: "BR-FXEXT-BR-22", cen: "BR-22", profile: ProfileExtended},
-	{id: "BR-FXEXT-BR-23", cen: "BR-23", profile: ProfileExtended},
-	{id: "BR-FXEXT-BR-24", cen: "BR-24", profile: ProfileExtended},
-	{id: "BR-FXEXT-BR-26", cen: "BR-26", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-04", cen: "BR-CO-04", profile: ProfileExtended},
+	{id: "BR-FXEXT-BR-22", cen: "BR-22", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-BR-23", cen: "BR-23", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-BR-24", cen: "BR-24", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-BR-26", cen: "BR-26", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-CO-04", cen: "BR-CO-04", profile: ProfileExtended, weaker: true},
 	{id: "BR-FXEXT-BR-38", cen: "BR-38", profile: ProfileExtended},
 	{id: "BR-FXEXT-BR-44", cen: "BR-44", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-10", cen: "BR-CO-10", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-11", cen: "BR-CO-11", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-12", cen: "BR-CO-12", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-13", cen: "BR-CO-13", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-15", cen: "BR-CO-15", profile: ProfileExtended},
-	{id: "BR-FXEXT-CO-16", cen: "BR-CO-16", profile: ProfileExtended},
-	{id: "BR-FXEXT-AE-08b", cen: "BR-AE-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-E-08b", cen: "BR-E-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-G-08b", cen: "BR-G-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-IC-08b", cen: "BR-IC-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-AF-08b", cen: "BR-AF-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-AG-08b", cen: "BR-AG-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-O-08b", cen: "BR-O-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-S08b", cen: "BR-S-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-Z-08b", cen: "BR-Z-08", profile: ProfileExtended},
-	{id: "BR-FXEXT-S-09b", cen: "BR-S-09", profile: ProfileExtended},
+	{id: "BR-FXEXT-CO-10", cen: "BR-CO-10", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-CO-11", cen: "BR-CO-11", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-CO-12", cen: "BR-CO-12", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-CO-13", cen: "BR-CO-13", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-CO-15", cen: "BR-CO-15", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-CO-16", cen: "BR-CO-16", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-AE-08b", cen: "BR-AE-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-E-08b", cen: "BR-E-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-G-08b", cen: "BR-G-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-IC-08b", cen: "BR-IC-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-AF-08b", cen: "BR-AF-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-AG-08b", cen: "BR-AG-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-O-08b", cen: "BR-O-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-S08b", cen: "BR-S-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-Z-08b", cen: "BR-Z-08", profile: ProfileExtended, weaker: true},
+	{id: "BR-FXEXT-S-09b", cen: "BR-S-09", profile: ProfileExtended, weaker: true},
 	{id: "BR-FXEXT-G-08", cen: "BR-G-08", profile: ProfileMinimum},
 }
 
@@ -1067,6 +1110,119 @@ func facturXCO15Operands(d *facturXDocument, s *ciiNode) int {
 	n += len(facturXIndicatorNodes(s.all("SpecifiedTradeAllowanceCharge"), "true"))
 	n += len(s.all("SpecifiedLogisticsServiceCharge"))
 	return n
+}
+
+// facturXSuperseded is, per profile, the CEN identifier each weaker restatement
+// stands in front of: the map facturXAuthorityParity consults.
+//
+// It is derived from facturXRestatementRules rather than written out, so a rule
+// whose weaker verdict changes cannot leave a stale copy behind, and
+// TestFacturXSupersessionMatchesTheOmissionTable checks every entry against
+// facturXCENOmissions — a CEN identifier may only be superseded here if the
+// profile's Schematron actually drops it.
+var facturXSuperseded = func() map[Profile]map[string]string {
+	out := map[Profile]map[string]string{}
+	for _, rs := range facturXRestatementRules {
+		if !rs.weaker {
+			continue
+		}
+		if out[rs.profile] == nil {
+			out[rs.profile] = map[string]string{}
+		}
+		out[rs.profile][rs.cen] = rs.id
+	}
+	return out
+}()
+
+// facturXAuthorityParity drops a CEN finding that the profile's own authority
+// would not have made.
+//
+// # What it does
+//
+// For a document being validated *as* Factur-X at a profile whose Schematron
+// drops a CEN identifier and puts a weaker restatement in its place, a finding
+// under CEN's identifier is dropped when the restatement that replaced it is
+// satisfied. Both are kept when both fire.
+//
+// # Why
+//
+// Because otherwise this package refuses invoices Factur-X accepts, and that is
+// a defect of the same kind as reporting the wrong rule. C29 is the precedent: it
+// found seven XRechnung rules emitted fatal that KoSIT flags advisory, so the
+// package rejected German invoices Germany accepts, and no false-positive oracle
+// could see it because the documents in question genuinely depart from a rule —
+// just not from one their authority enforces.
+//
+// It is live here, not hypothetical. testdata/facturx/examples/X11_01_Kostenrechnung.xml
+// and X19_01_Warenrechnung.xml carry a BT-108 that folds in a
+// ram:SpecifiedLogisticsServiceCharge; FNFE's BR-FXEXT-CO-12 adds that charge to
+// the sum and passes them — valitool's report beside each says
+// isValidBusinessRules=true — and CEN's BR-CO-12, which has never heard of
+// BT-X-272, does not. The same shape is what C46 records for BR-CO-16 and BT-179.
+//
+// # Why per rule and not wholesale
+//
+// PR 33 kept both identifiers firing deliberately: this package reports the
+// *union* of CEN's rule set and FNFE's, because 18 of the 41 identifiers EXTENDED
+// drops have no replacement at all and dropping those would be 18 false
+// negatives; and having taken that, suppressing CEN's half everywhere a
+// replacement exists would make one defect report under CEN's identifier or
+// FNFE's depending on which of the 41 a document broke.
+//
+// That argument holds for a document that fails either way, and it is untouched
+// here: when both rules fire, both findings stand and a caller filtering on
+// Source still gets exactly FNFE's list. What it does not survive is a
+// pass/fail divergence, and this is the narrowest condition that removes one —
+// the CEN half goes only when the authority's own reading of that same rule is
+// satisfied, on a document that authority governs, at a profile where that
+// authority replaced the rule.
+//
+// # What it deliberately does not do
+//
+//   - It does not run for BR-38 or BR-44, whose restatements are CEN's rule
+//     character for character, so there is no document to diverge on.
+//   - It does not run at MINIMUM, whose one restatement FNFE publishes beside
+//     CEN's rule rather than in place of it.
+//   - It does not run for a UBL document, at any profile. Factur-X publishes no
+//     UBL binding, so no restatement was evaluated and there is no authority
+//     reading to defer to; without the root test every CEN identifier in the
+//     table would be dropped from a UBL invoice validated at EXTENDED, which
+//     would be 21 false negatives for a syntax the authority says nothing about.
+//   - It does not run when the run stopped. A restatement that was never reached
+//     is not a restatement that was satisfied, and a budget trip must not be able
+//     to turn a fatal finding into silence.
+//   - It changes nothing under ValidateEN16931, which is CEN's own verdict on the
+//     document and is documented as being exactly that: a caller who wants to
+//     know what a CEN reference validator says about a Factur-X EXTENDED invoice
+//     still gets it, findings included.
+func facturXAuthorityParity(r *run, p *parsed, profile Profile, out []Violation) []Violation {
+	if p == nil || p.root == nil || p.root.name != "CrossIndustryInvoice" {
+		return out
+	}
+	superseded := facturXSuperseded[profile]
+	if len(superseded) == 0 || r.stopped() {
+		return out
+	}
+	var fired map[string]bool
+	for _, v := range out {
+		if v.Source != SourceFacturX {
+			continue
+		}
+		if fired == nil {
+			fired = map[string]bool{}
+		}
+		fired[v.Rule] = true
+	}
+	kept := out[:0]
+	for _, v := range out {
+		if v.Source == SourceEN16931 {
+			if id, ok := superseded[v.Rule]; ok && !fired[id] {
+				continue
+			}
+		}
+		kept = append(kept, v)
+	}
+	return kept
 }
 
 // facturXCO16 is BR-FXEXT-CO-16: BT-115 = BT-112 - BT-113 + BT-114 + Σ BT-179,

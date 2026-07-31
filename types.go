@@ -176,7 +176,9 @@ import (
 // rules that are Factur-X's own — nine that are new ground and 24 that restate a
 // CEN identifier EXTENDED drops — while MINIMUM brings in one more, BR-FXEXT-G-08.
 // Those are the second way the named rule sets differ between tiers, alongside
-// BR-CO-11 and BR-CO-12 above, and
+// BR-CO-11 and BR-CO-12 above; the third is that 21 of those 24 restatements
+// *supersede* the CEN identifier they restate, so EXTENDED can be silent on a CEN
+// rule whose Factur-X replacement is satisfied.
 // TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes pins that the
 // list is exhaustive. See Validate, SourceFacturX and facturx_restatements.go.
 //

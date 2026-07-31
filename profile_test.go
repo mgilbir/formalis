@@ -301,7 +301,14 @@ func TestBasicEN16931AndExtendedDifferOnlyInTheRulesEXTENDEDPublishes(t *testing
 					continue
 				}
 				if p == ProfileExtended && (rule == "BR-CO-11" || rule == "BR-CO-12") {
-					continue // the one documented difference
+					continue // the profile gate C45 names, removed in its own change
+				}
+				// A CEN identifier this tier's Schematron drops, whose replacement
+				// is satisfied on this document, yields to the authority that
+				// governs it. Anything else going quiet is a rule that stopped
+				// firing.
+				if id := facturXSuperseded[p][rule]; id != "" && !got[id] {
+					continue
 				}
 				t.Errorf("%s: profile %q is silent on %s, which EN 16931 reports", name, string(p), rule)
 			}
