@@ -342,6 +342,13 @@ const (
 	// nothing else, which is a weaker position and is why this number is logged
 	// beside the rules rather than only asserted.
 	minFacturXContextsReached = 6
+	// And the same measure over the 24 fatal restatements. It is higher than the
+	// figure above because these rules sit on the shapes every invoice has — the
+	// line's BG-25 group, the monetary summation, the VAT breakdown — rather than
+	// on the extension terms only some documents carry. See
+	// TestFacturXRestatementContextsAreReachedInTheCorpus for the rules the corpus
+	// does not reach and why.
+	minFacturXRestatementContexts = 16
 )
 
 // minFacturXRules is the per-profile floor on the Factur-X Schematrons, in

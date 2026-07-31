@@ -72,7 +72,8 @@ import (
 //     condition and the wording — Factur-X quotes them, which
 //     TestFacturXQuotesCENsConditionVerbatim checks assertion by assertion;
 //   - the nine BR-FXEXT-* rules that are Factur-X's own new ground, reported
-//     under SourceFacturX;
+//     under SourceFacturX, and the 24 that restate a CEN identifier the profile
+//     drops, which facturx_restatements.go evaluates and argues rule by rule;
 //   - the per-profile data model, all 2,159 assertions of it, generated from the
 //     five Schematrons and the five code databases FNFE ships beside them by
 //     internal/gen/facturx, and evaluated by facturx_datamodel.go. Not one of
@@ -80,33 +81,43 @@ import (
 //     this package mints — FX-DM-<PROFILE>-<NNNN> — which facturx_datamodel.go
 //     documents, along with what that key is and is not worth.
 //
-// Coverage(SourceFacturX) is what is left, and the data model landing means it is
-// no longer the largest thing in it: three data-model assertions FNFE published
-// that contradict their own context, which no processor can report, and the 42
-// BR-FXEXT-* restatements the next section argues. Report.Conformant is still
-// false for a Validate call, and it is that second entry that now makes it so.
+// Coverage(SourceFacturX) is what is left, and none of it is fatal and evaluable:
+// CII-SR-464, which FNFE rewrote into a tautology; three data-model assertions
+// FNFE published that contradict their own context; one OpenPEPPOL rule FNFE
+// merges in; and the eighteen -08ini/-08rev readings FNFE flags warning. So
+// Report.Conformant is true again for a clean document under a Validate call, and
+// Report.Complete is false on an advisory gap, which is what those two methods are
+// for.
 //
-// # Which BR-FXEXT-* are here, and why the other 42 are not
+// # Which BR-FXEXT-* are here, and which are in facturx_restatements.go
 //
 // EXTENDED publishes 50 BR-FXEXT-* identifiers and MINIMUM one more, 51 in all.
-// They split cleanly in two, and the split is the reason this file implements a
-// subset rather than an arbitrary sample:
+// They split cleanly in two, and the split is why they are implemented in two
+// files rather than one:
 //
 //   - 42 are restatements of CEN identifiers the EXTENDED profile drops.
 //     EXTENDED omits 41 of the identifiers the EN 16931 profile publishes —
 //     BR-22/23/24/26/38/44, BR-CO-04/10/11/12/13/15/16, BR-S-08/09, BR-AE-08,
-//     BR-E-08, BR-G-08, BR-IC-08, BR-Z-08 and the rest — and puts back a looser
-//     variant of most of them, one that carves out the sub-line structure
-//     (LineStatusReasonCode = DETAIL / GROUP) EXTENDED adds. BR-FXEXT-BR-22 is
-//     BR-22 restricted to lines whose subtype is DETAIL or absent.
+//     BR-E-08, BR-G-08, BR-IC-08, BR-Z-08 and the rest — and puts back a variant
+//     of most of them, usually one that carves out the sub-line structure
+//     (LineStatusReasonCode = DETAIL / GROUP) or the third-party and logistics
+//     charge amounts EXTENDED adds. BR-FXEXT-BR-22 is BR-22 restricted to lines
+//     whose subtype is DETAIL or absent.
 //
-//     This package keeps CEN's stricter original and does not evaluate the
-//     replacement. That follows the decision recorded for CIUS-PT, whose copy of
-//     CEN's Schematron omits 192 identifiers this package still reports: an
-//     authority's omission of a CEN identifier is recorded, not acted on, because
-//     the alternative is a false negative wherever the replacement is looser and
-//     there is no replacement at all. Coverage(SourceFacturX) names them, and
-//     facturXCENOmissions records the omission itself.
+//     The 24 of those FNFE leaves unflagged are evaluated in
+//     facturx_restatements.go, which states for each what CEN asserts, what FNFE
+//     asserts, and in which direction the two differ — because "the restatement
+//     is looser" turned out to be true of fewer than half of them. The other 18
+//     are the -08ini/-08rev pair of each VAT category, which FNFE flags warning
+//     and Coverage(SourceFacturX) names.
+//
+//     CEN's original is still evaluated for all 41, which is a separate decision
+//     and is recorded in facturXCENOmissions: an authority's omission of a CEN
+//     identifier is recorded, not acted on, because 18 of the 41 have no
+//     replacement at all and dropping them would be 18 false negatives. The
+//     consequence is that both identifiers report on a document that breaks both;
+//     facturx_restatements.go argues why that is right and Source is what
+//     separates them.
 //
 //   - 9 are Factur-X's own new ground — the BT-X-* extension terms, the sub-line
 //     structure, the date format qualifier 205 CEN's binding never had a rule for.
@@ -116,8 +127,10 @@ import (
 //
 // Factur-X flags 21 of its assertions warning and leaves the rest unflagged, so
 // within this artefact the absence of a flag is evidence rather than a default:
-// an unflagged BR-FXEXT-* rule is fatal, and the two that carry flag="warning"
-// among the nine implemented here — BR-FXEXT-04 — are warnings.
+// an unflagged BR-FXEXT-* rule is fatal, and the one that carries flag="warning"
+// among the nine implemented here — BR-FXEXT-04 — is a warning. The same reading
+// is what makes the 24 restatements fatal, and it is what leaves the eighteen
+// -08ini/-08rev out of them.
 //
 // The CEN-minted assertions are different, and they are reported at CEN's flag,
 // not at Factur-X's absent one. CII-SR-463 and CII-DT-097 are fatal in
@@ -394,6 +407,12 @@ func validateFacturXRules(r *run, p *parsed, profile Profile) []Violation {
 		return out
 	}
 	out = append(out, validateFacturXExtensionRules(p, profile, nil)...)
+	if r.stopped() {
+		return out
+	}
+	// And the 24 fatal BR-FXEXT-* restatements of a CEN identifier the profile
+	// drops, which facturx_restatements.go argues rule by rule.
+	out = append(out, validateFacturXRestatements(r, p, profile, nil)...)
 	if r.stopped() {
 		return out
 	}

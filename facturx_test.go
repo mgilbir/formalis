@@ -414,6 +414,9 @@ func TestFacturXExtensionRulesMatchTheArtefact(t *testing.T) {
 	for _, id := range facturXExtensionRules {
 		implemented[id] = true
 	}
+	for _, rs := range facturXRestatementRules {
+		implemented[rs.id] = true
+	}
 	restatement := map[string]string{}
 	for _, o := range facturXCENOmissions {
 		if o.replacedBy != "" {
@@ -461,16 +464,18 @@ func TestFacturXExtensionRulesMatchTheArtefact(t *testing.T) {
 			t.Errorf("facturXExtensionRules names %s and no Factur-X Schematron publishes it", id)
 		}
 	}
-	// The two coverage entries quote these counts, so they are pinned here rather
-	// than only in prose.
-	if len(fatalGap) != 24 || len(advisoryGap) != 18 {
+	// The coverage entry quotes these counts, so they are pinned here rather than
+	// only in prose. The fatal half is zero now: the 24 fatal restatements are
+	// evaluated, and what is left under this Source is the 18 FNFE flags warning.
+	if len(fatalGap) != 0 || len(advisoryGap) != 18 {
 		sort.Strings(fatalGap)
 		sort.Strings(advisoryGap)
-		t.Errorf("the unimplemented BR-FXEXT-* split is %d fatal / %d advisory, and Coverage(SourceFacturX) says 24 / 18\n"+
+		t.Errorf("the unimplemented BR-FXEXT-* split is %d fatal / %d advisory, and Coverage(SourceFacturX) says 0 / 18\n"+
 			"fatal: %v\nadvisory: %v", len(fatalGap), len(advisoryGap), fatalGap, advisoryGap)
 	}
-	t.Logf("Factur-X extension rules: %d published, %d evaluated, %d fatal restatements, %d advisory restatements",
-		len(published), len(facturXExtensionRules), len(fatalGap), len(advisoryGap))
+	t.Logf("Factur-X extension rules: %d published, %d evaluated (%d own ground, %d restatements), %d fatal gap, %d advisory restatements",
+		len(published), len(facturXExtensionRules)+len(facturXRestatementRules), len(facturXExtensionRules),
+		len(facturXRestatementRules), len(fatalGap), len(advisoryGap))
 }
 
 // TestFacturXOmissionsMatchTheArtefact re-derives facturXCENOmissions: the CEN
@@ -664,6 +669,9 @@ func TestFacturXRulesAreReachableInTheirPattern(t *testing.T) {
 	for _, id := range facturXExtensionRules {
 		evaluated[id] = true
 	}
+	for _, rs := range facturXRestatementRules {
+		evaluated[rs.id] = true
+	}
 	checked := 0
 	for _, p := range profiles {
 		s := fxDecode(t, dir, p)
@@ -770,7 +778,7 @@ func TestValidateFacturXCorpus(t *testing.T) {
 	ctx := context.Background()
 	byProfile := map[Profile]int{}
 	byRule := map[string]int{}
-	clean, judged := 0, 0
+	clean, judged, conformant := 0, 0, 0
 	for _, f := range files {
 		data, err := os.ReadFile(f)
 		if err != nil {
@@ -816,6 +824,15 @@ func TestValidateFacturXCorpus(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", f, err)
 		}
+		// Conformant is the whole answer and not a second opinion: a document with
+		// no fatal finding is only conformant if this package also evaluated every
+		// fatal rule that applies. It was false for every one of these documents
+		// from the moment Profile began selecting Factur-X's binding until the
+		// last fatal gap under SourceFacturX closed, which is why it is asserted
+		// here rather than left to Coverage.
+		if r.Conformant() {
+			conformant++
+		}
 		fatal := r.Fatal()
 		if len(fatal) == 0 {
 			clean++
@@ -826,12 +843,22 @@ func TestValidateFacturXCorpus(t *testing.T) {
 			t.Errorf("%s (%s): %s", filepath.Base(f), string(p), v.Error())
 		}
 	}
+	if conformant != judged {
+		var gaps []string
+		for _, f := range Coverage(SourceFacturX) {
+			if f.Severity == SeverityFatal && !f.Unevaluable {
+				gaps = append(gaps, f.Rules)
+			}
+		}
+		t.Errorf("%d of %d profile-declaring examples report Conformant(); every one of them should, and the fatal "+
+			"evaluable gaps left under SourceFacturX are %v", conformant, judged, gaps)
+	}
 	if judged < minFacturXProfiled {
 		t.Errorf("only %d of %d examples declare a Factur-X profile in BT-24, want at least %d; the routing is not "+
 			"recognising them and this sweep is measuring something else", judged, len(files), minFacturXProfiled)
 	}
-	t.Logf("Factur-X corpus: %d/%d profile-declaring examples clean (FP=0) over %d files, by tier %v",
-		clean, judged, len(files), fxProfileCounts(byProfile))
+	t.Logf("Factur-X corpus: %d/%d profile-declaring examples clean (FP=0) over %d files, %d/%d Conformant(), by tier %v",
+		clean, judged, len(files), conformant, judged, fxProfileCounts(byProfile))
 }
 
 func fxProfileCounts(m map[Profile]int) string {

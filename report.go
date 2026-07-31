@@ -538,29 +538,34 @@ var notEvaluated = map[Source][]RuleFamily{
 	//     because CEN minted those identifiers. Nothing to record here.
 	//   - four of CEN's 583 CII-SR-*/CII-DT-* binding assertions. Three are
 	//     evaluated; the fourth is the first entry below.
-	//   - 51 BR-FXEXT-* rules of FNFE's own. Nine are evaluated — the ones that are
-	//     new ground rather than a restatement — and the other 42 are the second and
-	//     third entries.
-	//   - one OpenPEPPOL rule FNFE merges in, the fourth entry.
+	//   - 51 BR-FXEXT-* rules of FNFE's own. 33 are evaluated: the nine that are
+	//     new ground rather than a restatement (facturx.go) and the 24 restatements
+	//     FNFE leaves unflagged, which within this artefact means fatal
+	//     (facturx_restatements.go). The other 18 are the second entry.
+	//   - one OpenPEPPOL rule FNFE merges in, the third entry.
 	//   - a per-profile data model of 2,159 unnamed assertions, from 48 in MINIMUM
 	//     to 1,241 in EXTENDED. All of them are evaluated — see
-	//     facturx_datamodel.go — and the fifth entry is the three of them no
+	//     facturx_datamodel.go — and the fourth entry is the three of them no
 	//     processor can report.
 	//
-	// That last tier used to be the whole of it, named here as an unimplemented
-	// fatal gap, and it is why Report.Conformant was false for every Validate call.
-	// It is implemented now, and what remains fatal and evaluable under this Source
-	// is the 24 unflagged BR-FXEXT-* restatements in the second entry, which is
-	// therefore what Conformant now turns on. That entry argues why the gap cannot
-	// let a broken document through — this package evaluates CEN's stricter
-	// original for every identifier those restate — but it is a gap, and a gap is
-	// what it is recorded as.
+	// Nothing evaluable and fatal is left, which is the point of it: Report.Conformant
+	// is true again for a clean document under a Factur-X profile, having been false
+	// for every Validate call since the binding was scoped. Report.Complete is not,
+	// and the entry that keeps it false is the eighteen advisory -08ini/-08rev
+	// identifiers — an advisory gap, which is exactly the distinction Complete
+	// exists to draw against Conformant.
 	//
 	// The 41 CEN identifiers the EXTENDED profile drops are not an entry here.
 	// This package evaluates CEN's original for all 41 — see facturXCENOmissions,
 	// which records the omission, the 23 that have a BR-FXEXT-* replacement and the
 	// 18 that have none — so there is no gap to name; there is a divergence, and it
-	// runs the other way.
+	// runs the other way, and facturx_restatements.go now measures it rule by rule.
+	//
+	// One consequence of evaluating both sides is stated rather than left to be
+	// found: a document that breaks BR-S-08 and BR-FXEXT-S08b is reported twice,
+	// once under each authority's identifier. Source separates them; a caller who
+	// wants exactly FNFE's verdict filters on it. facturx_restatements.go argues
+	// the decision and TestFacturXRestatementsDuplicateTheirCENOriginal pins it.
 	SourceFacturX: {
 		{
 			Rules:       "CII-SR-464",
@@ -575,23 +580,14 @@ var notEvaluated = map[Source][]RuleFamily{
 				"warning; TestFacturXInertBindingIsStillInert re-derives the XPath and fails if FNFE fixes it",
 		},
 		{
-			Rules:    "BR-FXEXT-* other than BR-FXEXT-01, -02, -03, -04, -06, -08, -11, -12 and BR-FXEXT-CII-DT-097a: 24 fatal identifiers",
-			Severity: SeverityFatal,
-			Reason: "the 51 BR-FXEXT-* identifiers split in two. Nine are Factur-X's own new ground — the BT-X-* extension terms, the sub-line " +
-				"structure and the date format qualifier 205 — and are evaluated in facturx.go. The other 42 restate a CEN identifier the EXTENDED " +
-				"profile drops, with a carve-out for the sub-line structure or the third-party charge amounts EXTENDED adds: BR-FXEXT-BR-22 is " +
-				"BR-22 restricted to lines whose subtype (BT-X-8) is DETAIL or absent, and the nine -08b families restate BR-AE-08, BR-E-08 and " +
-				"their siblings. This package evaluates CEN's stricter original for every one of those, so their ground is covered and covered " +
-				"harder, which is why not evaluating them can only under-report a conforming document and never accept a broken one. 24 of the 42 " +
-				"are fatal in FACTUR-X_EXTENDED.sch and this entry is those; the other 18 are the entry below",
-		},
-		{
 			Rules:    "BR-FXEXT-{AE,E,G,IC,AF,AG,O,S,Z}-08ini and -08rev: 18 advisory identifiers",
 			Severity: SeverityWarning,
-			Reason: "the same 42 restatements as the entry above, split off because FNFE flags these eighteen warning in FACTUR-X_EXTENDED.sch " +
-				"and the other 24 carry no flag. They are the two readings of the VAT breakdown summation FNFE publishes side by side for the " +
-				"2017 and 2026 texts of EN 16931 — \"Without Exemption reason EN16931_2017\" and \"With Exemption reason EN16931_2026\" — which is " +
-				"presumably why they are advisory while the -08b of each family is not",
+			Reason: "the two readings of the VAT breakdown summation FNFE publishes side by side for the 2017 and 2026 texts of EN 16931 — " +
+				"\"Without Exemption reason EN16931_2017\" and \"With Exemption reason EN16931_2026\" — and flags warning in " +
+				"FACTUR-X_EXTENDED.sch, which is presumably why the -08b of each family, which is the two joined by \"or\" and is therefore the " +
+				"weaker of them, carries no flag. This package evaluates the nine -08b (facturx_restatements.go), so the ground is covered by the " +
+				"rule FNFE makes fatal; what is not reported is which of the two readings a document failed, which is what these eighteen say. " +
+				"They are the whole of what remains evaluable under this Source",
 		},
 		{
 			Rules:    "PEPPOL-EN16931-R008",
