@@ -12,7 +12,10 @@
 /testdata/cius-be/
 /testdata/cius-rs/
 /testdata/fatturapa/
-/testdata/facturx/
+/testdata/facturx/*
+# ...except the documents that have no fetch path: they exist only inside PDF
+# containers, and this package cannot open a PDF. See extracted/README.md.
+!/testdata/facturx/extracted/
 /testdata/facturae/
 /testdata/ebinterface/
 /testdata/ksef/
