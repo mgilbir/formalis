@@ -199,22 +199,45 @@ const (
 // "factur-x.eu:1p0:basicwl", and the wrong order silently reads every BASIC WL
 // document as BASIC — which would apply the invoice-line rules to a head-only
 // document.
+//
+// # Both brands
+//
+// Each of the four self-naming tiers has two identifiers, not one. Factur-X 1.0
+// and ZUGFeRD 2.x are the same specification published by two bodies — FNFE-MPE
+// in France and FeRD in Germany — and FNFE's own code database says so: the
+// enumeration its Schematron looks a document's BT-24 up in holds exactly
+// {"urn:factur-x.eu:1p0:minimum", "urn:zugferd.de:2p0:minimum"} at MINIMUM, and
+// the matching pair at BASIC WL, BASIC and EXTENDED. Only the EN 16931 tier
+// publishes one value, CEN's own, for the reason above.
+//
+// Matching the French half alone read a ZUGFeRD-branded MINIMUM invoice as a
+// plain EN 16931 CII document and judged it by CEN's binding, which is C44 with a
+// different string in it: a MINIMUM invoice carries no invoice line and no VAT
+// breakdown by design, so this package reported BR-16 and BR-CO-18 against a
+// document its authority publishes as correct. Both brands are matched here and
+// in specIDRules, and TestFacturXRoutingAcceptsEveryIdentifierTheAuthorityPublishes
+// reads the pairs back out of the committed code lists, so a third brand — or a
+// version bump past 1p0 / 2p0 — arrives as a failure rather than as silence.
 func facturXProfileFromSpecID(specID string) (Profile, bool) {
 	id := normSpecID(specID)
-	switch {
-	case strings.Contains(id, "factur-x.eu:1p0:minimum"):
-		return ProfileMinimum, true
-	case strings.Contains(id, "factur-x.eu:1p0:basicwl"):
-		return ProfileBasicWL, true
-	case strings.Contains(id, "factur-x.eu:1p0:basic"):
-		return ProfileBasic, true
-	case strings.Contains(id, "factur-x.eu:1p0:extended"):
-		return ProfileExtended, true
-	case strings.Contains(id, "factur-x.eu"):
-		return ProfileEN16931, false
+	for _, brand := range facturXBrands {
+		switch {
+		case strings.Contains(id, brand+"minimum"):
+			return ProfileMinimum, true
+		case strings.Contains(id, brand+"basicwl"):
+			return ProfileBasicWL, true
+		case strings.Contains(id, brand+"basic"):
+			return ProfileBasic, true
+		case strings.Contains(id, brand+"extended"):
+			return ProfileExtended, true
+		}
 	}
 	return ProfileEN16931, false
 }
+
+// facturXBrands are the two authorities' identifier stems, tier suffix excluded.
+// They are the same specification: see facturXProfileFromSpecID.
+var facturXBrands = []string{"factur-x.eu:1p0:", "zugferd.de:2p0:"}
 
 // validateFacturXRouted is the Factur-X entry in modelValidators: the rule set
 // ValidateCIUS and Detection.Validator reach for a document whose own BT-24

@@ -1232,6 +1232,17 @@ func TestFacturXRoutingReachesTheFacturXRuleSet(t *testing.T) {
 		{"urn:factur-x.eu:1p0:basicwl", ProfileBasicWL},
 		{"urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:basic", ProfileBasic},
 		{"urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended", ProfileExtended},
+
+		// The same four tiers under the German brand. FNFE's own code database
+		// enumerates both identifiers for every tier that names itself, and
+		// TestFacturXRoutingAcceptsEveryIdentifierTheAuthorityPublishes reads
+		// that list out of the artefact rather than repeating it; these four are
+		// here because this test asserts something the other one does not — that
+		// the rule set is actually *run*, not merely named.
+		{"urn:zugferd.de:2p0:minimum", ProfileMinimum},
+		{"urn:zugferd.de:2p0:basicwl", ProfileBasicWL},
+		{"urn:cen.eu:en16931:2017#compliant#urn:zugferd.de:2p0:basic", ProfileBasic},
+		{"urn:cen.eu:en16931:2017#conformant#urn:zugferd.de:2p0:extended", ProfileExtended},
 	} {
 		t.Run(tc.id, func(t *testing.T) {
 			got, ok := facturXProfileFromSpecID(tc.id)
