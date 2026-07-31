@@ -429,6 +429,15 @@ PDF's XMP `ConformanceLevel` to one; `CIUSFor` maps the levels that name a CIUS
 instead (today, `"XRECHNUNG"`). A `Profile` this package does not implement is
 refused with a `RuleProfile` violation rather than silently read as EN 16931.
 
+`ValidateCIUS` and `Detect` read the tier back out of BT-24 for a document that
+did not come with a `Profile`, and they accept **both** identifiers each tier is
+published under: Factur-X 1.0 and ZUGFeRD 2.x are one specification under two
+brands, and FNFE's own code database enumerates
+`urn:factur-x.eu:1p0:minimum` and `urn:zugferd.de:2p0:minimum` for the same tier.
+Only the EN 16931 tier has a single value — CEN's own `urn:cen.eu:en16931:2017`,
+which is the document claiming to be exactly EN 16931 and is deliberately not
+routed to Factur-X.
+
 Factur-X binds EN 16931 with its own rule set and does not adopt CEN's CII syntax
 binding: its five profile Schematrons carry four of CEN's 583 `CII-SR-*`/`CII-DT-*`
 assertions and, in their place, a per-profile data model of between 48 and 1,241
@@ -659,7 +668,11 @@ engine against hand-written fixtures and skips the oracle-backed tests; that is
 the mode a clean checkout and the fast CI job run in, and it is green.
 
 The oracles need corpora this repository does not vendor (`testdata/` is
-gitignored). Fetching them needs **`git`**, **`bash`**, **`curl`**, **`python3`**
+gitignored, with one carve-out: the six lean-tier Factur-X invoices under
+`testdata/facturx/extracted/` are committed, because they exist only inside
+PDF/A-3 containers and no fetch target can produce them — that directory's README
+says why, and `TestFacturXLeanTierSamplesDrawExactlyTheseFindings` records
+exactly what each of them draws). Fetching the rest needs **`git`**, **`bash`**, **`curl`**, **`python3`**
 — several Romanian and Portuguese sample filenames are non-ASCII and are
 URL-encoded with it — and **`gh` authenticated against GitHub**, because the
 fetch makes about fifteen `gh api` calls and the unauthenticated rate limit of 60
