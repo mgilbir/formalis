@@ -78,6 +78,27 @@ package formalis
 // conditions throughout — the same gate PR 22 put on the BR-CIUS-PT-* rules
 // themselves, for the same reason (C36).
 //
+// # The other half: what a copy leaves out
+//
+// A copy can differ from CEN by carrying a different condition, which is what the
+// overrides above are for, and it can differ by not carrying the identifier at all.
+// The second is the larger difference and it has the same two causes, so it gets the
+// same treatment: ciusCENCopyOmissions records, per authority, the CEN release the
+// copy was taken from and which CEN identifiers it lacks, split into ones CEN had
+// published by then and ones CEN has added since.
+//
+// Nothing is suppressed on the strength of it, and the reason is worth stating here
+// rather than only in the commit that decided it. Suppressing a rule an authority
+// dropped is right only when the authority put something in its place that covers the
+// same ground; CIUS-PT is the only one of the six that drops a CEN rule at all, and
+// what it put in place of CEN's arithmetic identities carries a ±1.00 € acceptance
+// range, which is a relaxation rather than a replacement. Suppressing on that basis
+// would convert a divergence from one authority's validator into a class of invoice
+// nothing checks, and a false negative is worse than a false positive because nothing
+// reports it. The table is therefore a record and not a switch — cius_omissions_test.go
+// re-derives it, measures what it is worth across the corpus, and holds the decision
+// with a guard that goes red if a suppression ever lands without the argument.
+//
 // # How a caller can tell
 //
 // Violation.Reading. An overridden finding keeps SourceEN16931 and CEN's identifier,
@@ -132,6 +153,69 @@ type ciusCENCopyVerdict struct {
 	applied    bool
 	notApplied string
 	own        map[string]string
+}
+
+// ciusCENCopyOmission is the absence half of the same question, for one authority:
+// which CEN identifiers its published rule set does not carry, and whether CEN had
+// published them when the copy was taken.
+//
+// # Why absence needs the same discriminator as a differing condition
+//
+// A CIUS whose copy of CEN's Schematron lacks an identifier lacks it for one of two
+// reasons, and PR 27 established that telling them apart by eye gets it wrong:
+//
+//   - CEN had not published the identifier yet. The copy is old, and the identifier
+//     is one CEN has added since. Nothing about it is national, and a CIUS is by
+//     construction a restriction of EN 16931, so evaluating it under that CIUS is
+//     evaluating the standard the CIUS narrows.
+//   - CEN had published it and the authority left it out. That is a decision, of the
+//     same kind as re-writing a condition, and it is the only half that could
+//     justify not reporting the identifier under that CIUS.
+//
+// release is the CEN release the copy was taken from, derived from the copy's own
+// content rather than from a version string: the release that publishes every
+// identifier the copy carries and whose assertions the copy reproduces most closely.
+// releaseThrough is set when CEN republished those files unchanged across several
+// releases and the evidence therefore pins a run of them rather than one.
+//
+// classified is false for a copy this derivation cannot speak about, with
+// notClassified saying why. carried is the CEN identifiers the copy holds and
+// differing how many of them depart from that release, which is what makes the pin
+// readable: a copy that differs from its own release in 26 assertions of 774 is a
+// copy, and one that differed in half of them would not be.
+type ciusCENCopyOmission struct {
+	authority      string
+	source         Source
+	classified     bool
+	notClassified  string
+	release        string
+	releaseThrough string
+	releaseDate    string
+	carried        int
+	differing      int
+	overlay        bool
+	files          []ciusCENFileOmission
+}
+
+// ciusCENFileOmission is one of CEN's Schematron files as one authority treats it.
+//
+// copied is whether this repository holds the authority's copy of that file, so its
+// contents can be compared. fetched separates the two ways copied can be false:
+// the authority's master Schematron does not <include> a copy of this CEN file at
+// all, so its rule set does not run it (fetched true, dropped and postdates
+// populated over the whole file); or it does include one and this repository does
+// not vendor it, so nothing is claimed either way (fetched false, both lists empty).
+//
+// Keeping those apart is the point of the field. CIUS-RO's master and both NLCIUS
+// masters <include> CEN's code-list file; CIUS-PT's includes no code-list file of
+// any name. Collapsing the two would either invent 22 Romanian omissions or hide 19
+// Portuguese ones.
+type ciusCENFileOmission struct {
+	cenFile   string
+	copied    bool
+	fetched   bool
+	dropped   []string
+	postdates []string
 }
 
 // mustCompileOverrides parses an override set's patterns once, at load.

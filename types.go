@@ -323,6 +323,13 @@ const (
 	// those nine are evaluated as AT/eSPap wrote them. Such a finding keeps
 	// SourceEN16931 and CEN's identifier and carries Reading == SourceCIUSPT; see
 	// Violation.Reading and cius_overrides.go.
+	//
+	// The same copy is CEN's validation-1.1.0 of June 2018 and omits 192 CEN
+	// identifiers this package evaluates — 114 CEN had already published and AT left
+	// out, 78 CEN has added since. None is suppressed, so ValidateCIUSPT reports
+	// fatal EN 16931 findings on documents a reference CIUS-PT validator accepts,
+	// including all 20 instances AT publishes as conformant. The split, the release
+	// pin and the reasoning are in ciusCENCopyOmissions.
 	SourceCIUSPT Source = "CIUS-PT"
 	// SourceCIUSRO is the Romanian ANAF RO e-Factura CIUS. Its identifiers are
 	// BR-RO-* — the business rules, the BR-RO-L* length limits, the BR-RO-DT* date

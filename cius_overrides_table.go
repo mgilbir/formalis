@@ -114,6 +114,221 @@ var ciusCENCopyVerdicts = []ciusCENCopyVerdict{
 	},
 }
 
+// ciusCENCopyOmissions records, per authority that ships a copy of CEN's
+// Schematron, which CEN release the copy was taken from and which CEN identifiers
+// the copy does not carry. Derived by testdata/cius-condition-overrides/gen.py and
+// re-derived by TestCIUSCopyOmissionsAreClassifiedFromTheArtefacts on every run.
+//
+// It is the absence half of the question ciusCENCopyVerdicts answers for differing
+// conditions, and it is split by the same discriminator: CEN's own history. An
+// identifier the copy lacks that CEN had published when the copy was taken is one
+// the authority dropped; one CEN had not published yet is the copy's age.
+var ciusCENCopyOmissions = []ciusCENCopyOmission{
+	{
+		authority:      "CIUS-PT 2.1.1 (UBL)",
+		source:         SourceCIUSPT,
+		classified:     true,
+		release:        "validation-1.1.0",
+		releaseThrough: "",
+		releaseDate:    "2018-06-26",
+		carried:        774,
+		differing:      26,
+		overlay:        false,
+		files: []ciusCENFileOmission{
+			{
+				cenFile: "EN16931-UBL-codes.sch",
+				copied:  false,
+				fetched: true,
+				dropped: []string{
+					"BR-CL-01", "BR-CL-03", "BR-CL-04", "BR-CL-05", "BR-CL-06", "BR-CL-07", "BR-CL-10",
+					"BR-CL-11", "BR-CL-13", "BR-CL-14", "BR-CL-15", "BR-CL-16", "BR-CL-17", "BR-CL-18",
+					"BR-CL-19", "BR-CL-20", "BR-CL-21", "BR-CL-23", "BR-CL-24",
+				},
+				postdates: []string{
+					"BR-CL-22", "BR-CL-25", "BR-CL-26",
+				},
+			},
+			{
+				cenFile: "EN16931-model.sch",
+				copied:  true,
+				fetched: true,
+				dropped: []string{
+					"BR-51", "BR-53", "BR-AE-01", "BR-AE-02", "BR-AE-03", "BR-AE-04", "BR-AE-05", "BR-AE-06",
+					"BR-AE-07", "BR-AE-08", "BR-AE-09", "BR-AE-10", "BR-CL-08", "BR-CO-05", "BR-CO-06",
+					"BR-CO-09", "BR-CO-10", "BR-CO-11", "BR-CO-12", "BR-CO-13", "BR-CO-14", "BR-CO-15",
+					"BR-CO-16", "BR-CO-17", "BR-DEC-01", "BR-DEC-02", "BR-DEC-05", "BR-DEC-06", "BR-DEC-09",
+					"BR-DEC-10", "BR-DEC-11", "BR-DEC-12", "BR-DEC-13", "BR-DEC-14", "BR-DEC-15", "BR-DEC-16",
+					"BR-DEC-17", "BR-DEC-18", "BR-DEC-19", "BR-DEC-20", "BR-DEC-23", "BR-DEC-24", "BR-DEC-25",
+					"BR-DEC-27", "BR-DEC-28", "BR-E-08", "BR-G-01", "BR-G-02", "BR-G-03", "BR-G-04",
+					"BR-G-05", "BR-G-06", "BR-G-07", "BR-G-08", "BR-G-09", "BR-G-10", "BR-IC-01", "BR-IC-02",
+					"BR-IC-03", "BR-IC-04", "BR-IC-05", "BR-IC-06", "BR-IC-07", "BR-IC-08", "BR-IC-09",
+					"BR-IC-10", "BR-IC-11", "BR-IC-12", "BR-O-01", "BR-O-02", "BR-O-03", "BR-O-04", "BR-O-05",
+					"BR-O-06", "BR-O-07", "BR-O-08", "BR-O-09", "BR-O-10", "BR-O-11", "BR-O-12", "BR-O-13",
+					"BR-O-14", "BR-S-08", "BR-S-09", "BR-Z-01", "BR-Z-02", "BR-Z-03", "BR-Z-04", "BR-Z-05",
+					"BR-Z-06", "BR-Z-07", "BR-Z-08", "BR-Z-09", "BR-Z-10",
+				},
+				postdates: []string{
+					"BR-AF-01", "BR-AF-02", "BR-AF-03", "BR-AF-04", "BR-AF-05", "BR-AF-06", "BR-AF-07",
+					"BR-AF-08", "BR-AF-09", "BR-AF-10", "BR-AG-01", "BR-AG-02", "BR-AG-03", "BR-AG-04",
+					"BR-AG-05", "BR-AG-06", "BR-AG-07", "BR-AG-08", "BR-AG-09", "BR-AG-10", "BR-B-01",
+					"BR-B-02",
+				},
+			},
+			{
+				cenFile: "EN16931-syntax.sch",
+				copied:  true,
+				fetched: true,
+				dropped: []string{
+					"UBL-DT-01",
+				},
+				postdates: []string{
+					"UBL-CR-002", "UBL-CR-648", "UBL-CR-649", "UBL-CR-650", "UBL-CR-651", "UBL-CR-652",
+					"UBL-CR-653", "UBL-CR-654", "UBL-CR-655", "UBL-CR-656", "UBL-CR-657", "UBL-CR-658",
+					"UBL-CR-659", "UBL-CR-660", "UBL-CR-661", "UBL-CR-662", "UBL-CR-663", "UBL-CR-664",
+					"UBL-CR-665", "UBL-CR-666", "UBL-CR-667", "UBL-CR-668", "UBL-CR-669", "UBL-CR-670",
+					"UBL-CR-671", "UBL-CR-672", "UBL-CR-673", "UBL-CR-674", "UBL-CR-675", "UBL-CR-676",
+					"UBL-CR-677", "UBL-CR-678", "UBL-CR-679", "UBL-CR-680", "UBL-CR-681", "UBL-CR-682",
+					"UBL-DT-27", "UBL-DT-28", "UBL-SR-42", "UBL-SR-43", "UBL-SR-44", "UBL-SR-45", "UBL-SR-46",
+					"UBL-SR-47", "UBL-SR-48", "UBL-SR-49", "UBL-SR-50", "UBL-SR-51", "UBL-SR-52", "UBL-SR-53",
+					"UBL-SR-54", "UBL-SR-55", "UBL-SR-56",
+				},
+			},
+		},
+	},
+	{
+		authority:      "CIUS-RO 1.0.9 (UBL)",
+		source:         SourceCIUSRO,
+		classified:     true,
+		release:        "validation-1.3.8",
+		releaseThrough: "",
+		releaseDate:    "2022-04-08",
+		carried:        954,
+		differing:      0,
+		overlay:        false,
+		files: []ciusCENFileOmission{
+			{
+				cenFile: "EN16931-UBL-codes.sch",
+				copied:  false,
+				fetched: false,
+			},
+			{
+				cenFile: "EN16931-model.sch",
+				copied:  true,
+				fetched: true,
+				postdates: []string{
+					"BR-AF-01", "BR-AF-02", "BR-AF-03", "BR-AF-04", "BR-AF-05", "BR-AF-06", "BR-AF-07",
+					"BR-AF-08", "BR-AF-09", "BR-AF-10", "BR-AG-01", "BR-AG-02", "BR-AG-03", "BR-AG-04",
+					"BR-AG-05", "BR-AG-06", "BR-AG-07", "BR-AG-08", "BR-AG-09", "BR-AG-10",
+				},
+			},
+			{
+				cenFile: "EN16931-syntax.sch",
+				copied:  true,
+				fetched: true,
+				postdates: []string{
+					"UBL-SR-51", "UBL-SR-52", "UBL-SR-53", "UBL-SR-54", "UBL-SR-55", "UBL-SR-56",
+				},
+			},
+		},
+	},
+	{
+		authority:      "NLCIUS SI-UBL 2.0.3.2 (UBL)",
+		source:         SourceNLCIUS,
+		classified:     true,
+		release:        "validation-1.3.6",
+		releaseThrough: "",
+		releaseDate:    "2021-05-30",
+		carried:        954,
+		differing:      1,
+		overlay:        false,
+		files: []ciusCENFileOmission{
+			{
+				cenFile: "EN16931-UBL-codes.sch",
+				copied:  false,
+				fetched: false,
+			},
+			{
+				cenFile: "EN16931-model.sch",
+				copied:  true,
+				fetched: true,
+				postdates: []string{
+					"BR-AF-01", "BR-AF-02", "BR-AF-03", "BR-AF-04", "BR-AF-05", "BR-AF-06", "BR-AF-07",
+					"BR-AF-08", "BR-AF-09", "BR-AF-10", "BR-AG-01", "BR-AG-02", "BR-AG-03", "BR-AG-04",
+					"BR-AG-05", "BR-AG-06", "BR-AG-07", "BR-AG-08", "BR-AG-09", "BR-AG-10",
+				},
+			},
+			{
+				cenFile: "EN16931-syntax.sch",
+				copied:  true,
+				fetched: true,
+				postdates: []string{
+					"UBL-CR-681", "UBL-CR-682", "UBL-SR-51", "UBL-SR-52", "UBL-SR-53", "UBL-SR-54",
+					"UBL-SR-55", "UBL-SR-56",
+				},
+			},
+		},
+	},
+	{
+		authority:     "NLCIUS SI-UBL G-account 1.0.2 (UBL)",
+		source:        SourceNLCIUS,
+		classified:    false,
+		notClassified: "an overlay on NLCIUS SI-UBL 2.0.3.2: it replaces CEN's abstract syntax file and <include>s the whole of SI-UBL 2.0 for the rest, so what it omits is what that entry omits. Recorded there",
+	},
+	{
+		authority:      "NLCIUS 1.0.3 (CII)",
+		source:         SourceNLCIUS,
+		classified:     true,
+		release:        "validation-1.3.1",
+		releaseThrough: "validation-1.3.4",
+		releaseDate:    "2020-02-25",
+		carried:        735,
+		differing:      0,
+		overlay:        false,
+		files: []ciusCENFileOmission{
+			{
+				cenFile: "EN16931-CII-codes.sch",
+				copied:  false,
+				fetched: false,
+			},
+			{
+				cenFile: "EN16931-CII-model.sch",
+				copied:  true,
+				fetched: true,
+				postdates: []string{
+					"BR-B-01", "BR-B-02",
+				},
+			},
+			{
+				cenFile: "EN16931-CII-syntax.sch",
+				copied:  true,
+				fetched: true,
+				postdates: []string{
+					"CII-DT-097", "CII-DT-101", "CII-DT-102", "CII-DT-103", "CII-DT-104", "CII-SR-452",
+					"CII-SR-453", "CII-SR-454", "CII-SR-455", "CII-SR-456", "CII-SR-457", "CII-SR-458",
+					"CII-SR-459", "CII-SR-460", "CII-SR-461", "CII-SR-462", "CII-SR-463", "CII-SR-464",
+					"CII-SR-465", "CII-SR-466", "CII-SR-467", "CII-SR-468", "CII-SR-469", "CII-SR-470",
+					"CII-SR-471", "CII-SR-472", "CII-SR-473", "CII-SR-474", "CII-SR-475", "CII-SR-476",
+					"CII-SR-477", "CII-SR-478", "CII-SR-479", "CII-SR-480", "CII-SR-481", "CII-SR-482",
+					"CII-SR-483", "CII-SR-484", "CII-SR-485", "CII-SR-486", "CII-SR-487", "CII-SR-488",
+					"CII-SR-489", "CII-SR-490", "CII-SR-491", "CII-SR-492", "CII-SR-493", "CII-SR-494",
+				},
+			},
+		},
+	},
+	{
+		authority:     "UBL.BE v1.31 (UBL)",
+		source:        SourceUBLBE,
+		classified:    false,
+		notClassified: "its file re-cases 671 of CEN's identifiers (UBL-CR-001 as ubl-CR-001 and so on), so an omission set computed on exact identifiers would report a family the file carries in full as dropped. Classifying it means deciding whether a re-cased identifier is CEN's, which is a question about this authority's identifier namespace and not about absence",
+	},
+	{
+		authority:     "SRBDT 1.0.0 (UBL)",
+		source:        SourceSRBDT,
+		classified:    false,
+		notClassified: "ships no copy of CEN's files, so it omits all of them; EN16931-UBL-srbdt-validation.sch says so itself, in a comment, and ciusCENCopyVerdicts records the same fact as ships: false",
+	},
+}
+
 // ptOverrideModelPattern is CIUS-PT 2.1.1 (UBL)'s copy of CEN's pattern, carrying the 9
 // assertions whose condition CIUS-PT 2.1.1 (UBL) wrote itself. Every <rule> of the pattern is here
 // in the authority's order, because under ISO Schematron a node goes to the first

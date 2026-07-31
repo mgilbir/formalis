@@ -155,7 +155,25 @@ const (
 	// when something breaks.
 	minCIUSPTDatatypeRulesFiring = 111
 	minCIUSPTDatatypeFindings    = 13600
-	minCIUSROInstances           = 44
+
+	// What ValidateCIUSPT reports that a reference CIUS-PT validator cannot, split
+	// by why. AT/eSPap vendored CEN's validation-1.1.0 in June 2018 and has not
+	// refreshed it, so 192 CEN identifiers this package evaluates are absent from
+	// the Portuguese rule set — 114 that CEN had published by then and AT left out,
+	// 78 that CEN has added since.
+	//
+	// Both are ratcheted, and separately, because they are opposite kinds of fact.
+	// A `postdates` count that fell would mean this package stopped evaluating a
+	// rule CEN has since added, which is a false negative against the standard the
+	// CIUS narrows. A `dropped` count that fell would mean a suppression landed —
+	// which may one day be right, but only with the replacement argument made and
+	// the ground shown to be still covered, and it must never happen quietly. See
+	// cius_omissions_test.go for the derivation and TestNoDroppedCENIdentifierIsSuppressed
+	// for the decision these numbers pin.
+	minCIUSPTDroppedFindings   = 1200
+	minCIUSPTPostdatesFindings = 520
+
+	minCIUSROInstances = 44
 
 	// The CIUS-RO samples that write a Bucharest sector where ISO 3166-2:RO expects
 	// a county code, and the BR-RO-110/111/170 findings ANAF's own Schematron

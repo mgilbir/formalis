@@ -162,7 +162,7 @@ CIUS_OVERRIDES_DIR := testdata/cius-condition-overrides
 cius-condition-overrides: cius-schematron en16931-artefacts
 	python3 $(CIUS_OVERRIDES_DIR)/gen.py
 	gofmt -w cius_overrides_table.go
-	go test -count=1 -run 'TestCIUSCopiesOfCEN|TestConditionOverride|TestEveryConditionOverride|TestOverriddenIdentifiers|TestUnappliedConditionOverrides' .
+	go test -count=1 -run 'TestCIUSCopiesOfCEN|TestCIUSCopyOmissions|TestConditionOverride|TestEveryConditionOverride|TestOverriddenIdentifiers|TestUnappliedConditionOverrides|TestOmittedCENIdentifiers' .
 
 CIUS_RO_RULES_DIR := testdata/cius-ro-rules
 cius-ro-rules: cius-schematron
