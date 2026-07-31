@@ -204,6 +204,13 @@ func TestAuthoritySamplesDrawNoFatalFinding(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			// The directory can exist and hold no judgeable document — a clean
+			// checkout keeps the download scripts under testdata and nothing else,
+			// and the Factur-X entry needs the reports beside the examples. That is
+			// the corpus-absent case rather than a truncated one.
+			if judged == 0 {
+				t.Skipf("%s samples not present (make cius-oracles / make facturx-examples)", set.authority)
+			}
 			atLeast(t, set.authority+" conformant samples", judged, set.atLeast)
 			t.Logf("authority parity: %s — %d/%d of its own conformant samples draw no fatal finding, %d/%d through ValidateCIUS",
 				set.authority, clean, judged, routed, judged)
@@ -385,9 +392,6 @@ func TestSupersededCENRulesNeverStandAloneInTheCorpus(t *testing.T) {
 	if len(superseded) == 0 {
 		t.Fatal("facturXSuperseded is empty at EXTENDED; the pass cannot be doing anything")
 	}
-	if _, err := os.Stat("testdata"); err != nil {
-		t.Skip("corpus not present (make cius-oracles en16931-artefacts en16931-ubl)")
-	}
 	ctx := context.Background()
 	docs, cii, paired := 0, 0, 0
 	err := filepath.Walk("testdata", func(p string, fi os.FileInfo, e error) error {
@@ -435,6 +439,15 @@ func TestSupersededCENRulesNeverStandAloneInTheCorpus(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+	// A clean checkout has a testdata directory — the download scripts and their
+	// manifests are tracked — and no documents in it, so the presence of the
+	// directory is not the test for "the corpus is here". Finding none is the
+	// corpus-absent case the skips cover; finding some but not all is what
+	// atLeast reports, because a green verdict over a fraction of the corpus is
+	// a claim about the wrong population.
+	if docs == 0 {
+		t.Skip("no corpus present (make cius-oracles en16931-artefacts en16931-ubl)")
 	}
 	atLeast(t, "corpus documents", docs, minCorpusDocuments)
 	t.Logf("authority parity: over %d corpus documents forced to EXTENDED, %d of them CII, %d superseded CEN findings stand and every one is beside the Factur-X rule that replaced it",
