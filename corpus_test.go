@@ -42,11 +42,14 @@ const (
 	// 1,690 rather than 1,680: PR 28 added the ten instances SimplerInvoicing ships
 	// for the G-account extension, which live in an upstream directory of their own
 	// and which no fetch here had ever touched.
-	// It stays at 1,690 although the tree now holds 1,800: the 59 Factur-X
+	// It stays at 1,690 although the tree now holds 1,805: the 59 Factur-X
 	// examples and FNFE's 51 validation reports beside them are vendored rather
 	// than fetched, so a checkout that ran every make target and copied no bundle
-	// has 1,690 and is not truncated. minFacturXExamples and minFacturXReports are
-	// the floors on that material, where they can be skipped as a unit.
+	// has 1,695 and is not truncated. minFacturXExamples and minFacturXReports are
+	// the floors on that material, where they can be skipped as a unit. (1,695
+	// rather than 1,690 because `make facturx-schematron` now also vendors the five
+	// FACTUR-X_<PROFILE>_codedb.xml the data-model code-list assertions look values
+	// up in, and they are .xml files under testdata like any other.)
 	minCorpusDocuments = 1690
 
 	// The two arbitration sweeps count different populations and are not
@@ -352,6 +355,46 @@ var minFacturXRules = map[Profile]int{
 	ProfileEN16931:  373,
 	ProfileExtended: 983,
 }
+
+// minFacturXDataModel is the per-profile floor on the *committed* data-model
+// table, in assertions. It is a different kind of ratchet from every other one in
+// this file: those hold a fetched corpus to its size and are skipped when the
+// corpus is absent, and this one holds generated Go source, so it runs on a
+// checkout with no artefacts at all. That is the point. Every guard in
+// facturx_datamodel_test.go that compares the table against the Schematrons skips
+// without them, which would leave a table somebody emptied looking green on
+// exactly the checkout — CI's corpus-less job — where nothing else could notice.
+var minFacturXDataModel = map[Profile]int{
+	ProfileMinimum:  48,
+	ProfileBasicWL:  196,
+	ProfileBasic:    262,
+	ProfileEN16931:  412,
+	ProfileExtended: 1241,
+}
+
+// minFacturXCodeDBLists is the per-profile floor on the code databases
+// `make facturx-schematron` fetches beside the five Schematrons, in <cl>
+// elements. A truncated one decodes to nothing and would make the code-list
+// fidelity test compare 366 assertions against an empty map.
+var minFacturXCodeDBLists = map[Profile]int{
+	ProfileMinimum:  8,
+	ProfileBasicWL:  21,
+	ProfileBasic:    25,
+	ProfileEN16931:  33,
+	ProfileExtended: 53,
+}
+
+const (
+	// minFacturXCodeLists and minFacturXCodeValues hold the deduplicated code
+	// lists in the committed table to their size: 44 distinct lists, 7,191 values,
+	// out of the 140 lists the five databases declare between them.
+	minFacturXCodeLists  = 44
+	minFacturXCodeValues = 7191
+	// The distinct element paths the five Schematrons' rule contexts name, which
+	// is the population TestFacturXDataModelPathsAreUnambiguous checks the
+	// local-name reduction over.
+	minFacturXContextPaths = 900
+)
 
 // atLeast is the ratchet. It reports rather than skips: an oracle that found
 // *some* of its corpus is not in the "corpus absent" case the skips cover, it is

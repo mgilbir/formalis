@@ -199,3 +199,38 @@ func BenchmarkValidateCIUSRO(b *testing.B) {
 	}
 	b.ReportMetric(float64(len(docs)), "docs/op")
 }
+
+// BenchmarkFacturXDataModelRules is the Factur-X profile data model over an
+// already-parsed CII tree: the one trie walk that assigns every element to the
+// first matching rule of each pattern, and the evaluation of that element's
+// assertions. No parsing and no semantic model is in the number.
+//
+// It is committed for the reason the two above it are, and with more cause: this
+// is the largest generated tier in the package — 903 rules carrying 1,241
+// assertions in EXTENDED — and the naive shape, one root-to-context descent per
+// rule, is 903 walks of the document per validation rather than one. EXTENDED is
+// benchmarked rather than EN 16931 because it is the largest of the five and
+// therefore the worst case a caller can ask for.
+func BenchmarkFacturXDataModelRules(b *testing.B) {
+	for _, profile := range []Profile{ProfileMinimum, ProfileEN16931, ProfileExtended} {
+		b.Run(string(profile), func(b *testing.B) {
+			var trees []*ciiNode
+			for _, d := range benchCorpus(b, "CII") {
+				root, err := parseCII(newRun(context.Background()), d)
+				if err != nil {
+					b.Fatal(err)
+				}
+				trees = append(trees, root)
+			}
+			r := newRun(context.Background())
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for _, root := range trees {
+					facturXDataModelRules(r, root, profile)
+				}
+			}
+			b.ReportMetric(float64(len(trees)), "docs/op")
+		})
+	}
+}

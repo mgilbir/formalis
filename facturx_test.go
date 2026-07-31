@@ -28,8 +28,9 @@ import (
 //     an "[ID]-" prefix on the message text (fxIdentifier);
 //   - most assertions have no identifier at all, and they are not noise but the
 //     profile data model. fxDataModelShapes classifies every one of them and
-//     TestFacturXDataModelIsCountedInCoverage holds the coverage entry to the
-//     count.
+//     TestFacturXDataModelIsSixShapes asserts the six shapes are the whole of it.
+//     The data model itself — the table, the evaluator and the firing verdict on
+//     each of its 2,159 assertions — is facturx_datamodel_test.go.
 
 // fxSchematronDir is where `make facturx-schematron` puts the five profile
 // Schematrons, or "" when they are not present.
@@ -557,20 +558,26 @@ func fxDataModelShapes(x fxAssertion) string {
 	return ""
 }
 
-// TestFacturXDataModelIsCountedInCoverage is the guard on the largest thing in
-// Coverage(SourceFacturX): the honest gap.
+// TestFacturXDataModelIsSixShapes classifies every unnamed assertion in every
+// profile and asserts that the six mechanical shapes account for all of them, and
+// that each profile carries the number this package is written for.
 //
-// It classifies every unnamed assertion in every profile and checks two things —
-// that the six shapes account for all of them, so the coverage entry's
-// description is a fact, and that the per-profile counts it quotes are the
-// artefact's. An entry that says "1,238 assertions" while the file holds 40 is
-// a gap nobody could size.
-func TestFacturXDataModelIsCountedInCoverage(t *testing.T) {
+// It was the guard on the coverage entry that named this layer as a gap. The
+// layer is implemented now — facturx_datamodel.go, and the whole of
+// facturx_datamodel_test.go beside it — so what it guards is different and
+// narrower: the shapes are a *closed* set, and an assertion outside them is FNFE
+// writing a real rule without an identifier, which internal/gen/facturx would
+// refuse to emit and which this says out loud rather than leaving to the
+// generator's exit status. The counts are held to minFacturXDataModel by
+// TestFacturXDataModelIsRatcheted and to the artefact, row by row, by
+// TestFacturXDataModelMatchesTheArtefact.
+func TestFacturXDataModelIsSixShapes(t *testing.T) {
 	dir := fxSchematronDir()
 	if dir == "" {
 		t.Skip("Factur-X Schematrons not present; run `make facturx-schematron`")
 	}
-	// The counts Coverage(SourceFacturX) quotes.
+	// The counts this package is written for, stated here rather than read from
+	// minFacturXDataModel so that the two are checked against each other.
 	want := map[Profile]int{
 		ProfileMinimum:  48,
 		ProfileBasicWL:  196,
@@ -588,7 +595,6 @@ func TestFacturXDataModelIsCountedInCoverage(t *testing.T) {
 		}
 	}
 
-	entry := fxCoverageEntry(t, "profile data model")
 	for _, p := range profiles {
 		byShape := map[string]int{}
 		other, model := 0, 0
@@ -611,21 +617,12 @@ func TestFacturXDataModelIsCountedInCoverage(t *testing.T) {
 		}
 		t.Logf("Factur-X %s data model: %d assertions %v", string(p), model, byShape)
 		if model != want[p] {
-			t.Errorf("%s carries %d data-model assertions and Coverage(SourceFacturX) says %d", string(p), model, want[p])
+			t.Errorf("%s carries %d data-model assertions and this package is written for %d", string(p), model, want[p])
 		}
-		if !strings.Contains(entry.Rules, fmt.Sprint(want[p])) && !strings.Contains(entry.Rules, commaGroup(want[p])) {
-			t.Errorf("Coverage(SourceFacturX)'s data-model entry does not quote the %s count %d: %q", string(p), want[p], entry.Rules)
+		if model != minFacturXDataModel[p] {
+			t.Errorf("%s carries %d data-model assertions and the committed table's floor is %d", string(p), model, minFacturXDataModel[p])
 		}
 	}
-}
-
-// commaGroup renders 1238 as "1,238", which is how the coverage entry writes it.
-func commaGroup(n int) string {
-	s := fmt.Sprint(n)
-	if len(s) <= 3 {
-		return s
-	}
-	return s[:len(s)-3] + "," + s[len(s)-3:]
 }
 
 // fxCoverageEntry finds the Coverage(SourceFacturX) entry whose Rules contains
@@ -1058,8 +1055,8 @@ func TestEveryFacturXExtensionRuleFires(t *testing.T) {
 		good: subLineCII,
 	}, {
 		rule: "BR-FXEXT-CII-DT-097a",
-		bad:  fxWith(`<IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime>`, `<IssueDateTime><DateTimeString format="205">2024-01-01</DateTimeString></IssueDateTime>`),
-		good: fxWith(`<IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime>`, `<IssueDateTime><DateTimeString format="205">202401011200</DateTimeString></IssueDateTime>`),
+		bad:  fxWith(`<IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime>`, `<IssueDateTime><DateTimeString format="205">2024-01-01</DateTimeString></IssueDateTime>`),
+		good: fxWith(`<IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime>`, `<IssueDateTime><DateTimeString format="205">202401011200</DateTimeString></IssueDateTime>`),
 	}}
 
 	seen := map[string]bool{}
@@ -1153,6 +1150,19 @@ func TestFacturXExtensionSeveritiesMatchTheArtefact(t *testing.T) {
 			if v.Source != SourceFacturX {
 				continue
 			}
+			if fxIsDataModelRule(v.Rule) {
+				// The profile data model's assertions carry no identifier in the
+				// artefact — the key is minted by this package — so there is
+				// nothing to look up. Their severity is still checkable and is
+				// checked: every one of the 2,159 is unflagged, which within this
+				// artefact means fatal, and internal/gen/facturx refuses to emit
+				// one that carries a flag rather than deciding a severity for it.
+				if v.Severity != SeverityFatal {
+					t.Errorf("%s was reported %s and every Factur-X data-model assertion is unflagged, which facturx.go reads as fatal",
+						v.Rule, v.Severity)
+				}
+				continue
+			}
 			want, ok := published[v.Rule]
 			if !ok {
 				t.Errorf("this package reported %s under %q and no Factur-X Schematron publishes it", v.Rule, SourceFacturX)
@@ -1176,7 +1186,7 @@ func fxFiringDocuments() []string {
 		fxWith(`<SpecifiedTradeProduct><Name>Widget</Name>`, `<SpecifiedTradeProduct><Name>Widget</Name><ApplicableProductCharacteristic><TypeCode>NOT_A_CODE</TypeCode><Description>d</Description><Value>v</Value></ApplicableProductCharacteristic>`),
 		fxWith(`<AssociatedDocumentLineDocument><LineID>1</LineID>`, `<AssociatedDocumentLineDocument><LineID>1</LineID><ParentLineID>1</ParentLineID>`),
 		strings.Replace(subLineCII, "<LineTotalAmount>60.00</LineTotalAmount>", "<LineTotalAmount>59.00</LineTotalAmount>", 1),
-		fxWith(`<IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime>`, `<IssueDateTime><DateTimeString format="205">2024-01-01</DateTimeString></IssueDateTime>`),
+		fxWith(`<IssueDateTime><DateTimeString format="102">20240101</DateTimeString></IssueDateTime>`, `<IssueDateTime><DateTimeString format="205">2024-01-01</DateTimeString></IssueDateTime>`),
 	}
 }
 
