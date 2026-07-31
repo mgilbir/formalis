@@ -234,3 +234,62 @@ func BenchmarkFacturXDataModelRules(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkFacturXRestatementRules is the 24 fatal BR-FXEXT-* restatements over
+// an already-parsed tree, with no parsing and no semantic model in the number.
+//
+// It is committed because the nine -08b summations are the one shape in this
+// package whose naive form is quadratic in the document: each of them resolves
+// two readings, and each reading filters every line, every document-level
+// allowance or charge and every logistics charge. Nine categories x two readings
+// x the operand lists is 18 sweeps per VAT breakdown, and an invoice may carry
+// several breakdowns. facturx_restatements.go resolves the operand lists once per
+// document instead, and this is the number that says whether that stayed true.
+//
+// EXTENDED is the interesting profile: MINIMUM publishes one of these rules and
+// EXTENDED the other 23.
+func BenchmarkFacturXRestatementRules(b *testing.B) {
+	for _, profile := range []Profile{ProfileMinimum, ProfileExtended} {
+		b.Run(string(profile), func(b *testing.B) {
+			var docs []*parsed
+			for _, d := range benchCorpus(b, "CII") {
+				p, err := parseEN16931(newRun(context.Background()), d)
+				if err != nil {
+					continue
+				}
+				docs = append(docs, p)
+			}
+			if len(docs) == 0 {
+				b.Skip("no CII documents parsed")
+			}
+			r := newRun(context.Background())
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for _, p := range docs {
+					validateFacturXRestatements(r, p, profile, nil)
+				}
+			}
+			b.ReportMetric(float64(len(docs)), "docs/op")
+		})
+	}
+}
+
+// BenchmarkValidateFacturX is the whole call at the profile that runs the most
+// rules, so the two passes above can be read as a share of it. BenchmarkValidateEN16931
+// above is the same call at the EN 16931 tier, where neither the BR-FXEXT-* rules
+// nor the restatements apply at all.
+func BenchmarkValidateFacturX(b *testing.B) {
+	docs := benchCorpus(b, "CII")
+	ctx := context.Background()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, d := range docs {
+			if _, err := Validate(ctx, d, ProfileExtended); err != nil {
+				b.Fatal(err)
+			}
+		}
+	}
+	b.ReportMetric(float64(len(docs)), "docs/op")
+}
