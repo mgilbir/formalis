@@ -414,9 +414,14 @@ func TestDetectedValidatorRunsTheRuleSetItNamed(t *testing.T) {
 		doc  string
 		want Source
 	}{
-		"UBL XRechnung":     {minimalXRechnungUBL, SourceXRechnung},
-		"UBL Peppol":        {minimalPeppolUBL, SourcePeppol},
-		"CII EN 16931":      {validCII, SourceEN16931},
+		"UBL XRechnung": {minimalXRechnungUBL, SourceXRechnung},
+		"UBL Peppol":    {minimalPeppolUBL, SourcePeppol},
+		"CII EN 16931":  {validCII, SourceEN16931},
+		// Factur-X names the tier in BT-24 at four of its five profiles, and at
+		// the fifth declares CEN's own identifier, which is why this row is an
+		// EXTENDED one: it is the tier the two rule sets disagree about most and
+		// the only one whose detection changes which binding runs.
+		"Factur-X EXTENDED": {`<CrossIndustryInvoice><ExchangedDocumentContext><GuidelineSpecifiedDocumentContextParameter><ID>urn:cen.eu:en16931:2017#conformant#urn:factur-x.eu:1p0:extended</ID></GuidelineSpecifiedDocumentContextParameter></ExchangedDocumentContext></CrossIndustryInvoice>`, SourceFacturX},
 		"OIOUBL":            {`<Invoice><CustomizationID>OIOUBL-2.1</CustomizationID></Invoice>`, SourceOIOUBL},
 		"UBL-TR":            {`<Invoice><CustomizationID>TR1.2</CustomizationID></Invoice>`, SourceUBLTR},
 		"PINT":              {`<Invoice><CustomizationID>urn:peppol:pint:billing-1@sg-1</CustomizationID></Invoice>`, SourcePINT},

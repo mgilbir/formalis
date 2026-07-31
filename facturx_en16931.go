@@ -316,20 +316,32 @@ func (n *ciiNode) str(path ...string) string {
 	return ""
 }
 
-// Validate validates an invoice XML against the EN 16931 core business rules.
+// Validate validates an invoice XML as Factur-X: against the EN 16931 core
+// business rules, at the named Factur-X data-richness profile, and against the
+// syntax binding Factur-X publishes for that profile rather than CEN's.
+//
 // It accepts either syntax — a UN/CEFACT Cross Industry Invoice
 // (Factur-X/ZUGFeRD) or an OASIS UBL Invoice/CreditNote (Peppol BIS, XRechnung
 // UBL) — detecting which from the root element and mapping it onto the shared
-// semantic model before running the one rule engine.
+// semantic model before running the one rule engine. Factur-X is a CII format and
+// publishes no UBL binding, so a UBL document handed to this call is judged by
+// CEN's UBL binding, unscoped; there is nothing of Factur-X's for it to be judged
+// by. Everything below is about the CII half.
 //
-// profile is the Factur-X data-richness tier the document claims, and it does
-// exactly one thing: it excuses the rules a leaner tier is not expected to
-// satisfy. MINIMUM and BASIC WL carry no invoice lines, so the line rules are
-// not applied to them; MINIMUM also omits the buyer address, the VAT breakdown
-// and the amount-due summation; EXTENDED is exempt from the allowance/charge
-// total summations. BASIC, EN 16931 and EXTENDED are otherwise checked
-// identically, so passing one where another belongs changes nothing. Profile
-// lists the differences.
+// profile does two things, and the second is new. It excuses the rules a leaner
+// tier is not expected to satisfy — MINIMUM and BASIC WL carry no invoice lines,
+// so the line rules are not applied to them; MINIMUM also omits the buyer
+// address, the VAT breakdown and the amount-due summation; EXTENDED is exempt
+// from the allowance/charge total summations. And it selects the CII syntax
+// binding: FNFE-MPE's for that profile, which carries four of CEN's 583
+// CII-SR-*/CII-DT-* assertions and a profile data model of its own, plus, at
+// EXTENDED, the BR-FXEXT-* rules Factur-X adds. Profile and SourceFacturX argue
+// why; facturx.go is where it is done.
+//
+// A caller who wants CEN's own EN 16931 verdict — CEN's binding, no Factur-X
+// rule — calls ValidateEN16931 instead. The two coincided until CEN's binding was
+// measured against FNFE's published examples and found to report 76 fatal
+// findings on 13 conforming EXTENDED invoices.
 //
 // What profile does *not* do is select a national rule set. It cannot make this
 // call check XRechnung, Peppol or any other CIUS; for those use ValidateCIUS,
@@ -345,12 +357,6 @@ func (n *ciiNode) str(path ...string) string {
 // as a clean invoice or credit note.
 //
 // The error is for input that could not be read at all — XML that is not
-// well-formed, or a character encoding this package does not implement. It is a
-// statement about the file rather than about the document, and the Report
-// returned with it is the zero Report, so a caller who ignores the error cannot
-// read the value as clean. See ErrMalformedXML.
-//
-// The error is for input that could not be read at all — XML that is not
 // well-formed, or a character encoding this package does not implement. That is
 // a statement about the file rather than about the invoice, and it is the one
 // answer no Report can carry honestly, since there is no document to judge. The
@@ -359,9 +365,12 @@ func (n *ciiNode) str(path ...string) string {
 // well-formed document that is not an invoice, is a finding: see ErrMalformedXML
 // and RuleRoot.
 //
-// The Report names the EN 16931 rule families this package does not evaluate —
-// see Coverage(SourceEN16931), which is not empty — so Report.Conformant is
-// false even for a document with no findings. Report says why.
+// The Report names the rule families this package does not evaluate, from both
+// Sources it declares — see Coverage(SourceEN16931) and Coverage(SourceFacturX),
+// neither of which is empty — so Report.Conformant is false even for a document
+// with no findings. Report says why, and Coverage(SourceFacturX) says why that is
+// a change: this call reported Conformant for a clean document while it was
+// applying CEN's binding, and it was applying the wrong authority's rules to do so.
 func Validate(ctx context.Context, xmlData []byte, profile Profile) (Report, error) {
 	if !knownProfile(profile) {
 		// No Source: a rejected Profile chose no rule set, so there is no
@@ -370,8 +379,34 @@ func Validate(ctx context.Context, xmlData []byte, profile Profile) (Report, err
 		// never read, and an error would say this package could not read it.
 		return newReport(unknownProfile(profile)), nil
 	}
+	return modelValidate(ctx, xmlData, []Source{SourceEN16931, SourceFacturX}, func(r *run, p *parsed) []Violation {
+		return validateEN16931(r, p, profile, ciiBindingFacturX)
+	})
+}
+
+// ValidateEN16931 validates an invoice XML against CEN's EN 16931 and nothing
+// else: the semantic model's business rules and CEN's own syntax binding for
+// whichever of the two syntaxes the document is in.
+//
+// It is Validate without the Factur-X reading, and it takes no Profile because
+// CEN publishes none — the five data-richness tiers are FNFE-MPE's, and naming
+// one is what asks for Factur-X's rule set instead of CEN's. A caller with a
+// Factur-X document and its profile wants Validate; a caller asking "is this a
+// conforming EN 16931 CII or UBL invoice", which is what a CEN reference
+// validator answers, wants this.
+//
+// It is exactly what Validate with ProfileEN16931 did before Profile began
+// selecting a binding, and the EN 16931 tier is where the difference is smallest:
+// the two rule sets agree on the whole BR-* core there and differ only in the
+// binding. They differ most at EXTENDED, whose whole purpose is to carry terms the
+// EN 16931 core subset of CII does not have, and which CEN's binding therefore
+// reports.
+//
+// Everything else — the error contract, the cancellation contract, the coverage
+// the Report names — is Validate's, which documents it.
+func ValidateEN16931(ctx context.Context, xmlData []byte) (Report, error) {
 	return modelValidate(ctx, xmlData, []Source{SourceEN16931}, func(r *run, p *parsed) []Violation {
-		return validateEN16931(r, p, profile)
+		return validateEN16931(r, p, ProfileEN16931, ciiBindingCEN)
 	})
 }
 

@@ -258,12 +258,20 @@ type Report struct {
 // 16931 core's fatal half is complete — every fatal rule of the semantic model,
 // of the UBL binding and of the CII binding is evaluated, bar the handful CEN's
 // own reference implementation cannot report — so a clean invoice validated
-// against the core alone, by Validate with ProfileEN16931 or by ValidateCIUS on a
-// document declaring no CIUS, is conformant — and Complete as well, which no rule
+// against the core alone, by ValidateEN16931 or by ValidateCIUS on a document
+// declaring no CIUS, is conformant — and Complete as well, which no rule
 // set in this package had ever been: everything left in Coverage(SourceEN16931) is
 // a rule CEN itself cannot honour. Every other Source still names a fatal gap it
 // could close and has not, so Conformant is still false for every document a CIUS
 // or national validator is handed.
+//
+// Validate is now among them, and the change is worth stating rather than leaving
+// to be discovered. It used to return the sentence above because it applied CEN's
+// binding to a Factur-X document; Factur-X publishes a binding of its own and does
+// not adopt CEN's, so what it was reporting Conformant on was a verdict against
+// the wrong authority's rules. Coverage(SourceFacturX) names the binding it does
+// publish and this package does not evaluate. A caller who wants the old answer
+// wants ValidateEN16931, which is what the old call actually was.
 // Coverage says why for any Source, and Report.NotEvaluated says why for any
 // particular run. A caller who wants the older, weaker claim writes
 // len(r.Fatal()) == 0 and now has r.NotEvaluated sitting beside it, naming
@@ -515,6 +523,91 @@ var notEvaluated = map[Source][]RuleFamily{
 				"the generated EN16931-CII-validation.xslt makes the same reading mechanical, giving the wildcard template priority 1009 and the " +
 				"specific one 1008. en16931_syntax_advisory.go models that ordering, so this package does not report them either, and " +
 				"TestAdvisoryRulesCENCannotReportAreNotReported pins it",
+		},
+	},
+
+	// Factur-X. FNFE-MPE and FeRD bind EN 16931 with a rule set of their own and
+	// do not adopt CEN's CII syntax binding, which is why this Source exists at
+	// all; facturx.go argues it at length and SourceFacturX states it. What the
+	// five profile Schematrons publish, and what of it is here, is:
+	//
+	//   - CEN's BR-* core, republished verbatim. Evaluated, under SourceEN16931,
+	//     because CEN minted those identifiers. Nothing to record here.
+	//   - four of CEN's 583 CII-SR-*/CII-DT-* binding assertions. Three are
+	//     evaluated; the fourth is the first entry below.
+	//   - 51 BR-FXEXT-* rules of FNFE's own. Nine are evaluated — the ones that are
+	//     new ground rather than a restatement — and the other 42 are the second and
+	//     third entries.
+	//   - one OpenPEPPOL rule FNFE merges in, the fourth entry.
+	//   - a per-profile data model of between 51 and 1,238 unnamed assertions, the
+	//     fifth entry and by far the largest thing here.
+	//
+	// The fifth entry is why Report.Conformant is false for every Validate call,
+	// and that is a change: while this package applied CEN's binding to a Factur-X
+	// document it reported Conformant for a clean one, and it was applying the
+	// wrong authority's rule set to do so. A verdict withheld for a gap that is
+	// named is the honest form of the same answer.
+	//
+	// The 41 CEN identifiers the EXTENDED profile drops are not an entry here.
+	// This package evaluates CEN's original for all 41 — see facturXCENOmissions,
+	// which records the omission, the 23 that have a BR-FXEXT-* replacement and the
+	// 18 that have none — so there is no gap to name; there is a divergence, and it
+	// runs the other way.
+	SourceFacturX: {
+		{
+			Rules:       "CII-SR-464",
+			Severity:    SeverityWarning,
+			Unevaluable: true,
+			Reason: "CEN's condition for this identifier is not(ram:PayerSpecifiedDebtorFinancialInstitution) and Factur-X rewrote it. All four " +
+				"profile Schematrons that carry it — testdata/facturx/schematron/FACTUR-X_EN16931.sch and its BASIC-WL, BASIC and EXTENDED " +
+				"siblings — bind it to " +
+				"(A or B) or (not(A) and not(B)) over A = ram:PayeeSpecifiedCreditorFinancialInstitution and " +
+				"B = ram:PayerSpecifiedDebtorFinancialInstitution, which is a tautology: the first disjunct holds unless both are absent, and then " +
+				"the second does. No processor can report it from these files. The severity is CEN's published flag for the identifier, which is " +
+				"warning; TestFacturXInertBindingIsStillInert re-derives the XPath and fails if FNFE fixes it",
+		},
+		{
+			Rules:    "BR-FXEXT-* other than BR-FXEXT-01, -02, -03, -04, -06, -08, -11, -12 and BR-FXEXT-CII-DT-097a: 24 fatal identifiers",
+			Severity: SeverityFatal,
+			Reason: "the 51 BR-FXEXT-* identifiers split in two. Nine are Factur-X's own new ground — the BT-X-* extension terms, the sub-line " +
+				"structure and the date format qualifier 205 — and are evaluated in facturx.go. The other 42 restate a CEN identifier the EXTENDED " +
+				"profile drops, with a carve-out for the sub-line structure or the third-party charge amounts EXTENDED adds: BR-FXEXT-BR-22 is " +
+				"BR-22 restricted to lines whose subtype (BT-X-8) is DETAIL or absent, and the nine -08b families restate BR-AE-08, BR-E-08 and " +
+				"their siblings. This package evaluates CEN's stricter original for every one of those, so their ground is covered and covered " +
+				"harder, which is why not evaluating them can only under-report a conforming document and never accept a broken one. 24 of the 42 " +
+				"are fatal in FACTUR-X_EXTENDED.sch and this entry is those; the other 18 are the entry below",
+		},
+		{
+			Rules:    "BR-FXEXT-{AE,E,G,IC,AF,AG,O,S,Z}-08ini and -08rev: 18 advisory identifiers",
+			Severity: SeverityWarning,
+			Reason: "the same 42 restatements as the entry above, split off because FNFE flags these eighteen warning in FACTUR-X_EXTENDED.sch " +
+				"and the other 24 carry no flag. They are the two readings of the VAT breakdown summation FNFE publishes side by side for the " +
+				"2017 and 2026 texts of EN 16931 — \"Without Exemption reason EN16931_2017\" and \"With Exemption reason EN16931_2026\" — which is " +
+				"presumably why they are advisory while the -08b of each family is not",
+		},
+		{
+			Rules:    "PEPPOL-EN16931-R008",
+			Severity: SeverityWarning,
+			Reason: "OpenPEPPOL's \"Document MUST not contain empty elements\", which FNFE merges into FACTUR-X_{BASIC,EN16931,EXTENDED}.sch under " +
+				"the context //*[not(*) and not(normalize-space())] with flag=\"warning\" and a message reading \"(still status warning)\". " +
+				"ValidatePeppol evaluates it and Validate does not, because Validate declares the rule sets that ran and OpenPEPPOL's is not one " +
+				"of them; a caller who wants it has ValidatePeppol, and a Factur-X document declaring the Peppol identifier routes there through " +
+				"ValidateCIUS anyway",
+		},
+		{
+			Rules:    "the Factur-X profile data model: 1,241 assertions in EXTENDED, 412 in EN 16931, 262 in BASIC, 196 in BASIC WL, 48 in MINIMUM",
+			Severity: SeverityFatal,
+			Reason: "this is the binding Factur-X publishes in place of CEN's, and it is the honest gap. Each profile Schematron carries, beside " +
+				"its named business rules, a generated data model — one assertion per element of that profile's element table — in six mechanical " +
+				"shapes: count(X)=n / <=n / >=n cardinality, report true() for an element the profile does not use, assert @a and report @a for a " +
+				"required and a forbidden attribute, and a lookup of a code value in an external FACTUR-X_<PROFILE>_codedb.xml the specification " +
+				"bundle ships beside the .sch and which is not fetchable on its own. None of these assertions carries an identifier: FNFE names a " +
+				"rule by an [ID]- prefix on its message text and these have none, which is why a survey of this artefact written the way CEN's, " +
+				"KoSIT's and OpenPEPPOL's are written reports the binding as empty. They decide exactly the questions CEN's CII-SR-*/CII-DT-* rules " +
+				"decide and give per-profile answers — CEN's CII-DT-027 forbids ram:FormattedIssueDateTime on every document reference but the " +
+				"preceding invoice, the EN 16931 profile forbids it on ram:AdditionalReferencedDocument by type code, and EXTENDED permits it — so " +
+				"substituting CEN's binding for them is what issue #56 reported. It is not implemented: a generated tier of this size is the shape " +
+				"of en16931_syntax_advisory_table.go and cius_pt_datatype_table.go, and it is the work this entry names",
 		},
 	},
 

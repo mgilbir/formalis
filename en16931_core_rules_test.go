@@ -56,7 +56,7 @@ func runRuleCases(t *testing.T, cases []ruleCase) {
 	t.Helper()
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			vs := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(tc.xml))
+			vs := findings(t, context.Background(), ValidateEN16931, []byte(tc.xml))
 			if got := reports(vs, tc.rule); got != tc.want {
 				if tc.want {
 					t.Errorf("expected %s to fire; got %v", tc.rule, vs)
@@ -329,7 +329,7 @@ func TestBRCO05To08AreNotReported(t *testing.T) {
 			`<Reason>Insurance</Reason>` + // plainly not a discount
 			`<CategoryTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></CategoryTradeTax>` +
 			`</SpecifiedTradeAllowanceCharge>`)
-	vs := findings(t, context.Background(), withProfile(ProfileEN16931), []byte(contradictory))
+	vs := findings(t, context.Background(), ValidateEN16931, []byte(contradictory))
 	for _, rule := range []string{"BR-CO-05", "BR-CO-06", "BR-CO-07", "BR-CO-08"} {
 		if reports(vs, rule) {
 			t.Errorf("%s was reported; CEN binds it to true() in both syntaxes, so reporting it "+

@@ -122,19 +122,19 @@ const subLineCII = `<CrossIndustryInvoice>
   <ExchangedDocument><ID>INV-2</ID><TypeCode>380</TypeCode><IssueDateTime><DateTimeString>20240101</DateTimeString></IssueDateTime></ExchangedDocument>
   <SupplyChainTradeTransaction>
     <IncludedSupplyChainTradeLineItem>
-      <AssociatedDocumentLineDocument><LineID>1</LineID></AssociatedDocumentLineDocument>
+      <AssociatedDocumentLineDocument><LineID>1</LineID><LineStatusReasonCode>GROUP</LineStatusReasonCode></AssociatedDocumentLineDocument>
       <SpecifiedTradeProduct><Name>Group</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeSettlement><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>100.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
     </IncludedSupplyChainTradeLineItem>
     <IncludedSupplyChainTradeLineItem>
-      <AssociatedDocumentLineDocument><LineID>11</LineID><ParentLineID>1</ParentLineID></AssociatedDocumentLineDocument>
+      <AssociatedDocumentLineDocument><LineID>11</LineID><ParentLineID>1</ParentLineID><LineStatusReasonCode>DETAIL</LineStatusReasonCode></AssociatedDocumentLineDocument>
       <SpecifiedTradeProduct><Name>Child A</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>60.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
       <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
       <SpecifiedLineTradeSettlement><ApplicableTradeTax><CategoryCode>S</CategoryCode><RateApplicablePercent>20.00</RateApplicablePercent></ApplicableTradeTax><SpecifiedTradeSettlementLineMonetarySummation><LineTotalAmount>60.00</LineTotalAmount></SpecifiedTradeSettlementLineMonetarySummation></SpecifiedLineTradeSettlement>
     </IncludedSupplyChainTradeLineItem>
     <IncludedSupplyChainTradeLineItem>
-      <AssociatedDocumentLineDocument><LineID>12</LineID><ParentLineID>1</ParentLineID></AssociatedDocumentLineDocument>
+      <AssociatedDocumentLineDocument><LineID>12</LineID><ParentLineID>1</ParentLineID><LineStatusReasonCode>DETAIL</LineStatusReasonCode></AssociatedDocumentLineDocument>
       <SpecifiedTradeProduct><Name>Child B</Name></SpecifiedTradeProduct>
       <SpecifiedLineTradeAgreement><NetPriceProductTradePrice><ChargeAmount>40.00</ChargeAmount></NetPriceProductTradePrice></SpecifiedLineTradeAgreement>
       <SpecifiedLineTradeDelivery><BilledQuantity unitCode="C62">1</BilledQuantity></SpecifiedLineTradeDelivery>
@@ -159,21 +159,31 @@ const subLineCII = `<CrossIndustryInvoice>
 </CrossIndustryInvoice>`
 
 func TestValidateFacturXSubLines(t *testing.T) {
-	// No fatal finding rather than no finding, and the advisory finding is pinned
-	// rather than waved through. The parent line of a sub-line group carries no
-	// ram:ApplicableTradeTax of its own — its children do, and rolling them up is
-	// what this fixture exists to test — and CEN's CII-SR-454 asserts
-	// count(ram:ApplicableTradeTax) = 1 on every line settlement, flagged warning.
-	// So a reference validator reports exactly this on exactly this document, and
-	// the EXTENDED profile it is written for is where sub-lines are legal at all.
-	// Asserting the identity of the warning keeps the fixture as tightly pinned as
-	// it was when the assertion read len(v) != 0.
+	// No finding at all, fatal or advisory, and both halves of that moved when
+	// Profile began selecting Factur-X's binding.
+	//
+	// The fixture used to carry a sub-line group with no ram:LineStatusReasonCode
+	// on any of its three lines, which the EXTENDED profile does not accept:
+	// BR-FXEXT-06 requires the line item subtype (BT-X-8) on every line that names
+	// a parent or is named as one, and every sub-line group in FNFE's own
+	// published examples carries GROUP on the parent and DETAIL on the children.
+	// It does now too.
+	//
+	// And the advisory CII-SR-454 it used to assert — count(ram:ApplicableTradeTax)
+	// = 1 on every line settlement, which the parent line of a rollup breaks by
+	// construction — is CEN's CII binding, which a Factur-X profile does not
+	// apply. That is the change issue #56 asked for, seen from the smallest
+	// possible document: a rule CEN publishes for the EN 16931 core subset of CII,
+	// reported against a document whose profile exists to carry more than that
+	// subset. ValidateEN16931 still reports it, and the assertion below says so
+	// rather than letting the warning disappear unremarked.
 	r := mustReport(t, context.Background(), withProfile(ProfileExtended), []byte(subLineCII))
-	if v := r.Fatal(); len(v) != 0 {
-		t.Fatalf("valid sub-invoice-line document reported %d fatal violation(s): %v", len(v), v)
+	if v := r.Violations; len(v) != 0 {
+		t.Fatalf("valid sub-invoice-line document reported %d violation(s): %v", len(v), v)
 	}
-	if w := r.Warnings(); len(w) != 1 || w[0].Rule != "CII-SR-454" {
-		t.Fatalf("expected exactly the advisory CII-SR-454 on the parent line, got %v", w)
+	cen := mustReport(t, context.Background(), ValidateEN16931, []byte(subLineCII))
+	if w := cen.Warnings(); len(w) != 1 || w[0].Rule != "CII-SR-454" {
+		t.Fatalf("expected exactly the advisory CII-SR-454 from CEN's binding on the parent line, got %v", w)
 	}
 	// Breaking a child amount so the top-level rollup no longer matches must fire.
 	bad := strings.Replace(subLineCII, "<LineTotalAmount>100.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", "<LineTotalAmount>90.00</LineTotalAmount>\n        <TaxBasisTotalAmount>", 1)

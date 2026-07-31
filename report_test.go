@@ -31,7 +31,7 @@ import (
 // TestEverySourceIsAccountedForInTheCoverageTable then forces a decision about
 // whether its rule set is implemented in full.
 var allSources = []Source{
-	SourceEN16931, SourceXRechnung, SourcePeppol, SourceNLCIUS, SourceCIUSPT,
+	SourceEN16931, SourceFacturX, SourceXRechnung, SourcePeppol, SourceNLCIUS, SourceCIUSPT,
 	SourceCIUSRO, SourceUBLBE, SourceSRBDT, SourceFatturaPA, SourceFacturae,
 	SourceEbInterface, SourceKSeF, SourceFinvoice, SourceTEAPPS, SourceOIOUBL,
 	SourceSvefaktura, SourceZATCA, SourceOSA, SourceUBLTR, SourcePINT,
@@ -906,6 +906,7 @@ func severityTables() map[Source]map[string]map[Severity]bool {
 		SourceXRechnung: {},
 		SourcePeppol:    {},
 		SourceNLCIUS:    {},
+		SourceFacturX:   {},
 	}
 	record := func(src Source, rule string, sev Severity) {
 		if out[src][rule] == nil {
@@ -933,6 +934,16 @@ func severityTables() map[Source]map[string]map[Severity]bool {
 	}
 	for rule := range nlciusAdvisoryRuleIDs() {
 		record(SourceNLCIUS, rule, SeverityWarning)
+	}
+	// Factur-X. The severity of a BR-FXEXT-* rule is decided at the emission site
+	// by facturXExtensionSeverity, so that is the table read here; every
+	// identifier absent from it is fatal, which is what an unflagged assertion is
+	// in an artefact that flags 21 of them warning explicitly.
+	// TestFacturXExtensionSeveritiesMatchTheArtefact reads the flags back out of
+	// FNFE's own files, which is what makes this a quotation rather than a
+	// restatement.
+	for _, rule := range facturXExtensionRules {
+		record(SourceFacturX, rule, facturXExtensionSeverity[rule])
 	}
 	return out
 }
@@ -1439,7 +1450,7 @@ func TestZeroReportIsNotComplete(t *testing.T) {
 	// And the real thing, which must be Complete, or the guard above is
 	// indistinguishable from Complete being unreachable — which is exactly the
 	// state this test was written to stop being confused with.
-	real := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII))
+	real := mustReport(t, context.Background(), ValidateEN16931, []byte(validCII))
 	if !real.Complete() {
 		t.Fatalf("a clean EN 16931 document is not Complete, so this test proves nothing about the ran guard: %v",
 			real.NotEvaluated)
@@ -1494,6 +1505,14 @@ var sourcesWithUnevaluableFamilies = map[Source]bool{
 	// six from the file, in both directions, so a fixed upstream turns the entry
 	// back into a gap on the day it is fetched.
 	SourceCIUSRO: true,
+	// Factur-X joined with one identifier, and it is the only entry here whose
+	// cause is neither rule ordering nor a true() binding: FNFE rewrote CEN's
+	// CII-SR-464 into (A or B) or (not(A) and not(B)), which is a tautology over
+	// any A and B and therefore an assertion no processor can report from these
+	// files. TestFacturXInertBindingIsStillInert re-derives the XPath from all
+	// four profile Schematrons that carry it, so the entry turns back into a gap
+	// the day FNFE fixes it.
+	SourceFacturX: true,
 }
 
 // sourcesWithVendoredRuleArtefacts are the authorities whose published rule set
@@ -1502,6 +1521,11 @@ var sourcesWithUnevaluableFamilies = map[Source]bool{
 // reads the flags from.
 var sourcesWithVendoredRuleArtefacts = map[Source]bool{
 	SourceEN16931: true, SourceXRechnung: true, SourcePeppol: true,
+	// Factur-X, from `make facturx-schematron`: the five profile Schematrons
+	// FNFE-MPE publishes inside the specification bundle, fetched from
+	// ZUGFeRD/mustangproject, which vendors the same files identifier for
+	// identifier.
+	SourceFacturX: true,
 	// The five `make cius-schematron` added. Before it, this map was the reason
 	// these Sources could not carry an unevaluable family however plain the case
 	// (C35); now the claim is checkable for them like any other.
@@ -1613,6 +1637,9 @@ func TestUnevaluableFamiliesNameTheirEvidence(t *testing.T) {
 		filepath.Join("testdata", "cius-ro", "schematron", "*", "*", "*.sch"),
 		filepath.Join("testdata", "cius-rs", "schematron", "*", "*.sch"),
 		filepath.Join("testdata", "nlcius", "schematron", "*", "*.sch"),
+		// And Factur-X's five profile Schematrons, which are the artefact behind
+		// the one unevaluable family under SourceFacturX.
+		filepath.Join("testdata", "facturx", "schematron", "*.sch"),
 	} {
 		files, _ := filepath.Glob(pat)
 		for _, f := range files {
@@ -1711,12 +1738,12 @@ func TestCoverageDoesNotHandBackTheTable(t *testing.T) {
 		t.Error("appending to the slice Coverage returned changed the table")
 	}
 	// And through a Report, which builds NotEvaluated from the same table.
-	r := mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII))
+	r := mustReport(t, context.Background(), ValidateEN16931, []byte(validCII))
 	r.NotEvaluated[0].Unevaluable = false
 	if !Coverage(SourceEN16931)[0].Unevaluable {
 		t.Error("editing Report.NotEvaluated changed the coverage table")
 	}
-	if !mustReport(t, context.Background(), withProfile(ProfileEN16931), []byte(validCII)).Complete() {
+	if !mustReport(t, context.Background(), ValidateEN16931, []byte(validCII)).Complete() {
 		t.Error("editing one Report's NotEvaluated changed what a later validation claims")
 	}
 }
@@ -1816,7 +1843,7 @@ func coverageText(src Source) string {
 // that no processor reaches. It is the validator this list's counterpart test used
 // to be demonstrated on, which is why that test moved for the third time.
 var validatorsWithNoFatalGap = map[string]bool{
-	"Validate":          true,
+	"ValidateEN16931":   true,
 	"ValidateNLCIUS":    true,
 	"ValidateCIUS":      true,
 	"ValidateXRechnung": true,
@@ -1893,7 +1920,7 @@ func TestTheCoreReportsConformantAndCompleteForACleanInvoice(t *testing.T) {
 		{"CII", validCII},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := mustReport(t, ctx, withProfile(ProfileEN16931), []byte(tc.doc))
+			r := mustReport(t, ctx, ValidateEN16931, []byte(tc.doc))
 			if len(r.Violations) != 0 {
 				t.Fatalf("the fixture is not clean: %v", r.Violations)
 			}
