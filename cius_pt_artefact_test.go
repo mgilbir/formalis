@@ -629,6 +629,7 @@ var ptContextsTheCorpusNeverReaches = map[string]string{
 // being reachable and is still listed here fails, because the reason recorded for it
 // has stopped being true.
 func TestCIUSPTContextsAreReachable(t *testing.T) {
+	skipWithoutCorpus(t)
 	pub := ptResolveArtefact(t, "2.1.1", ptOwnIdentifier)
 	if pub == nil {
 		t.Skip("CIUS-PT Schematron not present; run `make cius-schematron`")
@@ -656,9 +657,6 @@ func TestCIUSPTContextsAreReachable(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "CIUS-PT context sweep corpus", files, minCorpusDocuments)
 

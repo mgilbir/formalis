@@ -688,6 +688,7 @@ func ptDTContextCounts(root *ciiNode, into map[string]int) {
 // published identifier is reached. If one stops being reached, this fails and the
 // reason has to be written down rather than assumed.
 func TestCIUSPTDatatypeContextsAreReachable(t *testing.T) {
+	skipWithoutCorpus(t)
 	published := ptDTPublishedIDs(t, "2.1.1")
 	if published == nil {
 		t.Skip("CIUS-PT Schematron not present; run `make cius-schematron`")
@@ -714,9 +715,6 @@ func TestCIUSPTDatatypeContextsAreReachable(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
 	}
 	atLeast(t, "CIUS-PT datatype context sweep corpus", files, minCorpusDocuments)
 
@@ -792,6 +790,7 @@ func TestCIUSPTDatatypeCorpusIsClean(t *testing.T) {
 // XRechnung invoice asked Portuguese questions answers no to a great many of them,
 // which is what makes the number large enough to be a meaningful ratchet.
 func TestCIUSPTDatatypeFiresAcrossTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	byRule := map[string]int{}
 	files, findings, errs := 0, 0, 0
 	_ = filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
@@ -814,9 +813,6 @@ func TestCIUSPTDatatypeFiresAcrossTheCorpus(t *testing.T) {
 		})
 		return nil
 	})
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
-	}
 	atLeast(t, "CIUS-PT datatype sweep corpus", files, minCorpusDocuments)
 	atLeast(t, "CIUS-PT datatype rules firing", len(byRule), minCIUSPTDatatypeRulesFiring)
 	atLeast(t, "CIUS-PT datatype findings", findings, minCIUSPTDatatypeFindings)

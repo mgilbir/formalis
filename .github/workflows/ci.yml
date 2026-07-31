@@ -51,12 +51,17 @@ jobs:
         # The conformance corpora are not vendored — testdata is gitignored and
         # fetched by the Makefile — so the oracle-backed tests skip here. What
         # this run covers is the whole rule engine against its hand-written
-        # fixtures, the parser's limits and cancellation, and the detector
-        # parity contract, none of which need a corpus.
+        # fixtures, the parser's limits and cancellation, the detector parity
+        # contract, and the six committed Factur-X lean-tier invoices, none of
+        # which need a corpus.
         #
         # A test that needs the corpus must skip when it is absent rather than
         # fail, or a clean checkout is a red build that says nothing about the
-        # code. The oracles themselves run in the conformance job below.
+        # code. "Absent" is decided by the Makefile's fetch stamps and not by
+        # counting files under testdata — testdata is no longer empty on a clean
+        # checkout, and the difference is what corpus_test.go's skipWithoutCorpus
+        # exists to keep straight. The oracles themselves run in the conformance
+        # job below.
         run: go test ./... -count=1
 
   # The slow job: fetch the corpora and run the oracles the fast job skips — the

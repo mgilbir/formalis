@@ -388,6 +388,7 @@ func parseForParity(t *testing.T, doc string) *parsed {
 // being evaluated: over every document in the tree, at EXTENDED, a superseded CEN
 // identifier may only be reported beside the Factur-X rule that replaced it.
 func TestSupersededCENRulesNeverStandAloneInTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	superseded := facturXSuperseded[ProfileExtended]
 	if len(superseded) == 0 {
 		t.Fatal("facturXSuperseded is empty at EXTENDED; the pass cannot be doing anything")
@@ -440,15 +441,13 @@ func TestSupersededCENRulesNeverStandAloneInTheCorpus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// A clean checkout has a testdata directory — the download scripts and their
-	// manifests are tracked — and no documents in it, so the presence of the
-	// directory is not the test for "the corpus is here". Finding none is the
-	// corpus-absent case the skips cover; finding some but not all is what
-	// atLeast reports, because a green verdict over a fraction of the corpus is
-	// a claim about the wrong population.
-	if docs == 0 {
-		t.Skip("no corpus present (make cius-oracles en16931-artefacts en16931-ubl)")
-	}
+	// A clean checkout has a testdata directory — the download scripts, their
+	// manifests and the six committed Factur-X documents are tracked — so
+	// neither the presence of the directory nor the presence of documents in it
+	// is the test for "the corpus is here". skipWithoutCorpus asks the fetch
+	// stamps; finding some documents but not all is what atLeast reports,
+	// because a green verdict over a fraction of the corpus is a claim about the
+	// wrong population.
 	atLeast(t, "corpus documents", docs, minCorpusDocuments)
 	t.Logf("authority parity: over %d corpus documents forced to EXTENDED, %d of them CII, %d superseded CEN findings stand and every one is beside the Factur-X rule that replaced it",
 		docs, cii, paired)

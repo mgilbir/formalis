@@ -366,9 +366,6 @@ func TestUBLBERuleContextsAreReachable(t *testing.T) {
 			validateUBLBERules(p.root, seen)
 		}
 	})
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
-	}
 	atLeast(t, "UBL.BE context sweep corpus", files, minCorpusDocuments)
 	reportUnreached(t, "UBL.BE", seen, keysOfSeverityMap(ciusEvaluated[SourceUBLBE]), nil)
 }

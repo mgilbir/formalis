@@ -343,9 +343,6 @@ func TestSRBDTRuleContextsAreReachable(t *testing.T) {
 	seen, files := ciusContextSweep(t, func(p *parsed, seen ruleContexts) {
 		validateSRBDTRules(p.inv, p.root, seen)
 	})
-	if files == 0 {
-		t.Skip("corpus not present (make cius-oracles)")
-	}
 	atLeast(t, "SRBDT context sweep corpus", files, minCorpusDocuments)
 
 	const noExtension = "no document in the corpus carries an sbt:SrbDtExt extension group"

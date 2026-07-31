@@ -158,6 +158,9 @@ func checkParity(t *testing.T, label string, data []byte) {
 // give the answer the tree gave, and must agree with it on whether the document
 // could be read.
 func TestScanMatchesTreeDetection(t *testing.T) {
+	// TestScanMatchesTreeOnAwkwardInput below carries the contract when the
+	// corpus is absent; this half is only ever evidence about a fetched corpus.
+	skipWithoutCorpus(t)
 	files := 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
@@ -176,12 +179,6 @@ func TestScanMatchesTreeDetection(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	// The corpora are not vendored, so this is a skip rather than a failure —
-	// the same convention as every other corpus-backed test here. The awkward
-	// input below carries the contract when the corpus is absent.
-	if files == 0 {
-		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
 	}
 	atLeast(t, "scan/tree parity corpus", files, minCorpusDocuments)
 	t.Logf("checked %d documents against the tree reference", files)
@@ -473,9 +470,14 @@ func TestNodeBudgetLeavesRealInvoicesAlone(t *testing.T) {
 	// Not vendored, so the margin can only be re-derived where the corpus is.
 	// Where it is, the margin is a claim about the whole corpus and has to be
 	// measured over the whole corpus: "no document here comes near the budget"
-	// is worth nothing if "here" is three documents.
-	if worst == 0 {
-		t.Log("no corpus present (make cius-oracles); the margin was not re-derived")
+	// is worth nothing if "here" is six documents — which is exactly what the
+	// six committed ones would make it read on a corpus-less checkout, so this
+	// asks corpusFetched rather than the count its own walk produced.
+	if !corpusFetched() {
+		t.Log("no fetched corpus present (make cius-oracles); the margin was not re-derived")
+	} else if worst == 0 {
+		t.Errorf("the corpus is on disk and not one of its %d documents parsed as CII; the margin was not "+
+			"re-derived and something is wrong with the parser rather than with the corpus", files)
 	} else {
 		atLeast(t, "documents measured for the node budget margin", files, minCorpusDocuments)
 		t.Logf("largest corpus document: %d elements (%s), budget %d — %.0fx margin",
@@ -598,6 +600,7 @@ var corpusFormat = map[string]Source{
 // and a ZATCA invoice must not become Peppol. This sweeps every conformance
 // corpus whose documents share one format and asserts exactly that.
 func TestDetectRoutesTheCorpus(t *testing.T) {
+	skipWithoutCorpus(t)
 	routed, unrecognised := 0, 0
 	err := filepath.WalkDir("testdata", func(p string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(p) != ".xml" {
@@ -638,10 +641,6 @@ func TestDetectRoutesTheCorpus(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	// Not vendored, so the sweep can only run where the corpus is.
-	if routed == 0 && unrecognised == 0 {
-		t.Skip("no corpus present (make cius-oracles / make en16931-artefacts)")
 	}
 	// The ratchet, from corpus_test.go: a test that only asserted "every
 	// document I saw routed correctly" would pass loudly on three files.

@@ -236,10 +236,12 @@ func TestNoRuleIdentifierIsClaimedByTwoSources(t *testing.T) {
 		t.Error(d)
 	}
 	s.claims.check(t)
-	// The hand-written documents carry this test on a corpus-less checkout, so a
-	// zero here is the "corpus absent" case and not a truncation. Anything above
-	// zero is a claim about the corpus and is held to the corpus's size.
-	if s.files > 0 {
+	// The hand-written documents carry this test on a corpus-less checkout, where
+	// the walk still finds the six committed Factur-X invoices; the count it
+	// produces therefore says nothing about whether the fetched corpus is here,
+	// and corpusFetched is what does. Where it is, the sweep is a claim about the
+	// corpus and is held to the corpus's size.
+	if corpusFetched() {
 		atLeast(t, "identifier-collision sweep corpus", s.files, minCorpusDocuments)
 	}
 	t.Logf("checked %d rule identifiers across %d Sources, over %d corpus documents and %d hand-written ones",
