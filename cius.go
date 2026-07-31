@@ -129,8 +129,8 @@ var specIDRules = []specIDRule{
 	// What it does name is a Profile, and validateFacturXRouted reads that back
 	// out of this same identifier.
 	//
-	// The mark is the authority's domain and nothing wider. It matches the four
-	// tiers that name themselves — "urn:factur-x.eu:1p0:minimum", ":basicwl",
+	// The marks are the two authorities' domains and nothing wider. They match the
+	// four tiers that name themselves — "urn:factur-x.eu:1p0:minimum", ":basicwl",
 	// and the "#compliant#"/"#conformant#" forms of ":basic" and ":extended" —
 	// and deliberately not the EN 16931 tier, whose Specification identifier is
 	// CEN's own "urn:cen.eu:en16931:2017" with nothing added. A Factur-X EN 16931
@@ -139,7 +139,14 @@ var specIDRules = []specIDRule{
 	// tier the document claims to be exactly EN 16931. A caller who knows better
 	// — because the PDF container's XMP said EN 16931 — calls Validate with the
 	// Profile.
-	{src: SourceFacturX, marks: []string{"factur-x.eu"}},
+	//
+	// Two marks and not one because Factur-X 1.0 and ZUGFeRD 2.x are one
+	// specification under two brands, and FNFE's own code database enumerates both
+	// identifiers for every tier that names itself. Matching "factur-x.eu" alone
+	// sent a ZUGFeRD-branded MINIMUM invoice to CEN's CII binding, which reports
+	// BR-16 and BR-CO-18 against a tier that has no invoice lines: C44, in the
+	// German half of the identifier space. See facturXProfileFromSpecID.
+	{src: SourceFacturX, marks: []string{"factur-x.eu", "zugferd.de"}},
 	{src: SourceNLCIUS, cius: CIUSNLCIUS, marks: []string{"nlcius", "nen.nl"}},
 	{src: SourceCIUSPT, cius: CIUSPortugal, marks: []string{"cius-pt", "feap.gov.pt"}},
 	{src: SourceCIUSRO, cius: CIUSRomania, marks: []string{"cius-ro", "mfinante.ro"}},
